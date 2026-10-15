@@ -20,6 +20,18 @@ K = {"TENSHU_ONLY": True, "__name__": "tenshu"}
 exec(open(os.path.join(ROOT, "tenshu", "build_tenshu.py")).read(), K)
 ACC, MATS = K["ACC"], K["MATS"]
 box, tube, skirt, sphere, cyl, add_geo, quad = K["box"], K["tube"], K["skirt"], K["sphere"], K["cyl"], K["add_geo"], K["quad"]
+# r3: procedural ishigaki block texture (render only; GLB keeps flat colour)
+try:
+    _m = MATS["stone"]; _nt = _m.node_tree
+    _b = next(n for n in _nt.nodes if n.type == 'BSDF_PRINCIPLED')
+    _br = _nt.nodes.new('ShaderNodeTexBrick')
+    _br.inputs["Color1"].default_value = (0.36, 0.33, 0.29, 1); _br.inputs["Color2"].default_value = (0.22, 0.20, 0.18, 1)
+    _br.inputs["Mortar"].default_value = (0.08, 0.075, 0.07, 1); _br.inputs["Scale"].default_value = 0.6
+    _br.inputs["Mortar Size"].default_value = 0.02; _br.inputs["Brick Width"].default_value = 1.6; _br.inputs["Row Height"].default_value = 0.8
+    _co = _nt.nodes.new('ShaderNodeTexCoord'); _mp = _nt.nodes.new('ShaderNodeMapping')
+    _nt.links.new(_co.outputs["Object"], _mp.inputs["Vector"]); _nt.links.new(_mp.outputs[0], _br.inputs["Vector"])
+    _nt.links.new(_br.outputs["Color"], _b.inputs["Base Color"])
+except Exception as e: print("stone tex skipped", e)
 MATS["city"] = K["mat"]("CityGround", (0.32, 0.31, 0.29), 0.0, 0.95)
 MATS["wood"] = K["mat"]("Wood", (0.16, 0.09, 0.05), 0.0, 0.7)
 MATS["iron"] = K["mat"]("BlackIron", (0.02, 0.02, 0.022), 0.6, 0.45)
