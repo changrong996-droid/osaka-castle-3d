@@ -99,6 +99,13 @@ def yaguramon(b):
     box("stone", (0, 0, 2.5), (w, d, 5)); box("iron", (0, -d / 2 - .05, 2.2), (5.5, .2, 4.4))
     box("plaster", (0, 0, 7.5), (w, d, 5)); windows(w, d, 5, 4, max(2, int(w / 4)), 2)
     hip_roof(w, d, 9.7, 1.8, 2.8, 0.7)
+    # r9: masugata court in front (-y): side stone walls + plaster parapet + outer gate
+    L = 20.0; y1 = -d / 2 - L
+    for sx in (-1, 1):
+        box("stone", (sx * (w / 2 - .6), (-d / 2 + y1) / 2, 2.0), (1.2, L, 4)); box("plaster", (sx * (w / 2 - .6), (-d / 2 + y1) / 2, 4.9), (1.0, L, 1.8))
+    box("stone", (0, y1, 2.0), (w, 1.2, 4)); box("plaster", (-w * .3, y1, 4.9), (w * .4, 1.0, 1.8)); box("plaster", (w * .3, y1, 4.9), (w * .4, 1.0, 1.8))
+    box("iron", (0, y1, 2.6), (5, 1.3, 5.2)); box("plaster", (0, y1, 6.2), (6.5, 3.0, 1.8))
+    hip_roof(6.5, 3.0, 7.0, 1.0, 1.6, 0.5)
 
 def gate(b):
     if b["w"] > 15: return yaguramon(b)
