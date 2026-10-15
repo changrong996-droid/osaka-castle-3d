@@ -163,6 +163,13 @@ def inside(x, y, ring):
         x1, y1 = ring[i]; x2, y2 = ring[(i + 1) % n]
         if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1 + 1e-9) + x1: c = not c
     return c
+# ---------- 土桥/坡道：樱门前，本丸南缘(z14)经干堀(z-3)降到二之丸(z4) ----------
+def earth_ramp(x, y0, y1, z0, z1, width, steps=8):
+    for i in range(steps):
+        t = (i + 0.5) / steps; yy = y0 + (y1 - y0) * (i + 0.5) / steps; zt = z0 + (z1 - z0) * t
+        ln = abs(y1 - y0) / steps + 0.05
+        box("earth", (x, yy, (zt - 3.5) / 2), (width, ln, zt + 3.5))
+earth_ramp(-14, -242, -272, 14.0, 4.0, 10)
 random.seed(3)
 blds = [(b["cx"], b["cy"], max(b["w"], b["d"]) / 2 + 6) for b in TER["buildings"]]
 def free(x, y): return all((x - bx) ** 2 + (y - by) ** 2 > r * r for bx, by, r in blds)
