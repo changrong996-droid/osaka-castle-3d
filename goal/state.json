@@ -1,5 +1,5 @@
 {
-  "round": 2,
+  "round": 3,
   "max_rounds": 12,
   "status": "running",
   "done": [
@@ -35,6 +35,10 @@
     },
     "r2": {
       "note": "batter only"
+    },
+    "r3": {
+      "2石垣": 2,
+      "note": "brick texture"
     }
   },
   "last_round_at": "2026-10-15T15:58+08:00"
