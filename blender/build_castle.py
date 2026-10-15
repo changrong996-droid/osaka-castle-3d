@@ -48,7 +48,7 @@ xform_since({}, tb["cx"], tb["cy"], tb["z"], tb["ang"] - math.pi / 2)
 
 # ---------- terrain ----------
 quad("water", (-900, -900, WZ), (900, -900, WZ), (900, 900, WZ), (-900, 900, WZ))
-TOP = {"honmaru": "gravel", "ninomaru": "grass", "city": "city"}
+TOP = {"honmaru": "gravel", "ninomaru": "grass", "dry": "grass", "city": "city"}
 for r in TER["regions"]:
     z, zb = r["z"], E["water"]
     rings = [r["outer"]] + r["holes"]
