@@ -179,5 +179,22 @@ sc.render.resolution_x, sc.render.resolution_y = 1600, 1000
 sc.render.filepath = os.path.join(OUT, "site_preview.png")
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "osaka_castle_site.blend"))
 bpy.ops.render.render(write_still=True)
+# ---------- fixed feedback views (same every round, so renders are comparable) ----------
+VIEWS = {  # name: (camera location, look-at target, lens)
+    "aerial":   ((-520, -640, 380), (-30, -40, 0), 30),
+    "top":      ((0, -60, 1500), (0, -59, 0), 32),
+    "otemon":   ((-330, -300, 12), (-240, -240, 8), 24),
+    "tenshu":   ((40, -150, 22), (0, 0, 40), 28),
+    "eastwall": ((172, -70, -3), (115, 40, 10), 22),
+}
+VD = os.path.join(OUT, "views"); os.makedirs(VD, exist_ok=True)
+sc.render.resolution_x, sc.render.resolution_y = 1280, 800
+for name, (loc, tgt, lens) in VIEWS.items():
+    co.location = loc; cam.lens = lens
+    co.rotation_euler = (Vector(tgt) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+    sc.render.filepath = os.path.join(VD, name + ".png")
+    bpy.ops.render.render(write_still=True)
+co.location = VIEWS["aerial"][0]; cam.lens = 30
+co.rotation_euler = (Vector(VIEWS["aerial"][1]) - co.location).to_track_quat('-Z', 'Y').to_euler()
 bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, "osaka_castle_site.glb"), export_format='GLB', export_lights=False, export_cameras=False)
 print("CASTLE_OK", sum(len(v[0]) for v in ACC.values()), "verts")
