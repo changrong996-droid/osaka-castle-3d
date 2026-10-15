@@ -1,0 +1,13 @@
+[out:json][timeout:90];
+(
+ way(34.680,135.518,34.693,135.534)["natural"="water"];
+ relation(34.680,135.518,34.693,135.534)["natural"="water"];
+ way(34.680,135.518,34.693,135.534)["barrier"~"wall|retaining_wall|city_wall"];
+ way(34.680,135.518,34.693,135.534)["historic"];
+ node(34.680,135.518,34.693,135.534)["historic"];
+ way(34.680,135.518,34.693,135.534)["building"];
+ way(34.680,135.518,34.693,135.534)["man_made"="embankment"];
+ way(34.680,135.518,34.693,135.534)["leisure"="park"];
+ relation(34.680,135.518,34.693,135.534)["leisure"="park"];
+);
+out body; >; out skel qt;
