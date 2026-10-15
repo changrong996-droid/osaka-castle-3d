@@ -15,19 +15,23 @@ def parts(g):
 HON_SOUTH = [(-105, -70), (-121, -89), (-116, -205), (-86, -204), (-89, -241), (-51, -243), (-18, -239), (-9, -239),
              (51, -240), (51, -234), (94, -235), (94, -218), (104, -218), (107, -143), (0, -60)]
 hon = max(parts(inner.convex_hull.union(Polygon(HON_SOUTH)).difference(inner).buffer(-0.5).buffer(0.5)), key=lambda g: g.area)
-nino = [g for g in parts(castle.difference(water).difference(hon.buffer(0.01))) if g.area > 3000]
+dry = castle.intersection(hon.buffer(28)).difference(water).difference(hon.buffer(0.01)).buffer(-1).buffer(1)
+dry = [g for g in parts(dry) if g.area > 800]
+dryu = unary_union(dry) if dry else Polygon()
+nino = [g for g in parts(castle.difference(water).difference(hon.buffer(0.01)).difference(dryu)) if g.area > 3000]
 city = [g for g in parts(box(-700, -700, 700, 700).difference(castle).difference(water)) if g.area > 500]
 # elevations (m) relative to outer city ground; estimates, see docs/REFERENCES.md
-ELEV = dict(water=-7.0, city=0.0, ninomaru=4.0, honmaru=14.0)
+ELEV = dict(dry=-3.0, water=-7.0, city=0.0, ninomaru=4.0, honmaru=14.0)
 def enc(g, name, z):
     g = g.simplify(0.3)
     return dict(name=name, z=z, outer=[list(map(lambda v: round(v, 2), c)) for c in list(g.exterior.coords)[:-1]],
                 holes=[[list(map(lambda v: round(v, 2), c)) for c in list(h.coords)[:-1]] for h in g.interiors], area=round(g.area))
-regions = [enc(hon, 'honmaru', ELEV['honmaru'])] + [enc(g, 'ninomaru', ELEV['ninomaru']) for g in nino] + [enc(g, 'city', ELEV['city']) for g in city]
+regions = [enc(hon, 'honmaru', ELEV['honmaru'])] + [enc(g, 'dry', ELEV['dry']) for g in dry] + [enc(g, 'ninomaru', ELEV['ninomaru']) for g in nino] + [enc(g, 'city', ELEV['city']) for g in city]
 def region_z(x, y):
     from shapely.geometry import Point
     p = Point(x, y)
     if hon.buffer(3).contains(p): return ELEV['honmaru']
+    if dry and dryu.buffer(1).contains(p): return ELEV['dry']
     if any(g.buffer(3).contains(p) for g in nino): return ELEV['ninomaru']
     return ELEV['city']
 TYPES = {'千貫櫓': 'yagura2', '乾櫓': 'yagura2', '一番櫓': 'yagura2', '六番櫓': 'yagura2', '多門櫓': 'tamon', '大手門': 'gate', '桜門': 'gate',
