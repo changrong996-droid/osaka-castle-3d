@@ -33,6 +33,7 @@ try:
     _nt.links.new(_br.outputs["Color"], _b.inputs["Base Color"])
 except Exception as e: print("stone tex skipped", e)
 MATS["city"] = K["mat"]("CityGround", (0.32, 0.31, 0.29), 0.0, 0.95)
+MATS["earth"] = K["mat"]("DryMoatEarth", (0.38, 0.27, 0.16), 0.0, 0.95)
 MATS["wood"] = K["mat"]("Wood", (0.16, 0.09, 0.05), 0.0, 0.7)
 MATS["iron"] = K["mat"]("BlackIron", (0.02, 0.02, 0.022), 0.6, 0.45)
 
@@ -48,7 +49,7 @@ xform_since({}, tb["cx"], tb["cy"], tb["z"], tb["ang"] - math.pi / 2)
 
 # ---------- terrain ----------
 quad("water", (-900, -900, WZ), (900, -900, WZ), (900, 900, WZ), (-900, 900, WZ))
-TOP = {"honmaru": "gravel", "ninomaru": "grass", "dry": "grass", "city": "city"}
+TOP = {"honmaru": "gravel", "ninomaru": "grass", "dry": "earth", "city": "city"}
 for r in TER["regions"]:
     z, zb = r["z"], E["water"]
     rings = [r["outer"]] + r["holes"]
