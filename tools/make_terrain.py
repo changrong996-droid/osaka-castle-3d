@@ -10,7 +10,11 @@ inner = poly(next(m for m in L['moats'] if m['id'] == 375025972)['pts'])
 castle = poly(L['castle_outline']['pts']).union(unary_union([poly(m['pts']) for m in L['moats'] if m['id'] != 375025972]).convex_hull.intersection(poly(L['castle_outline']['pts']).buffer(30)))
 def parts(g):
     return [g] if g.geom_type == 'Polygon' else list(g.geoms)
-hon = max(parts(inner.convex_hull.difference(inner).buffer(-0.5).buffer(0.5)), key=lambda g: g.area)
+# Honmaru south part: the inner moat is open to the south (dry moats / Sakuramon), so the convex hull alone
+# cuts a diagonal. Close it with the honmaru ishigaki line from OSM retaining walls 363432471 + 405236726.
+HON_SOUTH = [(-105, -70), (-121, -89), (-116, -205), (-86, -204), (-89, -241), (-51, -243), (-18, -239), (-9, -239),
+             (51, -240), (51, -234), (94, -235), (94, -218), (104, -218), (107, -143), (0, -60)]
+hon = max(parts(inner.convex_hull.union(Polygon(HON_SOUTH)).difference(inner).buffer(-0.5).buffer(0.5)), key=lambda g: g.area)
 nino = [g for g in parts(castle.difference(water).difference(hon.buffer(0.01))) if g.area > 3000]
 city = [g for g in parts(box(-700, -700, 700, 700).difference(castle).difference(water)) if g.area > 500]
 # elevations (m) relative to outer city ground; estimates, see docs/REFERENCES.md
