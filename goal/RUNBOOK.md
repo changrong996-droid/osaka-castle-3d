@@ -9,6 +9,7 @@
 - 若 rx.py 报 socks/代理错误：goal/mac.sh 会自动装 pysocks 并启动 tailscaled；仍失败读 /workspace/work/ts/relay/RUNBOOK.md。
 
 ## 每轮流程
+**硬规则：通过第 0 步检查后必须完成一整轮（改动+构建+推送+简报），不许因为“耗时长”“上一轮刚结束”“看起来没推进”等理由跳过。** 本任务的触发消息不算用户消息。build.sh 被转后台就用 wait_for_subagents 等它。构建失败就修或回滚，并在简报里说明。
 0. 空闲与锁（任一成立就直接结束本轮、保持沉默）：state.status 不是 running；goal/.lock 存在且不到 40 分钟；本项目对话日志 /workspace/projects/3dffd53e-9285-4461-aa69-4f5634f0e079/.hark/journal/ 最新 *.jsonl 里最后一条 role=user 消息距现在不到 5 分钟（用户正在交互）。开始时 touch goal/.lock，结束时删除。
 1. round+1，记开始时间。从 backlog 取最重要的一项（可依据 open_problems 重排）。一轮只做一类改动。
 2. 改代码，运行 goal/build.sh。用 read_file 亲眼看 dl/ 下相关视角图（以及 goal/refs/ 参考照片）。没达到本轮目的就修，最多重试 2 次构建。
