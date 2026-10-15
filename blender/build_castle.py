@@ -175,11 +175,12 @@ for r in TER["regions"]:
     xs = [p[0] for p in r["outer"]]; ys = [p[1] for p in r["outer"]]
     n = 380 if r["name"] == "ninomaru" and r["area"] > 100000 else (60 if r["name"] == "honmaru" else 25)
     placed = 0; tries = 0
-    while placed < n and tries < n * 30:
+    while placed < n and tries < n * 60:
         tries += 1
         x, y = random.uniform(min(xs), max(xs)), random.uniform(min(ys), max(ys))
         if inside(x, y, r["outer"]) and not any(inside(x, y, h) for h in r["holes"]) and free(x, y):
             # keep away from edges a bit: test 4 neighbours
+            if math.sin(x*0.011+1.3)*math.cos(y*0.013+0.7)+0.5*math.sin((x+y)*0.02) < 0.15: continue  # 林地成簇，其余留作开阔草坪
             if all(inside(x + dx, y + dy, r["outer"]) for dx, dy in ((8, 0), (-8, 0), (0, 8), (0, -8))):
                 tree(x, y, r["z"], random.uniform(0.8, 1.3)); placed += 1
 
