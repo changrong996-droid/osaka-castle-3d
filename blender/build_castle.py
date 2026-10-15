@@ -179,6 +179,14 @@ def earth_ramp(x, y0, y1, z0, z1, width, steps=8):
 earth_ramp(-14, -242, -272, 14.0, 4.0, 10)
 # r10: 北侧(玉造口方向)土桥
 earth_ramp(32, 156, 200, 14.0, 4.0, 10, 10)
+# r11: 西/东侧土桥(沿x方向)
+def earth_ramp_x(y, x0, x1, z0, z1, width, steps=10):
+    for i in range(steps):
+        t = (i + 0.5) / steps; xx = x0 + (x1 - x0) * t; zt = z0 + (z1 - z0) * t
+        ln = abs(x1 - x0) / steps + 0.05
+        box("earth", (xx, y, (zt - 3.5) / 2), (ln, width, zt + 3.5))
+earth_ramp_x(-90, -121, -170, 14.0, 4.0, 10)
+earth_ramp_x(20, 149, 195, 14.0, 4.0, 10)
 random.seed(3)
 blds = [(b["cx"], b["cy"], max(b["w"], b["d"]) / 2 + 6) for b in TER["buildings"]]
 def free(x, y): return all((x - bx) ** 2 + (y - by) ** 2 > r * r for bx, by, r in blds)
