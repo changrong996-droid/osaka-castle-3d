@@ -43,9 +43,16 @@ for r in TER["regions"]:
     pts = [Vector((x, y, z)) for ring in rings for x, y in ring]
     tris = tessellate_polygon([[Vector((x, y, z)) for x, y in ring] for ring in rings])
     add_geo(TOP[r["name"]], [tuple(p) for p in pts], [tuple(t[::-1]) if False else tuple(t) for t in tris])
-    for ring in rings:
+    for ri, ring in enumerate(rings):
         n = len(ring); vs, fs = [], []
-        for x, y in ring: vs += [(x, y, z), (x, y, zb)]
+        area = sum(ring[i][0] * ring[(i + 1) % n][1] - ring[(i + 1) % n][0] * ring[i][1] for i in range(n))
+        sg = (1 if area > 0 else -1) * (1 if ri == 0 else -1)  # +: outward = right of travel
+        bat = min(0.22 * (z - zb), 6.0) if z > zb + 3 else 0.0   # ishigaki batter (fan slope)
+        for i, (x, y) in enumerate(ring):
+            px, py = ring[i - 1]; nx_, ny_ = ring[(i + 1) % n]
+            tx, ty = nx_ - px, ny_ - py; L = math.hypot(tx, ty) or 1
+            ox, oy = sg * ty / L, -sg * tx / L
+            vs += [(x, y, z), (x + ox * bat, y + oy * bat, zb)]
         for i in range(n):
             j = (i + 1) % n; fs.append((2 * i, 2 * i + 1, 2 * j + 1, 2 * j))
         add_geo("stone", vs, fs)
