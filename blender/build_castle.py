@@ -177,6 +177,8 @@ def earth_ramp(x, y0, y1, z0, z1, width, steps=8):
         ln = abs(y1 - y0) / steps + 0.05
         box("earth", (x, yy, (zt - 3.5) / 2), (width, ln, zt + 3.5))
 earth_ramp(-14, -242, -272, 14.0, 4.0, 10)
+# r10: 北侧(玉造口方向)土桥
+earth_ramp(32, 156, 200, 14.0, 4.0, 10, 10)
 random.seed(3)
 blds = [(b["cx"], b["cy"], max(b["w"], b["d"]) / 2 + 6) for b in TER["buildings"]]
 def free(x, y): return all((x - bx) ** 2 + (y - by) ** 2 > r * r for bx, by, r in blds)
