@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大阪城 全城 3D · v1</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"PingFang SC","Hiragino Sans",sans-serif}
+#ui{position:fixed;left:16px;top:16px;color:#f3e6c4;background:rgba(15,12,8,.72);padding:12px 14px;border:1px solid rgba(212,165,44,.5);border-radius:10px;max-width:290px}
+#ui h1{margin:0 0 4px;font-size:18px;letter-spacing:2px;color:#e8c25a}#ui p{margin:5px 0;font-size:12.5px;line-height:1.6;color:#d8ccb0}
+button{background:#2a2216;color:#f0d98c;border:1px solid #8a6d22;border-radius:6px;padding:5px 9px;font-size:12px;cursor:pointer;margin:6px 4px 0 0}
+label{font-size:12px;color:#d8ccb0;display:block;margin-top:8px}input{width:100%}#load{position:fixed;inset:0;display:grid;place-items:center;color:#e8c25a}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script></head>
+<body><div id="load">加载模型中…</div>
+<div id="ui"><h1>大阪城 全城</h1><p style="color:#b9a77a;margin-top:0">v1 · OSM 实测布局 + Blender 程序化建模</p>
+<p>德川期城郭：外堀、内堀、本丸、二之丸；现存门橹按实测位置；天守为丰臣式。高差为估值。</p>
+<button id="rot">自动旋转</button><button id="v1">大手门</button><button id="v2">全城鸟瞰</button><button id="v3">天守近景</button>
+<label>太阳高度<input id="sun" type="range" min="2" max="75" value="32"></label><label>太阳方位<input id="az" type="range" min="0" max="360" value="210"></label></div>
+<script type="module">
+import * as THREE from 'three';import {OrbitControls} from 'three/addons/controls/OrbitControls.js';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {Sky} from 'three/addons/objects/Sky.js';import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+const GLB="__B64__";
+const r=new THREE.WebGLRenderer({antialias:true});r.setPixelRatio(Math.min(devicePixelRatio,2));r.setSize(innerWidth,innerHeight);
+r.shadowMap.enabled=true;r.shadowMap.type=THREE.PCFSoftShadowMap;r.toneMapping=THREE.ACESFilmicToneMapping;document.body.appendChild(r.domElement);
+const scene=new THREE.Scene();scene.fog=new THREE.Fog(0xb8c4cc,900,2600);
+const cam=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.5,4000);cam.position.set(-520,330,560);
+const ctl=new OrbitControls(cam,r.domElement);ctl.target.set(-30,8,40);ctl.enableDamping=true;ctl.maxPolarAngle=Math.PI*.495;ctl.minDistance=8;ctl.maxDistance=1600;ctl.autoRotate=true;ctl.autoRotateSpeed=.5;
+const pm=new THREE.PMREMGenerator(r);scene.environment=pm.fromScene(new RoomEnvironment(),.04).texture;
+const sky=new Sky();sky.scale.setScalar(4500);scene.add(sky);const su=sky.material.uniforms;su.turbidity.value=6;su.rayleigh.value=1.6;su.mieCoefficient.value=.005;su.mieDirectionalG.value=.8;
+const L=new THREE.DirectionalLight(0xfff1dc,3);L.castShadow=true;L.shadow.mapSize.set(4096,4096);Object.assign(L.shadow.camera,{left:-520,right:520,top:520,bottom:-520,near:1,far:1600});L.shadow.bias=-.0004;L.shadow.normalBias=.05;
+scene.add(L,L.target);L.target.position.set(0,20,0);const H=new THREE.HemisphereLight(0xcfe0ff,0x4a4030,.8);scene.add(H);
+function setSun(){const el=THREE.MathUtils.degToRad(+sun.value),az=THREE.MathUtils.degToRad(+document.getElementById('az').value);
+const v=new THREE.Vector3().setFromSphericalCoords(1,Math.PI/2-el,az);su.sunPosition.value.copy(v);L.position.copy(v).multiplyScalar(800).add(new THREE.Vector3(0,20,0));
+const w=1-Math.min(1,el/.6);L.color.setRGB(1,.93-w*.35,.85-w*.55);L.intensity=.6+2.6*Math.min(1,el/.35);H.intensity=.25+.6*Math.min(1,el/.5);r.toneMappingExposure=.4+.25*Math.min(1,el/.5);}
+const sun=document.getElementById('sun');sun.oninput=setSun;document.getElementById('az').oninput=setSun;setSun();
+const bin=Uint8Array.from(atob(GLB),c=>c.charCodeAt(0)).buffer;
+new GLTFLoader().parse(bin,'',g=>{g.scene.traverse(o=>{if(o.isMesh){o.castShadow=!/water|grass/.test(o.name);o.receiveShadow=true;const m=o.material;
+if(/Gold/.test(m.name)){m.envMapIntensity=1.5;m.roughness=.25;}if(/Water/.test(m.name)){m.roughness=.05;m.envMapIntensity=1.3;}if(/Lacquer/.test(m.name)){m.roughness=.3;}}});
+scene.add(g.scene);document.getElementById('load').remove();},e=>{document.getElementById('load').textContent='模型加载失败：'+e;});
+const rot=document.getElementById('rot');rot.onclick=()=>{ctl.autoRotate=!ctl.autoRotate;};
+const V={v1:[[-20,40,-420],[0,10,-240]],v2:[[-450,650,500],[-30,0,40]],v3:[[40,22,90],[0,30,0]]};let A=null;
+for(const k in V)document.getElementById(k).onclick=()=>{A={f:cam.position.clone(),ft:ctl.target.clone(),t:new THREE.Vector3(...V[k][0]),tt:new THREE.Vector3(...V[k][1]),s:performance.now()}};
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();r.setSize(innerWidth,innerHeight)});
+r.setAnimationLoop(n=>{if(A){const k=Math.min(1,(n-A.s)/1400),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;cam.position.lerpVectors(A.f,A.t,e);ctl.target.lerpVectors(A.ft,A.tt,e);if(k>=1)A=null;}ctl.update();r.render(scene,cam);});
+</script></body></html>
