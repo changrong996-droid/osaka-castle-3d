@@ -1,5 +1,5 @@
 {
-  "round": 1,
+  "round": 2,
   "max_rounds": 12,
   "status": "running",
   "done": [
@@ -32,6 +32,9 @@
       "6天守": 3,
       "7植被": 1,
       "8查看器": 2
+    },
+    "r2": {
+      "note": "batter only"
     }
   },
   "last_round_at": "2026-10-15T15:58+08:00"
