@@ -11,7 +11,7 @@
 
   // ---------------- 声明式场地规格 ----------------
   const SPEC = {
-    version: 'web-r6',
+    version: 'web-r7a',
     ken: 1.97,                                                           // 1 間（只用作“碎墙”下限与参数量纲）
     levels: { water: -7, dry: -5, city: 0, ninomaru: 4, honmaru: 14 },   // 与 data/terrain.json 的 elev 一致（估值）
     WZ: -6,                                                              // 水面
@@ -856,6 +856,13 @@
             const z = topAt(clamp(s, B.s0, B.s1)); if ((LOCK[q] === 2 || LOCK[q] === 3) && Math.abs(H[q] - z) > 1e-3) continue; H[q] = z; TAG[q] = 4; } } }
       S.bridges.push(B);
     }
+    // r7a 操作：排水整平——有防御线的曲轮里，改地形的操作（坡道/土桥侧坡/桥台与石垣面相交）留下的闭合洼地按“优先队列洪泛的溢出水位”填平
+    // （物理：填方面必须能排水；与 H20 同一个定义域：曲轮格点、从与别的类相邻的格点溢出）。被地基/坡道锁定的格点不动（交给 H1/H4/H20 报）。
+    for (const lp of S.loops) { const g = lp.g, N = NX * NY, inG = q => CLS[q] === g.i, spill = new Float32Array(N).fill(Infinity), Hq = fheap(), b = lp.bbb, i0 = Math.max(0, Math.floor((b[0] - gs.x0) / c) - 2), i1 = Math.min(NX - 1, Math.ceil((b[2] - gs.x0) / c) + 2), j0 = Math.max(0, Math.floor((b[1] - gs.y0) / c) - 2), j1 = Math.min(NY - 1, Math.ceil((b[3] - gs.y0) / c) + 2), IDX = [];
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) IDX.push(j * NX + i);
+      for (const q of IDX) { if (!inG(q)) continue; const i = q % NX; if (i === 0 || i === NX - 1 || q < NX || q >= N - NX || !inG(q - 1) || !inG(q + 1) || !inG(q - NX) || !inG(q + NX)) { spill[q] = H[q]; Hq.push(H[q], q); } }
+      while (Hq.size()) { const lv = Hq.topKey(), q = Hq.pop(); if (lv > spill[q]) continue; for (const k of [q - 1, q + 1, q - NX, q + NX]) { if (k < 0 || k >= N || !inG(k)) continue; const nl = Math.max(H[k], lv); if (nl < spill[k]) { spill[k] = nl; Hq.push(nl, k); } } }
+      for (const q of IDX) if (inG(q) && !LOCK[q] && spill[q] - H[q] > 1e-6) { H[q] = spill[q]; S.graded = (S.graded || 0) + 1; } }
     revalidate(); replay(); passivePass(); // r6：地形改完了（桥台是最后一个改地形的操作）→ 切分格定稿（水密），之后再按定稿的地面落桥墩
     for (const B of S.bridges) {
       const topAt = B.topAt, P = B.P, hw = B.hw;
