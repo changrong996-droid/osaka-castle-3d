@@ -14,10 +14,10 @@ button{background:#2a2216;color:#f0d98c;border:1px solid #8a6d22;border-radius:6
 button.on{background:#8a6d22;color:#1a1408}
 label{display:flex;align-items:center;gap:6px;margin-top:7px;color:#d8ccb0}
 input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid #6b5520;border-radius:4px;padding:2px 4px}
-#audit{margin-top:10px;border-top:1px solid rgba(212,165,44,.3);padding-top:8px}
-#audit .ah{font-weight:600;margin-bottom:4px}#audit .ok{color:#8fe08a}#audit .ng{color:#ff7a6a}
-#audit table{border-collapse:collapse;width:100%;font-size:11.5px}#audit td{padding:1px 3px;color:#cdbf9f}#audit td:last-child{text-align:right}
-#audit tr.ng td{color:#ff7a6a}#audit .items{margin-top:4px;font-size:11px;color:#ffb0a4}
+#audit,#camaudit{margin-top:10px;border-top:1px solid rgba(212,165,44,.3);padding-top:8px}
+#audit .ah,#camaudit .ah{font-weight:600;margin-bottom:4px}#audit .ok,#camaudit .ok{color:#8fe08a}#audit .ng,#camaudit .ng{color:#ff7a6a}
+#camaudit table,#audit table{border-collapse:collapse;width:100%;font-size:11.5px}#camaudit td,#audit td{padding:1px 3px;color:#cdbf9f}#camaudit td:last-child,#audit td:last-child{text-align:right}
+#camaudit tr.ng td,#audit tr.ng td{color:#ff7a6a}#camaudit .items,#audit .items{margin-top:4px;font-size:11px;color:#ffb0a4}
 #stats{margin-top:8px;color:#9d8f6d;font-size:11px;line-height:1.5}
 #hide{position:absolute;right:8px;top:8px;margin:0;padding:1px 7px}
 #load{position:fixed;inset:0;display:grid;place-items:center;color:#e8c25a;font-size:15px}
@@ -35,12 +35,14 @@ input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid 
   <label><input type="checkbox" id="lost"> 失传橹 · <span id="era"></span></label>
   <label>树木随机种子 <input type="number" id="seed" min="1" value="1"></label>
   <div id="audit"></div>
+  <div id="camaudit"></div>
   <div id="stats"></div>
 </div>
-<div id="hint">左键旋转 · 右键平移 · 滚轮缩放 · 视角/开关写入网址 # 参数，可复现</div>
-<script src="data.js?v=3"></script>
-<script src="site.js?v=3"></script>
-<script src="tenshu.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<div id="hint">左键旋转 · 右键平移 · 滚轮缩放（相机是 1.5 m 球体，不会钻进地面/建筑）· 视角/开关写入网址 # 参数，可复现</div>
+<script src="data.js?v=4"></script>
+<script src="site.js?v=4"></script>
+<script src="tenshu.js?v=4"></script>
+<script src="camera.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
