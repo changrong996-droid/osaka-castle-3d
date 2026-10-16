@@ -13,7 +13,7 @@ import functools, http.server, json, os, socketserver, sys, threading, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, 'web')
 SHOTS = os.path.join(WEB, 'shots')
-VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall']
+VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura']
 VENDOR = {'build/three.module.js': 'three.module.js', 'examples/jsm/controls/OrbitControls.js': 'OrbitControls.js', 'examples/jsm/objects/Sky.js': 'Sky.js'}
 ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 
