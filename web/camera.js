@@ -59,7 +59,7 @@
     const H = S.H, NX = S.NX;
     // r6：地形 = 渲染用的同一张三角网：被石垣顶线/墙脚线切开的格用切分三角形（S.splitIdx → S.splitTris），格的最高点也按切分三角形算
     const SPL = S.splitIdx || null, SPT = S.splitTris || [], HC = new Float32Array(n);
-    for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { const a = j * NX + i; let m = Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1]); if (SPL && SPL[a] >= 0) { const Tt = SPT[SPL[a]].tris; for (let k = 2; k < Tt.length; k += 3) if (Tt[k] > m) m = Tt[k]; } HC[j * NXc + i] = m; T[j * NXc + i] = Math.max(m, S.WZ); }
+    for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { const a = j * NX + i; let m = Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1]); if (SPL && SPL[a] >= 0) { const Tt = SPT[SPL[a]].tris; for (let k = 2; k < Tt.length; k += 3) if (Tt[k] > m) m = Tt[k]; } HC[j * NXc + i] = m; const WC = S.WZC, CL = S.CLS; let w = WC ? -1e9 : S.WZ; if (WC) for (const v of [a, a + 1, a + NX, a + NX + 1]) if (CL[v] < 0 && WC[v] > w) w = WC[v]; T[j * NXc + i] = Math.max(m, w); } // r7b：水格按自己那片水的实测水位（不再用全城最低水位）
     let C = null, tris = 0, samples = 0;
     const keep = opt.keepTris ? [] : null; // 独立几何校验用（只在测试/审计时打开；树按真实三角形）
     let TV = new Float32Array(9 * 65536), nT = 0; // 碰撞用三角形汤
@@ -129,7 +129,9 @@
       for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { let m = -1e9; for (let d = -K; d <= K; d++) { const jj = j + d; if (jj >= 0 && jj < NYc) { const v = tmp[jj * NXc + i]; if (v > m) m = v; } } C[j * NXc + i] = m + R; }
       buildHash();
     }
-    const outTop = (x, y) => { const g = S.regionAt ? S.regionAt(x, y) : null, h = g ? (g.name === 'city' ? 0 : g.z) : S.BED; return Math.max(h, S.WZ, 0); };
+    // r7b：水位按连通水体（S.wzAt：每格所属水体的实测水位，T.P.）；网格外的曲轮取其拟合地面
+    const WL = (x, y) => S.wzAt ? S.wzAt(x, y) : S.WZ;
+    const outTop = (x, y) => { const g = S.regionAt ? S.regionAt(x, y) : null, h = g ? (g.surf ? g.surf.at(x, y) : g.z) : S.BED; return Math.max(h, WL(x, y)); };
     const top = (x, y) => { const i = ci(x), j = cj(y); return (i < 0 || j < 0 || i >= NXc || j >= NYc) ? outTop(x, y) : T[j * NXc + i]; };
     const need = (x, y) => { const i = ci(x), j = cj(y); return (i < K || j < K || i >= NXc - K || j >= NYc - K) ? Math.max(outTop(x, y) + R, i >= -K && j >= -K && i < NXc + K && j < NYc + K ? (() => { let m = -1e9; for (let b = j - K; b <= j + K; b++) for (let a = i - K; a <= i + K; a++) if (a >= 0 && b >= 0 && a < NXc && b < NYc) m = Math.max(m, T[b * NXc + a]); return m + R; })() : -1e9) : C[j * NXc + i]; };
     const above = (p, m) => p[2] >= need(p[0], p[1]) + (m || 0); // 柱状场：充分条件（在一切几何之上 ≥R）
@@ -139,7 +141,7 @@
     const NRM = [0, 0, 1], TK = new Float32Array(9);
     function clearance(p, cap) {
       const px = p[0], py = p[1], pz = p[2]; cap = cap || R + 0.01;
-      let d = pz - S.WZ, nx = 0, ny = 0, nz = 1; // 水面
+      let d = pz - WL(px, py), nx = 0, ny = 0, nz = 1; // 水面
       const tz = terrZ(px, py); if (pz < tz) { NRM[0] = 0; NRM[1] = 0; NRM[2] = 1; return pz - tz; }
       if (inGrid(px - cap, py - cap) && inGrid(px + cap, py + cap)) { // 地形三角网（与渲染网格同一剖分）
         const i0 = Math.max(0, ci(px - cap)), i1 = Math.min(NXc - 1, ci(px + cap)), j0 = Math.max(0, cj(py - cap)), j1 = Math.min(NYc - 1, cj(py + cap)), tk = TK;
@@ -199,7 +201,7 @@
     // 线段与几何是否相交（视线 / 隧穿检查）：地形按 0.5 m 采样，三角形精确，树柱按盒；skip(x,y) 为真的命中点忽略
     function segHit(a, b, skip) {
       const L = dist(a, b), dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], NS = Math.max(2, Math.ceil(L / 0.5));
-      for (let k = 1; k < NS; k++) { const t = k / NS, x = a[0] + dx * t, y = a[1] + dy * t, z = a[2] + dz * t; if (skip && skip(x, y)) continue; if (z < terrZ(x, y) || z < S.WZ) return { t, p: [x, y, z], what: 'ground' }; }
+      for (let k = 1; k < NS; k++) { const t = k / NS, x = a[0] + dx * t, y = a[1] + dy * t, z = a[2] + dz * t; if (skip && skip(x, y)) continue; if (z < terrZ(x, y) || z < WL(x, y)) return { t, p: [x, y, z], what: 'ground' }; }
       const NB = Math.max(1, Math.ceil(L / 2)); let res = null;
       for (let k = 0; k < NB && !res; k++) { const t0 = k / NB, t1 = (k + 1) / NB, p0 = lerp3(a, b, t0), p1 = lerp3(a, b, t1), mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
         if (Math.min(p0[2], p1[2]) >= need(mx, my) - R + 1e-3) continue; // 子段在邻域最高面之上
@@ -224,7 +226,7 @@
       for (let s = st; s <= L - (minD || 0); s += st) { const t = s / L, p = lerp3(cam, tgt, t); if (s > da) break; if (clearOld(p)) { b = p; break; } }
       return b || a;
     }
-    const floorAt = (x, y) => Math.max(S.surfaceAt ? S.surfaceAt(x, y) : top(x, y), S.WZ);
+    const floorAt = (x, y) => Math.max(S.surfaceAt ? S.surfaceAt(x, y) : top(x, y), WL(x, y));
     // ---- 视角预设（规则 → 相机；不合法/被挡则按代价搜索）----
     function fromRule(r, f, del, daz) { const el = clamp(r.el + del, 1, 89.95) * Math.PI / 180, az = (r.az + daz) * Math.PI / 180, d = r.dist * f; return [r.target[0] + Math.cos(az) * Math.cos(el) * d, r.target[1] + Math.sin(az) * Math.cos(el) * d, r.target[2] + Math.sin(el) * d]; }
     let CANDS = null;
@@ -288,6 +290,8 @@
 
     // ---- 步行（眼高 EYE）：1 m 栅格 Dijkstra，节点 = 地面（含桥面）上 EYE 处的球体合法；坡度 ≤ slope ----
     function walkPoint(x, y, ok) { ok = ok || valid; const s = S.surfaceAt(x, y); for (const dz of [0, 0.1, 0.2, 0.3]) { const p = [x, y, s + EYE + dz]; if (ok(p)) return p; } return null; } // 斜坡上眼高最多抬 0.3 m 让球离坡面 ≥R
+    // r7b：寻路的边也必须是连续运动——两节点之间的直线（审计就是按这条直线 0.25 m 复核的）全程合法，不只是两个端点合法
+    function edgeOk(a, b, ok) { const N = Math.max(1, Math.ceil(dist(a, b) / 0.25)); for (let k = 1; k < N; k++) if (!ok(lerp3(a, b, k / N))) return false; return true; }
     function walkRoute(start, goalFn, box, o) {
       o = o || {}; const h = o.h || 1, ok = o.ok || valid, slope = o.slope || 0.3, x0 = box[0], y0 = box[1], nx = Math.ceil((box[2] - x0) / h) + 1, ny = Math.ceil((box[3] - y0) / h) + 1, N = nx * ny;
       const P = new Array(N), st = new Uint8Array(N), g = new Float32Array(N).fill(1e30), prev = new Int32Array(N).fill(-1), Q = heap();
@@ -297,7 +301,7 @@
       while (Q.size) { const q = Q.pop(); if (st[q] === 3) continue; st[q] = 3; exp++; const p = P[q]; if (goalFn(p[0], p[1], p)) { goal = q; break; } if (exp > (o.max || 120000)) break;
         const i = q % nx, j = (q - i) / nx;
         for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { if (!di && !dj) continue; const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= ny) continue; const k = b * nx + a; if (st[k] === 3 || st[k] === 2) continue; const pk = pt(k); if (!pk) continue;
-          const len = Math.hypot(di, dj) * h; if (Math.abs(S.surfaceAt(pk[0], pk[1]) - S.surfaceAt(p[0], p[1])) > slope * len + 0.05) continue; const gg = g[q] + len; if (gg < g[k]) { g[k] = gg; prev[k] = q; Q.push(gg, k); } } }
+          const len = Math.hypot(di, dj) * h; if (Math.abs(S.surfaceAt(pk[0], pk[1]) - S.surfaceAt(p[0], p[1])) > slope * len + 0.05) continue; const gg = g[q] + len; if (gg < g[k] && edgeOk(p, pk, ok)) { g[k] = gg; prev[k] = q; Q.push(gg, k); } } }
       if (goal < 0) return { ok: false, why: 'unreached', exp };
       const raw = []; for (let q = goal; q >= 0; q = prev[q]) raw.push(P[q]); raw.reverse();
       return { ok: true, raw, exp };
@@ -305,8 +309,10 @@
     // 步行折线：拉直（弦上按 0.5 m 取地面眼高点全部合法且坡度连续）→ 稠密化 → 合法性 0.25 m 复核
     function walkDense(a, b, ok) { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), N = Math.max(1, Math.ceil(L / 0.5)), out = []; for (let k = 1; k <= N; k++) { const x = lerp(a[0], b[0], k / N), y = lerp(a[1], b[1], k / N), p = walkPoint(x, y, ok); if (!p) return null; out.push(p); } return out; }
     function walkSmooth(raw, ok) {
-      ok = ok || valid; const key = pull(raw.map(p => p), (u, v) => { const d = walkDense(u, v, ok); if (!d) return false; let pr = u; for (const p of d) { if (!segFree(pr, p, 0.25)) return false; pr = p; } return true; });
-      let pts = [raw[0]]; for (let i = 1; i < key.length; i++) pts = pts.concat(walkDense(key[i - 1], key[i], ok) || [key[i]]);
+      ok = ok || valid; const dense = (u, v) => { const d = walkDense(u, v, ok); if (!d) return null; let pr = u; for (const p of d) { if (!segFree(pr, p, 0.25)) return null; pr = p; } return d; };
+      const key = pull(raw.map(p => p), (u, v) => !!dense(u, v));
+      // 相邻两个原始节点之间拉不直时（pull 的兜底不复核），用寻路时已复核过的那条直线边（r7b）
+      let pts = [raw[0]]; for (let i = 1; i < key.length; i++) pts = pts.concat(dense(key[i - 1], key[i]) || [key[i]]);
       return pts;
     }
 
@@ -320,7 +326,7 @@
     }
     function rayBlocked(p, d, Lmax) { // 独立：沿 2D 桶逐段收集三角形
       const G = GH, seen = new Set(), q = [p[0] + d[0] * Lmax, p[1] + d[1] * Lmax, p[2] + d[2] * Lmax], NS = Math.ceil(Lmax / 0.5);
-      for (let k = 1; k <= NS; k++) { const t = k / NS, x = lerp(p[0], q[0], t), y = lerp(p[1], q[1], t), z = lerp(p[2], q[2], t); if (z < Math.max(terrZ(x, y), S.WZ)) return true; }
+      for (let k = 1; k <= NS; k++) { const t = k / NS, x = lerp(p[0], q[0], t), y = lerp(p[1], q[1], t), z = lerp(p[2], q[2], t); if (z < Math.max(terrZ(x, y), WL(x, y))) return true; }
       const NB = Math.ceil(Lmax / (G.B / 2));
       for (let k = 0; k <= NB; k++) { const x = lerp(p[0], q[0], k / NB), y = lerp(p[1], q[1], k / NB);
         for (let j = Math.floor(y / G.B) - 1; j <= Math.floor(y / G.B) + 1; j++) for (let i = Math.floor(x / G.B) - 1; i <= Math.floor(x / G.B) + 1; i++) { const A = G.map.get(i * 100003 + j); if (A) for (const t of A) { if (seen.has(t)) continue; seen.add(t); if (segTri(p[0], p[1], p[2], q[0] - p[0], q[1] - p[1], q[2] - p[2], keep, t * 9) >= 0) return true; } } }
@@ -328,7 +334,7 @@
     }
     function geoCheck(p) { // 返回 null（干净）或原因字符串
       const G = geoIndex(); if (!G) return null; const rr = R * 0.98;
-      for (const rho of [0, 0.5, 1.0, 1.4]) for (let a = 0; a < (rho ? 12 : 1); a++) { const x = p[0] + rho * Math.cos(a * Math.PI / 6), y = p[1] + rho * Math.sin(a * Math.PI / 6); if (p[2] - Math.max(terrZ(x, y), S.WZ) < Math.sqrt(Math.max(0, rr * rr - rho * rho))) return 'ground'; }
+      for (const rho of [0, 0.5, 1.0, 1.4]) for (let a = 0; a < (rho ? 12 : 1); a++) { const x = p[0] + rho * Math.cos(a * Math.PI / 6), y = p[1] + rho * Math.sin(a * Math.PI / 6); if (p[2] - Math.max(terrZ(x, y), WL(x, y)) < Math.sqrt(Math.max(0, rr * rr - rho * rho))) return 'ground'; }
       const seen = new Set();
       for (let j = Math.floor((p[1] - R) / G.B); j <= Math.floor((p[1] + R) / G.B); j++) for (let i = Math.floor((p[0] - R) / G.B); i <= Math.floor((p[0] + R) / G.B); i++) { const A = G.map.get(i * 100003 + j); if (A) for (const t of A) { if (seen.has(t)) continue; seen.add(t); if (Math.sqrt(ptTri2(p[0], p[1], p[2], keep, t * 9)) < rr) return 'solid'; } }
       if (!rayBlocked(p, [0, 0, 1], 80)) return null; // 头顶开放
