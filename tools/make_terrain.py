@@ -1,5 +1,5 @@
 """castle_layout.json -> terrain.json : land regions (polygon + holes) with elevations, building placement info."""
-import json, sys
+import json, sys, os
 from shapely.geometry import Polygon, box, mapping
 from shapely.ops import unary_union
 L = json.load(open(sys.argv[1])); out = sys.argv[2]
@@ -11,10 +11,52 @@ castle = poly(L['castle_outline']['pts']).union(unary_union([poly(m['pts']) for 
 def parts(g):
     return [g] if g.geom_type == 'Polygon' else list(g.geoms)
 # Honmaru south part: the inner moat is open to the south (dry moats / Sakuramon), so the convex hull alone
-# cuts a diagonal. Close it with the honmaru ishigaki line from OSM retaining walls 363432471 + 405236726.
-HON_SOUTH = [(-105, -70), (-121, -89), (-116, -205), (-86, -204), (-89, -241), (-51, -243), (-18, -239), (-9, -239),
-             (51, -240), (51, -234), (94, -235), (94, -218), (104, -218), (107, -143), (0, -60)]
-hon = max(parts(inner.convex_hull.union(Polygon(HON_SOUTH)).difference(inner).buffer(-0.5).buffer(0.5)), key=lambda g: g.area)
+# cuts a diagonal. web-r7a: close it with the MEASURED honmaru ishigaki line instead of hand-copied points:
+#   1) a retaining wall belongs to the honmaru step if the GSI DEM5A 8 m on its high side is at the honmaru
+#      level (DEM median inside the inner-moat hull, +-3 m) and the drop to its low side is >= 1.5 m (= SPEC.ishigaki.minDrop);
+#   2) those walls are chained end-to-end where the gap is <= 12 m (the widest gate opening in SPEC.gates: a gap that
+#      small is an opening, not the end of the wall); the longest chain is the honmaru ishigaki line.
+# (web-r6 used 15 points copied by hand from OSM ways 363432471 + 405236726; the rule picks those two ways plus
+#  their continuations 512691526 / 363432470 by itself.)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import geodata
+HON_STEP_TOL, MIN_DROP, GATE_GAP, SIDE = 3.0, 1.5, 12.0, 8.0
+def honmaru_chain():
+    import numpy as np, math
+    from shapely.geometry import Point, LineString
+    dem = geodata.DEM(); core = inner.convex_hull.difference(inner.buffer(8)); b = core.bounds
+    P = [(x, y) for x in np.arange(b[0], b[2], 4) for y in np.arange(b[1], b[3], 4) if core.contains(Point(x, y))]
+    zh = float(np.nanmedian(dem(np.array([p[0] for p in P]), np.array([p[1] for p in P]))))
+    sel = []
+    for w in L['retaining_walls']:
+        if len(w['pts']) < 2: continue
+        ls = LineString(w['pts']); n = max(2, int(ls.length / 3)); hi, lo = [], []
+        for k in range(n + 1):
+            f = min(k / n, 1 - 1e-3); a = ls.interpolate(f, normalized=True); c2 = ls.interpolate(f + 1e-3, normalized=True)
+            tx, ty = c2.x - a.x, c2.y - a.y; l = math.hypot(tx, ty) or 1; nx, ny = -ty / l, tx / l
+            z1, z2 = float(dem(a.x + nx * SIDE, a.y + ny * SIDE)), float(dem(a.x - nx * SIDE, a.y - ny * SIDE))
+            hi.append(max(z1, z2)); lo.append(min(z1, z2))
+        if np.all(np.isnan(hi)): continue
+        up, dn = np.nanmedian(hi), np.nanmedian(lo)
+        if abs(up - zh) < HON_STEP_TOL and up - dn >= MIN_DROP: sel.append((w['id'], [tuple(p) for p in w['pts']]))
+    C = {i: (p, [wid]) for i, (wid, p) in enumerate(sel)}
+    while True:
+        best = None
+        for a in C:
+            for b2 in C:
+                if b2 <= a: continue
+                for fa, ea in ((0, C[a][0][0]), (1, C[a][0][-1])):
+                    for fb, eb in ((0, C[b2][0][0]), (1, C[b2][0][-1])):
+                        d = math.dist(ea, eb)
+                        if d <= GATE_GAP and (best is None or d < best[0]): best = (d, a, b2, fa, fb)
+        if not best: break
+        d, a, b2, fa, fb = best; pa, ia = C.pop(a); pb, ib = C.pop(b2)
+        C[a] = ((pa[::-1] if fa == 0 else pa) + (pb[::-1] if fb == 1 else pb), ia + ib)
+    pts, ids = max(C.values(), key=lambda v: LineString(v[0]).length)
+    print('honmaru level (DEM5A median) %.2f m T.P.; honmaru ishigaki chain = OSM retaining walls' % zh, ids, '%.0f m' % LineString(pts).length)
+    return pts
+HON_LINE = honmaru_chain()
+hon = max(parts(inner.convex_hull.union(Polygon(HON_LINE).buffer(0)).difference(inner).buffer(-0.5).buffer(0.5)), key=lambda g: g.area)
 dry = castle.intersection(hon.buffer(40)).difference(water).difference(hon.buffer(0.01)).buffer(-1).buffer(1)
 dry = [g for g in parts(dry) if g.area > 800]
 dryu = unary_union(dry) if dry else Polygon()
