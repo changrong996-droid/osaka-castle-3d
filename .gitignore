@@ -2,3 +2,7 @@ out/
 *.blend1
 __pycache__/
 dl/
+web/shots/*
+!web/shots/aerial.png
+!web/shots/top.png
+!web/shots/report.json
