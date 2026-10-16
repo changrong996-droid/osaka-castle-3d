@@ -59,7 +59,7 @@
     const H = S.H, NX = S.NX;
     // r6：地形 = 渲染用的同一张三角网：被石垣顶线/墙脚线切开的格用切分三角形（S.splitIdx → S.splitTris），格的最高点也按切分三角形算
     const SPL = S.splitIdx || null, SPT = S.splitTris || [], HC = new Float32Array(n);
-    for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { const a = j * NX + i; let m = Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1]); if (SPL && SPL[a] >= 0) { const Tt = SPT[SPL[a]].tris; for (let k = 2; k < Tt.length; k += 3) if (Tt[k] > m) m = Tt[k]; } HC[j * NXc + i] = m; const WC = S.WZC, CL = S.CLS; let w = WC ? -1e9 : S.WZ; if (WC) for (const v of [a, a + 1, a + NX, a + NX + 1]) if (CL[v] < 0 && WC[v] > w) w = WC[v]; T[j * NXc + i] = Math.max(m, w); } // r7b：水格按自己那片水的实测水位（不再用全城最低水位）
+    for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { const a = j * NX + i; let m = Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1]); if (SPL && SPL[a] >= 0) { const Tt = SPT[SPL[a]].tris; for (let k = 2; k < Tt.length; k += 3) if (Tt[k] > m) m = Tt[k]; } HC[j * NXc + i] = m; const WC = S.WZC, CL = S.CLS; let w = WC ? -1e9 : S.WZ; if (WC) for (let k4 = 0; k4 < 4; k4++) { const v = k4 === 0 ? a : k4 === 1 ? a + 1 : k4 === 2 ? a + NX : a + NX + 1; if (CL[v] < 0 && WC[v] > w) w = WC[v]; } /* r8a：不分配临时数组，结果相同 */ T[j * NXc + i] = Math.max(m, w); } // r7b：水格按自己那片水的实测水位（不再用全城最低水位）
     let C = null, tris = 0, samples = 0;
     const keep = opt.keepTris ? [] : null; // 独立几何校验用（只在测试/审计时打开；树按真实三角形）
     let TV = new Float32Array(9 * 65536), nT = 0; // 碰撞用三角形汤
@@ -90,8 +90,10 @@
         for (let j = cj(y0); j <= cj(y1); j++) for (let i = ci(x0); i <= ci(x1); i++) mark(i, j, z1); TB.push(x0, y0, z0, x1, y1, z1); tris += nv / 3;
         if (keep) for (let t = 0; t + 2 < nv; t += 3) { const A = tv(idx ? idx[t] : t), B = tv(idx ? idx[t + 1] : t + 1), Cv = tv(idx ? idx[t + 2] : t + 2); keep.push(A[0], A[1], A[2], B[0], B[1], B[2], Cv[0], Cv[1], Cv[2]); }
         return; }
+      const tvi = (k, o) => { let x = pos[k * 3], y = pos[k * 3 + 1], z = pos[k * 3 + 2]; if (m) { const X = m[0] * x + m[4] * y + m[8] * z + m[12], Y = m[1] * x + m[5] * y + m[9] * z + m[13], Z = m[2] * x + m[6] * y + m[10] * z + m[14]; x = X; y = Y; z = Z; } o[0] = x; o[1] = -z; o[2] = y; return o; }; // = tv，写进复用的数组（r8a：不分配，同一运算）
+      const A = [0, 0, 0], B = [0, 0, 0], Cv = [0, 0, 0];
       for (let t = 0; t + 2 < nv; t += 3) {
-        const A = tv(idx ? idx[t] : t), B = tv(idx ? idx[t + 1] : t + 1), Cv = tv(idx ? idx[t + 2] : t + 2);
+        tvi(idx ? idx[t] : t, A); tvi(idx ? idx[t + 1] : t + 1, B); tvi(idx ? idx[t + 2] : t + 2, Cv);
         if (keep) keep.push(A[0], A[1], A[2], B[0], B[1], B[2], Cv[0], Cv[1], Cv[2]);
         rasterTri(A, B, Cv); tris++;
         const gx1 = gs.x0 + NXc * c, gy1 = gs.y0 + NYc * c; // 细网格外由 outTop（曲轮平面）代表，不进三角形汤
