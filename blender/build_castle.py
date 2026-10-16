@@ -163,6 +163,37 @@ for b in TER["buildings"]:
     if b["type"] == "tamon": tamon(b); continue
     s = snapshot(); KIT[b["type"]](b); xform_since(s, b["cx"], b["cy"], b["z"], b["ang"])
 
+
+# ---------- r12: 土塀（白墙+瓦顶）沿本丸/二之丸石垣顶边，内缩 1.5 m；建筑与土桥处留口 ----------
+WALL_GAPS = [(b["cx"], b["cy"], max(b["w"], b["d"]) / 2 + 3) for b in TER["buildings"] if b["type"] != "tenshu"]
+WALL_GAPS += [(-14, -242, 9), (32, 156, 9), (-121, -90, 9), (149, 20, 9)]
+def dobei(x0, y0, x1, y1, z):
+    L = math.hypot(x1 - x0, y1 - y0); a = math.atan2(y1 - y0, x1 - x0); c = ((x0 + x1) / 2, (y0 + y1) / 2)
+    box("plaster", (c[0], c[1], z + 1.1), (L, 0.55, 2.2), a)
+    box("lacquer", (c[0], c[1], z + 0.25), (L + 0.02, 0.6, 0.5), a)       # 腰板
+    box("tile", (c[0], c[1], z + 2.35), (L + 0.1, 1.2, 0.3), a)          # 瓦顶
+    box("ridge", (c[0], c[1], z + 2.6), (L + 0.1, 0.35, 0.25), a)
+for r in TER["regions"]:
+    if r["name"] not in ("honmaru", "ninomaru"): continue
+    z = r["z"]
+    for ri, ring in enumerate([r["outer"]] + r["holes"]):
+        n = len(ring)
+        area = sum(ring[i][0] * ring[(i + 1) % n][1] - ring[(i + 1) % n][0] * ring[i][1] for i in range(n))
+        sg = (1 if area > 0 else -1) * (1 if ri == 0 else -1)
+        for i in range(n):
+            (ax, ay), (bx, by) = ring[i], ring[(i + 1) % n]
+            L = math.hypot(bx - ax, by - ay)
+            if L < 2: continue
+            ix, iy = -sg * (by - ay) / L * 1.5, sg * (bx - ax) / L * 1.5   # inward
+            k = max(1, int(L // 18))
+            for j in range(k):
+                t0, t1 = j / k, (j + 1) / k
+                x0, y0 = ax + (bx - ax) * t0 + ix, ay + (by - ay) * t0 + iy
+                x1, y1 = ax + (bx - ax) * t1 + ix, ay + (by - ay) * t1 + iy
+                mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+                if any((mx - gx) ** 2 + (my - gy) ** 2 < gr * gr for gx, gy, gr in WALL_GAPS): continue
+                dobei(x0, y0, x1, y1, z)
+
 # ---------- trees ----------
 def inside(x, y, ring):
     c = False; n = len(ring)
