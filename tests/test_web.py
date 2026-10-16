@@ -67,6 +67,7 @@ def run(shots=True):
         st = pg.evaluate('({a: __castle.auditResult, sig: __castle.signature, stats: __castle.stats, loadMs: __castle.loadMs, errs: __castle.errors})')
         rep.update(audit=st['a']['total'], audit_cnt=st['a']['cnt'], audit_items=st['a']['items'][:20], sig1=st['sig'], stats=st['stats'], app_load_ms=st['loadMs'])
         rep['errors'] += st['errs']
+        rep['pack'] = pg.evaluate('__castle.pack || null')  # r8a：默认视图应读预构建包
         pg.wait_for_function('__castle.camAudit', timeout=120000)
         ca = pg.evaluate('__castle.camAudit')
         rep.update(cam_audit=ca['total'], cam_cnt=ca['cnt'], cam_items=ca['items'][:10], cam_near=ca['near'])
@@ -116,6 +117,9 @@ def run(shots=True):
         # reproducibility
         load('#seed=1&lost=1&view=top&labels=0')
         rep['sig1_again'] = pg.evaluate('__castle.signature')
+        load('#seed=1&lost=1&view=top&labels=0&pack=0')  # r8a：强制现场生成 → 签名必须与读包相同，审计 0
+        rep['sig1_live'] = pg.evaluate('__castle.signature'); rep['pack_off'] = pg.evaluate('__castle.pack || null'); rep['audit_live'] = pg.evaluate('__castle.auditResult.total')
+        rep['load_live_s'] = rep['audit_ready_s'][-1]
         load('#seed=2&lost=1&view=top&labels=0')
         rep['sig2'] = pg.evaluate('__castle.signature')
         rep['audit_seed2'] = pg.evaluate('__castle.auditResult.total')
@@ -130,6 +134,8 @@ def run(shots=True):
     import subprocess  # 故障注入（H15–H18）：node tests/test_faults.js
     pr = subprocess.run(['node', os.path.join(ROOT, 'tests', 'test_faults.js')], capture_output=True, text=True)
     rep['faults_node'] = pr.returncode; rep['faults_log'] = pr.stdout.strip().splitlines()
+    pr = subprocess.run(['node', os.path.join(ROOT, 'tests', 'test_pack.js')], capture_output=True, text=True)  # r8a：包 = 现场生成（逐位）
+    rep['pack_node'] = pr.returncode; rep['pack_log'] = pr.stdout.strip().splitlines()
     json.dump(rep, open(os.path.join(SHOTS, 'report.json'), 'w'), ensure_ascii=False, indent=1)
     return rep
 
@@ -154,6 +160,9 @@ def check(rep):
     assert rep['cam_input'] == 0
     assert rep['sig1'] == rep['sig1_again'], (rep['sig1'], rep['sig1_again'])
     assert rep['sig1'] != rep['sig2']
+    assert rep['pack'] and rep['pack'].get('used'), rep['pack']
+    assert rep['sig1_live'] == rep['sig1'] and rep['audit_live'] == 0 and not (rep['pack_off'] or {}).get('used'), (rep['sig1_live'], rep['audit_live'], rep['pack_off'])
+    assert rep['pack_node'] == 0, rep['pack_log']
     for v in VIEWS:
         assert os.path.getsize(os.path.join(SHOTS, v + '.png')) > 20000, v
 
