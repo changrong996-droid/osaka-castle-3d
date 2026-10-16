@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大阪城 全城 3D · 规则驱动 + 自检</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0a08;font-family:"PingFang SC","Hiragino Sans","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+#ui{position:fixed;left:14px;top:14px;color:#f3e6c4;background:rgba(15,12,8,.78);padding:12px 14px;border:1px solid rgba(212,165,44,.45);border-radius:10px;width:300px;max-height:calc(100% - 52px);overflow:auto;font-size:12.5px;backdrop-filter:blur(6px)}
+#ui h1{margin:0 0 2px;font-size:18px;letter-spacing:2px;color:#e8c25a}
+#ui .sub{color:#b9a77a;margin:0 0 8px;line-height:1.5}
+#ui.min>*:not(h1):not(#hide){display:none}
+button{background:#2a2216;color:#f0d98c;border:1px solid #8a6d22;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;margin:4px 4px 0 0}
+button.on{background:#8a6d22;color:#1a1408}
+label{display:flex;align-items:center;gap:6px;margin-top:7px;color:#d8ccb0}
+input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid #6b5520;border-radius:4px;padding:2px 4px}
+#audit{margin-top:10px;border-top:1px solid rgba(212,165,44,.3);padding-top:8px}
+#audit .ah{font-weight:600;margin-bottom:4px}#audit .ok{color:#8fe08a}#audit .ng{color:#ff7a6a}
+#audit table{border-collapse:collapse;width:100%;font-size:11.5px}#audit td{padding:1px 3px;color:#cdbf9f}#audit td:last-child{text-align:right}
+#audit tr.ng td{color:#ff7a6a}#audit .items{margin-top:4px;font-size:11px;color:#ffb0a4}
+#stats{margin-top:8px;color:#9d8f6d;font-size:11px;line-height:1.5}
+#hide{position:absolute;right:8px;top:8px;margin:0;padding:1px 7px}
+#load{position:fixed;inset:0;display:grid;place-items:center;color:#e8c25a;font-size:15px}
+#hint{position:fixed;right:14px;bottom:10px;color:#cbb98f;font-size:11.5px;opacity:.8}
+</style>
+</head>
+<body>
+<div id="load">生成大阪城中…（规则引擎 + 高度网格）</div>
+<div id="ui">
+  <button id="hide">–</button>
+  <h1>大阪城 全城</h1>
+  <p class="sub">德川期城郭（OSM 实测布局）+ 丰臣式天守 · 部件按规则落位，页面自带硬规则审计（违规处标红）。高差为估值。</p>
+  <div id="views"><button data-v="aerial">鸟瞰</button><button data-v="top">俯视</button><button data-v="otemon">大手门</button><button data-v="tenshu">天守</button><button data-v="eastwall">东侧石垣</button></div>
+  <label><input type="checkbox" id="labels"> 标注</label>
+  <label><input type="checkbox" id="lost"> 失传橹 · <span id="era"></span></label>
+  <label>树木随机种子 <input type="number" id="seed" min="1" value="1"></label>
+  <div id="audit"></div>
+  <div id="stats"></div>
+</div>
+<div id="hint">左键旋转 · 右键平移 · 滚轮缩放 · 视角/开关写入网址 # 参数，可复现</div>
+<script src="data.js"></script>
+<script src="site.js"></script>
+<script src="tenshu.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
