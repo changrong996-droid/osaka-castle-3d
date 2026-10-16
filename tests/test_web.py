@@ -78,7 +78,7 @@ def run(shots=True):
         # r6：相机碰撞用的是切分后的地形（与渲染同一张三角网）：在切开的格里、切分地面以上 0.3 m 的点，到地形的精确间隙 ≤0.3 m（若还用网格三角，顶线处会多出最多 ~1 m）
         rep['cam_terrain'] = pg.evaluate("""() => { const S = __castle.site, F = __castle.camField; let n = 0, over = 0, gridOff = 0, worst = 0;
             for (let k = 0; k < S.splitTris.length; k += 7) { const sp = S.splitTris[k]; if (sp.kind === 'dead') continue; const T = sp.tris; for (let t = 0; t < T.length; t += 9) { const x = (T[t] + T[t + 3] + T[t + 6]) / 3, y = (T[t + 1] + T[t + 4] + T[t + 7]) / 3, z = S.heightAt(x, y);
-              if (z < S.WZ + 0.5) continue; n++; const d = F.clearance([x, y, z + 0.3], 3); worst = Math.max(worst, d); if (d > 0.3 + 1e-3) over++; // 负值 = 离别的几何（墙、树）更近，不算
+              if (z < S.wzAt(x, y) + 0.5) continue; n++; const d = F.clearance([x, y, z + 0.3], 3); worst = Math.max(worst, d); if (d > 0.3 + 1e-3) over++; // 负值 = 离别的几何（墙、树）更近，不算
               const q = sp.q, i = q % S.NX, j = (q - i) / S.NX, u = (x - S.X(i)) / S.cell, v = (y - S.Y(j)) / S.cell, H = S.H, a = q, b = q + 1, c = q + S.NX, d2 = c + 1, zg = u >= v ? H[a] + u * (H[b] - H[a]) + v * (H[d2] - H[b]) : H[a] + v * (H[c] - H[a]) + u * (H[d2] - H[c]); if (Math.abs(zg - z) > 0.1) gridOff++; } }
             return { n, over, gridOff, worst: +worst.toFixed(3), tris: __castle.terrainTris }; }""")
         # 步行穿过大手门：合成时钟逐帧驱动真实 step()，每帧检查合法、两帧之间不穿几何；统计在遮盖下（门洞里）的帧数和最低眼高
