@@ -11,22 +11,36 @@
   // ---------- URL 参数（#seed=1&lost=1&view=aerial&labels=1&cell=1.5）----------
   function readHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '' };
+    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0' };
   }
   function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? 1 : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
 
+  // r8a：预构建结果包（web/bake/，tools/bake.js 生成）。键 = site.js 源码哈希 + 数据哈希 + 选项，与清单（bake/manifest.js）里的一致才下载；
+  // 下载与 three.js 的加载并行；任何一步失败（file://、没有 DecompressionStream、键不符、解码出错）都退回现场生成，结果相同。
+  async function loadPack(o) {
+    const PK = window.CASTLE_PACK, MAN = window.CASTLE_BAKE;
+    if (!PK || !MAN || location.protocol === 'file:' || o.cell !== SITE.SPEC.grid.cell || !o.usePack) return null;
+    const key = SITE.genKey({ seed: o.seed, lost: o.lost, cell: o.cell }), ent = MAN[key]; if (!ent) { state.pack = { used: false, why: 'no pack for key' }; return null; }
+    const t0 = performance.now(), r = await fetch(ent.file + '?k=' + key.split('-')[1]); if (!r.ok) throw new Error('pack ' + r.status);
+    const raw = new Uint8Array(await r.arrayBuffer()), t1 = performance.now(), u8 = await PK.gunzip(raw), P = PK.parse(u8);
+    if (P.hdr.key !== key) { state.pack = { used: false, why: 'key mismatch' }; return null; }
+    state.pack = { used: false, file: ent.file, bytes: raw.length, fetchMs: Math.round(t1 - t0), unzipMs: Math.round(performance.now() - t1) }; return P;
+  }
   async function main() {
+    const T00 = performance.now(), P0 = readHash(), packP = loadPack(P0).catch(e => { state.pack = { used: false, why: String(e && e.message || e) }; return null; });
     const im = document.createElement('script'); im.type = 'importmap';
     im.textContent = JSON.stringify({ imports: { three: THREE_BASE + 'build/three.module.js', 'three/addons/': THREE_BASE + 'examples/jsm/' } });
     document.head.appendChild(im);
-    const THREE = await import('three');
-    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
-    const { Sky } = await import('three/addons/objects/Sky.js');
-    run(THREE, OrbitControls, Sky);
+    const modsP = Promise.all([import('three'), import('three/addons/controls/OrbitControls.js'), import('three/addons/objects/Sky.js')]); // 三个模块并行取
+    // r8a：读包与 three.js 的加载重叠——包先到就先把生成结果恢复出来（build 读包，~0.1–0.2 s），再等模块
+    const pk = await packP; let pre = null; state.tl = { main: Math.round(T00), pack: Math.round(performance.now()) };
+    if (pk) { try { pre = SITE.build({ seed: P0.seed, lost: P0.lost, cell: P0.cell, pack: pk }); state.pack.used = true; state.pack.restoreMs = Math.round(pre.ms); } catch (e) { state.pack.used = false; state.pack.why = 'restore: ' + (e && e.message || e); pre = null; } }
+    state.tl.restored = Math.round(performance.now()); const [THREE, { OrbitControls }, { Sky }] = await modsP; state.tl.mods = Math.round(performance.now());
+    run(THREE, OrbitControls, Sky, pre, T00);
   }
 
-  function run(THREE, OrbitControls, Sky) {
-    const T0 = performance.now();
+  function run(THREE, OrbitControls, Sky, PREBUILT, T00) {
+    const T0 = T00 === undefined ? performance.now() : T00; // r8a：从 main() 开始计（含读包），不再从 run() 开始
     const P = readHash();
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
@@ -180,9 +194,10 @@
     // r7b：= THREE.BufferGeometry.computeVertexNormals()（r160，带/不带索引）在类型数组上直接做，浮点运算次序相同，只为提速（不走逐顶点 getX/setXYZ）
     function fastNormals(g) {
       const P = g.attributes.position.array, N = new Float32Array(P.length), I = g.index ? g.index.array : null;
-      const face = (a, b, c) => { const bx = P[b], by = P[b + 1], bz = P[b + 2], cx = P[c] - bx, cy = P[c + 1] - by, cz = P[c + 2] - bz, ax = P[a] - bx, ay = P[a + 1] - by, az = P[a + 2] - bz; return [cy * az - cz * ay, cz * ax - cx * az, cx * ay - cy * ax]; };
-      if (I) { for (let i = 0; i < I.length; i += 3) { const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3, n = face(a, b, c); for (const v of [a, b, c]) { N[v] += n[0]; N[v + 1] += n[1]; N[v + 2] += n[2]; } } }
-      else for (let a = 0; a + 8 < P.length; a += 9) { const n = face(a, a + 3, a + 6); for (const v of [a, a + 3, a + 6]) { N[v] = n[0]; N[v + 1] = n[1]; N[v + 2] = n[2]; } }
+      // r8a：不分配临时数组（同一组浮点运算、同一次序，结果逐位相同）
+      let n0 = 0, n1 = 0, n2 = 0; const face = (a, b, c) => { const bx = P[b], by = P[b + 1], bz = P[b + 2], cx = P[c] - bx, cy = P[c + 1] - by, cz = P[c + 2] - bz, ax = P[a] - bx, ay = P[a + 1] - by, az = P[a + 2] - bz; n0 = cy * az - cz * ay; n1 = cz * ax - cx * az; n2 = cx * ay - cy * ax; };
+      if (I) { for (let i = 0; i < I.length; i += 3) { const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3; face(a, b, c); N[a] += n0; N[a + 1] += n1; N[a + 2] += n2; N[b] += n0; N[b + 1] += n1; N[b + 2] += n2; N[c] += n0; N[c + 1] += n1; N[c + 2] += n2; } }
+      else for (let a = 0; a + 8 < P.length; a += 9) { face(a, a + 3, a + 6); for (let v = a; v <= a + 6; v += 3) { N[v] = n0; N[v + 1] = n1; N[v + 2] = n2; } }
       for (let v = 0; v < N.length; v += 3) { const x = N[v], y = N[v + 1], z = N[v + 2], inv = 1 / (Math.sqrt(x * x + y * y + z * z) || 1); N[v] = x * inv; N[v + 1] = y * inv; N[v + 2] = z * inv; }
       g.setAttribute('normal', new THREE.BufferAttribute(N, 3)); }
     function terrainMesh(S) {
@@ -203,8 +218,8 @@
       const SPL = S.splitIdx, SPT = S.splitTris || [], x0 = S.X(0), y0 = S.Y(0); let nsv = 0; for (const sp of SPT) if (sp.kind !== 'dead') nsv += sp.tris.length / 3;
       const idx = new Uint32Array((NX - 1) * (NY - 1) * 6 + nsv), xp = [], cp = [], vmap = new Map(); let t = 0;
       const vid = (x, y, z, a) => { const fi = (x - x0) / cell, fj = (y - y0) / cell, ri = Math.round(fi), rj = Math.round(fj); if (Math.abs(fi - ri) < 1e-9 && Math.abs(fj - rj) < 1e-9 && ri >= 0 && rj >= 0 && ri < NX && rj < NY) return rj * NX + ri;
-        const key = x + ',' + y + ',' + z; let v = vmap.get(key); if (v !== undefined) return v; // 精确焊接：相邻格共用的切点 x/y/z 逐位相同；同一平面位置不同高度（陡坎两侧）的点不合并
-        v = n + xp.length / 3; vmap.set(key, v); xp.push(x, z, -y);
+        let mx = vmap.get(x); if (mx === undefined) vmap.set(x, mx = new Map()); let my = mx.get(y); if (my === undefined) mx.set(y, my = new Map()); let v = my.get(z); if (v !== undefined) return v; // 精确焊接：相邻格共用的切点 x/y/z 逐位相同；同一平面位置不同高度（陡坎两侧）的点不合并（r8a：三层 Map 代替字符串键，同一判等）
+        v = n + xp.length / 3; my.set(z, v); xp.push(x, z, -y);
         let bq = a, bd = 1e9; for (const q of [a, a + 1, a + NX, a + NX + 1]) { const d = Math.abs(H[q] - z); if (d < bd) { bd = d; bq = q; } } cp.push(col[bq * 3], col[bq * 3 + 1], col[bq * 3 + 2]); return v; }; // 新顶点的颜色 = 高度最接近的角点的颜色（台地顶 / 石垣面 / 下层地面）
       for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) { const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1;
         if (SPL && SPL[a] >= 0) { const T = SPT[SPL[a]].tris; for (let k = 0; k < T.length; k += 9) { const ar = (T[k + 3] - T[k]) * (T[k + 7] - T[k + 1]) - (T[k + 6] - T[k]) * (T[k + 4] - T[k + 1]); if (Math.abs(ar) < 1e-12) continue; const v0 = vid(T[k], T[k + 1], T[k + 2], a), v1 = vid(T[k + 3], T[k + 4], T[k + 5], a), v2 = vid(T[k + 6], T[k + 7], T[k + 8], a); idx[t++] = v0; if (ar > 0) { idx[t++] = v1; idx[t++] = v2; } else { idx[t++] = v2; idx[t++] = v1; } } continue; }
@@ -241,8 +256,8 @@
         pos[q * 3] = x; pos[q * 3 + 1] = h - 0.02; pos[q * 3 + 2] = -y; const k = !inside && !gr ? [0.2, 0.24, 0.2] : [0.55, 0.53, 0.49], r = 0.9 + 0.12 * Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453 % 1);
         col[q * 3] = k[0] * r; col[q * 3 + 1] = k[1] * r; col[q * 3 + 2] = k[2] * r;
       }
-      const idx = []; for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) { const x = -R0 + i * c, y = -R0 + j * c; if (x >= gs.x0 && x + c <= gs.x1 && y >= gs.y0 && y + c <= gs.y1) continue; const a = j * n + i, b = a + 1, cc = a + n, d = cc + 1; idx.push(a, b, d, a, d, cc); }
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); fastNormals(g);
+      const idx = new Uint32Array((n - 1) * (n - 1) * 6); let ni = 0; for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) { const x = -R0 + i * c, y = -R0 + j * c; if (x >= gs.x0 && x + c <= gs.x1 && y >= gs.y0 && y + c <= gs.y1) continue; const a = j * n + i, b = a + 1, cc = a + n, d = cc + 1; idx[ni++] = a; idx[ni++] = b; idx[ni++] = d; idx[ni++] = a; idx[ni++] = d; idx[ni++] = cc; }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(idx.slice(0, ni), 1)); fastNormals(g);
       const om = new THREE.Mesh(g, stoneShader(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }))); om.receiveShadow = true; om.name = 'outer'; grp.add(om);
       // ±700 m 以外：一圈大环（8 个顶点），外圈取内圈角点的城下拟合面高度（不把拟合平面外推到 9 km），与粗网格外缘接上
       const mat = new THREE.MeshStandardMaterial({ color: 0x8a867c, roughness: 1 }), city = S.regions.find(g => g.name === 'city'), cz = (x, y) => city.surf.at(x, y) - 0.02;
@@ -285,10 +300,10 @@
     let site = null, world = null, tenshuProto = null;
     // r6：首次加载时 H 系列审计在第一帧画出来之后再跑（审计只读几何、只标记违规；结果出来后补画违规标记、面板更新）。
     // 之后的重建（换 seed / 现状）照旧同步审计。测试等 __castle.auditResult。
-    function buildWorld(opt, deferAudit) {
+    function buildWorld(opt, deferAudit, pre) {
       const t0 = performance.now();
       if (world) { scene.remove(world); world.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-      site = SITE.build(opt); state.auditResult = null; const A = deferAudit ? null : site.audit();
+      site = pre && pre.opt.seed === opt.seed && pre.opt.lost === opt.lost && pre.opt.cell === opt.cell ? pre : SITE.build(opt); state.auditResult = null; const A = deferAudit ? null : site.audit();
       world = new THREE.Group(); world.name = 'world';
       world.add(terrainMesh(site)); world.add(outerGround(site));
       const k = Kit();
@@ -327,7 +342,7 @@
       h += '</table>'; if (!ok) h += '<div class="items">' + A.items.slice(0, 12).map(it => `<div>${it.rule} · ${it.name}：${it.msg}</div>`).join('') + '</div>';
       el.innerHTML = h;
     }
-    function showStats() { const s = state.stats; $('stats').textContent = `${(s.verts / 1e3).toFixed(0)}k 顶点 · ${(s.tris / 1e3).toFixed(0)}k 三角形 · ${s.parts} 部件 · ${s.trees} 树 · 生成 ${s.buildMs} ms · 场景 ${s.sceneMs} ms · 碰撞场 ${s.camMs} ms${s.auditMs ? ' · 审计 ' + s.auditMs + ' ms' : ''}${s.conform ? ' · 地形切分 ' + s.conform.split + '+' + s.conform.passive + ' 格' : ''}`; }
+    function showStats() { const s = state.stats; $('stats').textContent = `${(s.verts / 1e3).toFixed(0)}k 顶点 · ${(s.tris / 1e3).toFixed(0)}k 三角形 · ${s.parts} 部件 · ${s.trees} 树 · ${site && site.fromPack ? '读包' : '生成'} ${s.buildMs} ms · 场景 ${s.sceneMs} ms · 碰撞场 ${s.camMs} ms${s.auditMs ? ' · 审计 ' + s.auditMs + ' ms' : ''}${s.conform ? ' · 地形切分 ' + s.conform.split + '+' + s.conform.passive + ' 格' : ''}`; }
     // ---------- 相机物理体：碰撞场、视角规则、过渡路径、每帧约束（web-r3）----------
     const CAMX = window.CASTLE_CAMERA, w3 = v => [v.x, -v.z, v.y], setV = (v, a) => v.set(a[0], a[2], -a[1]);
     // 视角 = 规则：目标点（看什么）+ 方位角（相机在目标的哪一侧，度，东=0 逆时针）+ 仰角 + 距离 + 目标本体半径 rf（视线检查时不算遮挡）
@@ -544,7 +559,7 @@
     $('seed').value = P.seed; $('seed').onchange = e => { P.seed = Math.max(1, +e.target.value | 0); writeHash(P); buildWorld(P); };
     $('hide').onclick = () => $('ui').classList.toggle('min');
 
-    buildWorld(P, true); setView(P.view, true);
+    buildWorld(P, true, PREBUILT); setView(P.view, true);
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
     state.goView = v => setView(v, false); state.walkThrough = (id, now) => walkThrough(id, now); state.route = route; state.walkAnim = walkAnim; state.enforce = enforce; state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
