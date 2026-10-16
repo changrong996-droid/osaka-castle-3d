@@ -1,0 +1,336 @@
+{
+ "datum": "T.P. (Tokyo Peil), metres; model r6 levels are relative (honmaru 14)",
+ "terraces": {
+  "honmaru/本丸主台地（实测石垣链内）": {
+   "const": {
+    "a": 32.919,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 3.173,
+    "max": 7.68,
+    "p95": 7.567,
+    "n": 20053,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 34.159,
+    "gx": 0.00991,
+    "gy": 0.01585,
+    "rms": 2.761,
+    "max": 8.348,
+    "p95": 5.965,
+    "n": 20053,
+    "grade": 0.0187
+   },
+   "chosen": "const",
+   "excluded_modern_cells": 2272
+  },
+  "honmaru/山里丸（链外，北侧）": {
+   "const": {
+    "a": 21.301,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 3.827,
+    "max": 11.568,
+    "p95": 8.165,
+    "n": 5644,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 29.531,
+    "gx": -0.02229,
+    "gy": -0.08797,
+    "rms": 2.231,
+    "max": 8.636,
+    "p95": 4.28,
+    "n": 5644,
+    "grade": 0.0908
+   },
+   "chosen": "const",
+   "excluded_modern_cells": 43
+  },
+  "honmaru/天守台": {
+   "const": {
+    "a": 35.722,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 2.752,
+    "max": 4.887,
+    "p95": 4.321,
+    "n": 1142,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 36.058,
+    "gx": 0.01781,
+    "gy": -0.08021,
+    "rms": 2.487,
+    "max": 5.849,
+    "p95": 4.049,
+    "n": 1142,
+    "grade": 0.0822
+   },
+   "chosen": "const",
+   "excluded_modern_cells": 194
+  },
+  "dry#1": {
+   "const": {
+    "a": 17.348,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 1.883,
+    "max": 8.0,
+    "p95": 4.12,
+    "n": 4916,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 16.1,
+    "gx": 0.00074,
+    "gy": -0.00604,
+    "rms": 1.836,
+    "max": 7.604,
+    "p95": 4.342,
+    "n": 4916,
+    "grade": 0.0061
+   },
+   "chosen": "const",
+   "excluded_modern_cells": 8
+  },
+  "ninomaru#2": {
+   "const": {
+    "a": 20.426,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 5.136,
+    "max": 10.623,
+    "p95": 8.411,
+    "n": 80729,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 18.17,
+    "gx": -0.0121,
+    "gy": -0.02498,
+    "rms": 1.983,
+    "max": 7.636,
+    "p95": 4.079,
+    "n": 80729,
+    "grade": 0.0278
+   },
+   "chosen": "plane",
+   "excluded_modern_cells": 5005
+  },
+  "city#4": {
+   "const": {
+    "a": 12.426,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 7.021,
+    "max": 11.464,
+    "p95": 10.478,
+    "n": 156906,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 10.422,
+    "gx": -0.0095,
+    "gy": -0.01389,
+    "rms": 3.316,
+    "max": 13.05,
+    "p95": 6.813,
+    "n": 156906,
+    "grade": 0.0168
+   },
+   "chosen": "plane",
+   "excluded_modern_cells": 28909
+  },
+  "city#7": {
+   "const": {
+    "a": 3.678,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 0.131,
+    "max": 0.412,
+    "p95": 0.263,
+    "n": 923,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": -12.384,
+    "gx": 0.01144,
+    "gy": 0.0272,
+    "rms": 0.05,
+    "max": 0.225,
+    "p95": 0.098,
+    "n": 923,
+    "grade": 0.0295
+   },
+   "chosen": "const",
+   "excluded_modern_cells": 1310
+  },
+  "band(城下外圈)#8": {
+   "const": {
+    "a": 14.8,
+    "gx": 0.0,
+    "gy": 0.0,
+    "rms": 5.424,
+    "max": 9.646,
+    "p95": 8.487,
+    "n": 9523,
+    "grade": 0.0
+   },
+   "plane": {
+    "a": 10.584,
+    "gx": -0.0121,
+    "gy": -0.01712,
+    "rms": 3.292,
+    "max": 8.775,
+    "p95": 5.632,
+    "n": 9523,
+    "grade": 0.021
+   },
+   "chosen": "plane",
+   "excluded_modern_cells": 604
+  }
+ },
+ "excluded": {},
+ "model_r7a_vs_dem": {
+  "offset": 17.015,
+  "rms": 7.265,
+  "max": 15.7,
+  "n": 279836
+ },
+ "ishigaki": {
+  "faces": 962,
+  "artefact_vertical_or_2p8": 629,
+  "inclined_h_gt_3": 318,
+  "batter_pct": {
+   "10": 0.239,
+   "25": 0.29,
+   "50": 0.403,
+   "75": 0.497,
+   "90": 0.539
+  },
+  "face_height_max": 33.31
+ },
+ "water": [
+  {
+   "name": "西外掘",
+   "members": [
+    37401880
+   ],
+   "level": 5.82,
+   "n_faces": 28,
+   "spread_p10_p50": [
+    5.82,
+    5.83
+   ],
+   "shore_dem_p5": 10.67,
+   "ok_below_shore": true,
+   "centroid": [
+    -372,
+    5
+   ]
+  },
+  {
+   "name": "寝屋川",
+   "members": [
+    154410789,
+    154410790,
+    154410793,
+    173151300,
+    173199879
+   ],
+   "level": null,
+   "n_faces": 0,
+   "spread_p10_p50": null,
+   "shore_dem_p5": 1.49,
+   "ok_below_shore": false,
+   "centroid": [
+    -140,
+    1516
+   ],
+   "note": "no inclined PLATEAU face on its shore (river outside the castle mesh); DEM water-surface median used"
+  },
+  {
+   "name": "南外堀",
+   "members": [
+    154410769
+   ],
+   "level": 8.79,
+   "n_faces": 52,
+   "spread_p10_p50": [
+    8.77,
+    9.22
+   ],
+   "shore_dem_p5": 17.4,
+   "ok_below_shore": true,
+   "centroid": [
+    -13,
+    -398
+   ]
+  },
+  {
+   "name": "東外堀",
+   "members": [
+    37401884
+   ],
+   "level": 4.43,
+   "n_faces": 24,
+   "spread_p10_p50": [
+    4.43,
+    4.44
+   ],
+   "shore_dem_p5": 4.88,
+   "ok_below_shore": true,
+   "centroid": [
+    357,
+    -77
+   ]
+  },
+  {
+   "name": "内堀",
+   "members": [
+    375025972
+   ],
+   "level": 9.0,
+   "n_faces": 64,
+   "spread_p10_p50": [
+    7.38,
+    9.0
+   ],
+   "shore_dem_p5": 10.81,
+   "ok_below_shore": true,
+   "centroid": [
+    47,
+    48
+   ]
+  },
+  {
+   "name": "北外堀",
+   "members": [
+    37401883
+   ],
+   "level": 3.47,
+   "n_faces": 18,
+   "spread_p10_p50": [
+    3.46,
+    3.47
+   ],
+   "shore_dem_p5": 5.06,
+   "ok_below_shore": true,
+   "centroid": [
+    -35,
+    300
+   ]
+  }
+ ],
+ "h25_today": {
+  "samples": 10135,
+  "within_1p5m": 0.325,
+  "median": 7.69,
+  "p90": 99.0,
+  "unmatched_gt5m": 0.55
+ }
+}
