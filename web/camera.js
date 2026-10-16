@@ -57,7 +57,9 @@
     const K = Math.ceil(R / c);
     const T = new Float32Array(n);
     const H = S.H, NX = S.NX;
-    for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { const a = j * NX + i; T[j * NXc + i] = Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1], S.WZ); }
+    // r6：地形 = 渲染用的同一张三角网：被石垣顶线/墙脚线切开的格用切分三角形（S.splitIdx → S.splitTris），格的最高点也按切分三角形算
+    const SPL = S.splitIdx || null, SPT = S.splitTris || [], HC = new Float32Array(n);
+    for (let j = 0; j < NYc; j++) for (let i = 0; i < NXc; i++) { const a = j * NX + i; let m = Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1]); if (SPL && SPL[a] >= 0) { const Tt = SPT[SPL[a]].tris; for (let k = 2; k < Tt.length; k += 3) if (Tt[k] > m) m = Tt[k]; } HC[j * NXc + i] = m; T[j * NXc + i] = Math.max(m, S.WZ); }
     let C = null, tris = 0, samples = 0;
     const keep = opt.keepTris ? [] : null; // 独立几何校验用（只在测试/审计时打开；树按真实三角形）
     let TV = new Float32Array(9 * 65536), nT = 0; // 碰撞用三角形汤
@@ -142,7 +144,8 @@
       if (inGrid(px - cap, py - cap) && inGrid(px + cap, py + cap)) { // 地形三角网（与渲染网格同一剖分）
         const i0 = Math.max(0, ci(px - cap)), i1 = Math.min(NXc - 1, ci(px + cap)), j0 = Math.max(0, cj(py - cap)), j1 = Math.min(NYc - 1, cj(py + cap)), tk = TK;
         for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const a = j * NX + i, X0 = gs.x0 + i * c, Y0 = gs.y0 + j * c, X1 = X0 + c, Y1 = Y0 + c;
-          if (pz - Math.max(H[a], H[a + 1], H[a + NX], H[a + NX + 1]) >= d) continue;
+          if (pz - HC[j * NXc + i] >= d) continue;
+          if (SPL && SPL[a] >= 0) { const Tt = SPT[SPL[a]].tris; for (let k = 0; k < Tt.length; k += 9) { const d2 = ptTri2(px, py, pz, Tt, k); if (d2 < d * d) { d = Math.sqrt(d2); nx = px - CP[0]; ny = py - CP[1]; nz = pz - CP[2]; } } continue; }
           tk[0] = X0; tk[1] = Y0; tk[2] = H[a]; tk[3] = X1; tk[4] = Y0; tk[5] = H[a + 1]; tk[6] = X1; tk[7] = Y1; tk[8] = H[a + NX + 1];
           let d2 = ptTri2(px, py, pz, tk, 0); if (d2 < d * d) { d = Math.sqrt(d2); nx = px - CP[0]; ny = py - CP[1]; nz = pz - CP[2]; }
           tk[3] = X1; tk[4] = Y1; tk[5] = H[a + NX + 1]; tk[6] = X0; tk[7] = Y1; tk[8] = H[a + NX];
