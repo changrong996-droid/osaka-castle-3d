@@ -66,6 +66,17 @@ def main():
     dem = G.DEM(); M, CLS, H, TAG, X, Y = load_grid(); Z = dem(X, Y)
     interior = erode_interior(CLS, TAG)
     modern = [Polygon(b['pts']).buffer(3) for b in L['buildings'] if len(b['pts']) > 3]
+    # r7b: changed ground (post-castle earthworks that are not OSM buildings) = OSM areas tagged as covered water works
+    # (man_made=reservoir_covered / storage_tank, or named 貯水池 'reservoir'): the honmaru 貯水池 (OSM way 303446425, Osaka
+    # waterworks reservoir of the Meiji era) is a flat 38-40 m T.P. mound 7 m above the honmaru plaza in DEM5A.
+    osm = json.load(open(os.path.join(ROOT, 'data', 'osm.json')))['elements']; nodes = {e['id']: e for e in osm if e['type'] == 'node'}
+    changed = []
+    for e in osm:
+        t = e.get('tags', {})
+        if e['type'] != 'way' or not (t.get('man_made') in ('reservoir_covered', 'storage_tank') or t.get('name') == '貯水池'): continue
+        pts = [G.ll2xy(nodes[i]['lat'], nodes[i]['lon']) for i in e.get('nodes', []) if i in nodes]
+        if len(pts) >= 4: changed.append(dict(id=e['id'], name=t.get('name', ''), reason='post-castle water works (OSM ' + ', '.join(k + '=' + v for k, v in t.items() if k in ('historic', 'man_made', 'name')) + ')', pts=[[round(x, 1), round(y, 1)] for x, y in pts]))
+    modern += [Polygon(c['pts']).buffer(3) for c in changed]
     MOD = raster_mask(modern, X, Y)
     names = {r['i']: r['name'] for r in M['regions']}; names[M['band']] = 'band(城下外圈)'
     # measured sub-terrace split of the honmaru: the ishigaki chain polygon (make_terrain.honmaru_chain)
@@ -77,16 +88,23 @@ def main():
     main_ter = Polygon(mt.HON_LINE).buffer(0); MAIN = raster_mask([main_ter], X, Y)
     # tenshu base (天守台) = measured: PLATEAU tenshu LOD2 ground ring is not used here; use OSM 大阪城 footprint +8 m (stone base skirt)
     tb = [Polygon(b['pts']).buffer(8) for b in L['heritage'] if b['name'] == '大阪城']; TB = raster_mask(tb, X, Y)
-    res = {'datum': 'T.P. (Tokyo Peil), metres; model r6 levels are relative (honmaru 14)', 'terraces': {}, 'excluded': {}}
+    res = {'changed_areas': changed, 'datum': 'T.P. (Tokyo Peil), metres; model r6 levels are relative (honmaru 14)', 'terraces': {}, 'excluded': {}}
     tot = []
     groups = []
     for k in sorted(set(np.unique(CLS)) - {-1}):
         nm = names.get(int(k), str(k))
         base = (CLS == k) & interior & ~np.isnan(Z)
         if nm == 'honmaru':
-            groups += [('honmaru/本丸主台地（实测石垣链内）', base & MAIN & ~TB, False), ('honmaru/山里丸（链外，北侧）', base & ~MAIN, False), ('honmaru/天守台', (CLS == k) & TB & ~np.isnan(Z), False)]
+            groups += [('honmaru/本丸主台地（实测石垣链内）', base & MAIN & ~TB, False), ('honmaru/天守台', (CLS == k) & TB & ~np.isnan(Z), False)]
+            if 'yamazato' not in names.values(): groups.append(('honmaru/山里丸（链外，北侧）', base & ~MAIN, False))
+        elif nm == 'yamazato':   # r7b: the model has its own yamazato region (make_terrain split along the measured chain)
+            groups.append(('honmaru/山里丸（链外，北侧）', base, False))
         else:
             groups.append((nm + '#%d' % k, base, nm not in ('dry',)))
+    # r7b: land classes that touch each other without a measured edge between them must share one surface (no seam):
+    # all city regions + the outer band form one connected 'joka' ground -> one joint fit.
+    city_k = [int(k) for k in names if names[k] == 'city'] + [M['band']]
+    groups.append(('joka(城下+外圈，连通地面)', np.isin(CLS, city_k) & interior & ~np.isnan(Z), True))
     for label, m, plane in groups:
         mm = m & ~MOD; nmod = int((m & MOD).sum())
         if mm.sum() < 30: continue
@@ -95,6 +113,9 @@ def main():
         res['terraces'][label] = dict(const=f0, plane=f1, chosen='plane' if use is f1 else 'const', excluded_modern_cells=nmod)
         print('%-34s n=%6d  const a=%6.2f rms %5.2f max %5.2f | plane a=%6.2f g=(%.4f,%.4f) grade %.3f rms %5.2f max %5.2f p95 %5.2f | modern excl %d' % (
             label, f0['n'], f0['a'], f0['rms'], f0['max'], f1['a'], f1['gx'], f1['gy'], f1['grade'], f1['rms'], f1['max'], f1['p95'], nmod))
+    T = res['terraces']; pick = lambda k: dict(T[k][T[k]['chosen']], src=k)
+    res['surfaces'] = {'honmaru': pick('honmaru/本丸主台地（实测石垣链内）'), 'yamazato': pick('honmaru/山里丸（链外，北侧）'), 'tenshudai': pick('honmaru/天守台'),
+                       'dry': pick([k for k in T if k.startswith('dry')][0]), 'ninomaru': pick([k for k in T if k.startswith('ninomaru')][0]), 'joka': pick('joka(城下+外圈，连通地面)')}
     # current model vs DEM (H22 as it would read today): best single datum offset on all interior terrace samples
     m = interior & ~np.isnan(Z) & ~MOD & (CLS >= 0)
     off = float(np.median(Z[m] - H[m])); r = Z[m] - H[m] - off
