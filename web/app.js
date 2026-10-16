@@ -81,6 +81,10 @@
         quad(m, p[0], p[1], p[5], p[4]); quad(m, p[1], p[2], p[6], p[5]); quad(m, p[2], p[3], p[7], p[6]); quad(m, p[3], p[0], p[4], p[7]);
       }
       function seg(m, x0, y0, x1, y1, z0, t, h) { const L = Math.hypot(x1 - x0, y1 - y0); box(m, (x0 + x1) / 2, (y0 + y1) / 2, z0, L, t, h, Math.atan2(y1 - y0, x1 - x0)); }
+      // r7b：斜墙段——底面沿墙从 za 线性变到 zb（斜面台地上的土塀/枡形墙跟着地面走），高 h、厚 t
+      function sseg(m, x0, y0, x1, y1, za, zb, t, h) { const L = Math.hypot(x1 - x0, y1 - y0) || 1, nx = -(y1 - y0) / L * t / 2, ny = (x1 - x0) / L * t / 2;
+        const p = [[x0 - nx, y0 - ny, za], [x1 - nx, y1 - ny, zb], [x1 + nx, y1 + ny, zb], [x0 + nx, y0 + ny, za]]; const q = p.map(v => [v[0], v[1], v[2] + h]);
+        quad(m, q[0], q[1], q[2], q[3]); quad(m, p[0], p[3], p[2], p[1]); quad(m, p[0], p[1], q[1], q[0]); quad(m, p[1], p[2], q[2], q[1]); quad(m, p[2], p[3], q[3], q[2]); quad(m, p[3], p[0], q[0], q[3]); }
       function prism(m, poly, z0, z1, mtop) { // 多边形柱（可凹）
         const area = poly.reduce((s, p, i) => s + p[0] * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * p[1], 0);
         const pl = area < 0 ? poly.slice().reverse() : poly;
@@ -105,8 +109,8 @@
         const a = P(-W2, 0, z0 + rise), b = P(W2, 0, z0 + rise); seg('ridge', a[0], a[1], b[0], b[1], z0 + rise - 0.1, 0.45, 0.4);
       }
       function windows(cx, cy, z, w, d, ang, n, m2) { const c = Math.cos(ang), s = Math.sin(ang); for (const sd of [-1, 1]) { for (let i = 0; i < n; i++) { const u = -w / 2 + w * (i + 0.5) / n, v = sd * (d / 2 + 0.03); box(m2 || 'window', cx + u * c - v * s, cy + u * s + v * c, z, 1.0, 0.12, 0.9, ang); } const m = Math.max(1, Math.round(n * d / w)); for (let i = 0; i < m; i++) { const u = sd * (w / 2 + 0.03), v = -d / 2 + d * (i + 0.5) / m; box(m2 || 'window', cx + u * c - v * s, cy + u * s + v * c, z, 0.12, 1.0, 0.9, ang); } } }
-      function meshes() { const out = []; for (const [m, a] of Object.entries(acc)) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(a, 3)); g.computeVertexNormals(); const mesh = new THREE.Mesh(g, M[m]); mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = m; out.push(mesh); } return out; }
-      return { box, seg, prism, hip, gable, windows, quad, tri, meshes };
+      function meshes() { const out = []; for (const [m, a] of Object.entries(acc)) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(a, 3)); fastNormals(g); const mesh = new THREE.Mesh(g, M[m]); mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = m; out.push(mesh); } return out; }
+      return { box, seg, sseg, prism, hip, gable, windows, quad, tri, meshes };
     }
 
     // ---------- 部件族 ----------
@@ -141,11 +145,12 @@
           for (const sd of [-1, 1]) k.box('wood', q.x + m[0] * sd * (q.w / 2 - 0.2) + dv[0] * lw / 2, q.y + m[1] * sd * (q.w / 2 - 0.2) + dv[1] * lw / 2, z, 0.25, lw, H0 - 0.2, q.ang); k.box('iron', q.x, q.y, z + SITE.SPEC.passH.tamon, q.w, q.len, H0 - SITE.SPEC.passH.tamon, q.ang); }
         for (const P of pieces) k.prism('stone', P, z, z + H0);
         k.prism('lacquer', b.fp, z + H0, z + H0 + 0.6); k.prism('plaster', b.fp, z + H0 + 0.6, z + H0 + 4.2); k.prism('ridge', b.roof, z + H0 + 3.9, z + H0 + 4.5, 'tile'); if (b.roof2 && b.roof2.length >= 3) k.prism('tile', b.roof2, z + H0 + 4.5, z + H0 + 6.1, 'ridge'); },
-      dobei(k, p) { const e = (j, w) => j === 'joint' ? w / 2 : 0, L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L;
-        const sg = (m, z, w, h, ext) => { const a = ext ? e(p.j0, w) : 0, b = ext ? e(p.j1, w) : 0; k.seg(m, p.x0 - tx * a, p.y0 - ty * a, p.x1 + tx * b, p.y1 + ty * b, z, w, h); };
-        sg('lacquer', p.z, p.t + 0.04, 0.5, true); sg('plaster', p.z + 0.5, p.t, p.h - 0.5, true); sg('tile', p.z + p.h, p.t + 0.7, 0.28, true); sg('ridge', p.z + p.h + 0.28, 0.3, 0.22, true); },
-      mwall(k, p) { const L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L, a = p.j0 === 'joint' ? p.t / 2 : 0, b = p.j1 === 'joint' ? p.t / 2 : 0;
-        k.seg('stone', p.x0 - tx * a, p.y0 - ty * a, p.x1 + tx * b, p.y1 + ty * b, p.z, p.t, p.h); FAM.dobei(k, { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, z: p.z + p.h, t: 0.6, h: 2.0, j0: p.j0, j1: p.j1 }); },
+      // r7b：墙底面 = 设计地面沿墙的线性值 z0→z1（斜面台地），接头处的延长段按同一斜率外推；底面再埋 0.3 m（三角网插值不留缝）
+      dobei(k, p) { const e = (j, w) => j === 'joint' ? w / 2 : 0, L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L, z0 = p.z0 !== undefined ? p.z0 : p.z, z1 = p.z1 !== undefined ? p.z1 : p.z, gz = (z1 - z0) / L;
+        const sg = (m, dz, w, h, ext) => { const a = ext ? e(p.j0, w) : 0, b = ext ? e(p.j1, w) : 0; k.sseg(m, p.x0 - tx * a, p.y0 - ty * a, p.x1 + tx * b, p.y1 + ty * b, z0 - gz * a + dz, z1 + gz * b + dz, w, h); };
+        sg('lacquer', -0.3, p.t + 0.04, 0.8, true); sg('plaster', 0.5, p.t, p.h - 0.5, true); sg('tile', p.h, p.t + 0.7, 0.28, true); sg('ridge', p.h + 0.28, 0.3, 0.22, true); },
+      mwall(k, p) { const L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L, a = p.j0 === 'joint' ? p.t / 2 : 0, b = p.j1 === 'joint' ? p.t / 2 : 0, z0 = p.z0 !== undefined ? p.z0 : p.z, z1 = p.z1 !== undefined ? p.z1 : p.z, gz = (z1 - z0) / L;
+        k.sseg('stone', p.x0 - tx * a, p.y0 - ty * a, p.x1 + tx * b, p.y1 + ty * b, z0 - gz * a - 0.3, z1 + gz * b - 0.3, p.t, p.h + 0.3); FAM.dobei(k, { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, z0: z0 + p.h, z1: z1 + p.h, t: 0.6, h: 2.0, j0: p.j0, j1: p.j1 }); },
       bridge(k, p, S) { // r5：桥面（含两端桥台段）+ 栏杆（只在桥面以上）+ 桥墩（按 H17 规则生成：落在平整堀底、每跨 ≤3 間）+ 墩顶横梁
         const B = (S.bridges || []).find(b => b.ramp.part === p); if (!B) return; const hw = B.hw, ang = Math.atan2(B.u[1], B.u[0]), A = (s, o, z) => { const q = B.P(s, o); return [q[0], q[1], z]; };
         const n = Math.max(2, Math.ceil((B.s1 - B.s0) / 2));
@@ -154,7 +159,7 @@
           for (const sd of [-1, 1]) k.quad('deck', A(s0, sd * hw, z0 - t), A(s1, sd * hw, z1 - t), A(s1, sd * hw, z1), A(s0, sd * hw, z0));
           const r0 = Math.max(s0, 0), r1 = Math.min(s1, B.len); if (r1 > r0) for (const sd of [-1, 1]) { const ra = A(r0, sd * hw * 0.95, 0), rb = A(r1, sd * hw * 0.95, 0); k.seg('vermil', ra[0], ra[1], rb[0], rb[1], (B.topAt(r0) + B.topAt(r1)) / 2 + 0.9, 0.2, 0.2); } }
         const np = Math.max(2, Math.round(B.len / 2)); for (let i = 0; i <= np; i++) { const s = B.len * i / np; for (const sd of [-1, 1]) { const q = A(s, sd * hw * 0.95, 0); k.box('vermil', q[0], q[1], B.topAt(s), 0.22, 0.22, 1.1, ang); } }
-        if (P.fault === 'c8') { const sup = [B.sA].concat(B.piers.map(q2 => q2.s), [B.sB]).sort((a2, b2) => a2 - b2); let sm = B.len / 2; for (let i = 1; i < sup.length; i++) if (sup[i - 1] <= B.len / 2 && sup[i] >= B.len / 2) { sm = (sup[i - 1] + sup[i]) / 2; break; } const q = A(sm, 0, 0); /* 横在 C8 走的那一跨的中线上 */ k.box('wood', q[0], q[1], S.WZ + 0.5, 0.6, 2 * hw + 4, 1.0, ang); } // 故障注入（测试用）：桥下横一根梁，C8 必须报出来
+        if (P.fault === 'c8') { const sup = [B.sA].concat(B.piers.map(q2 => q2.s), [B.sB]).sort((a2, b2) => a2 - b2); let sm = B.len / 2; for (let i = 1; i < sup.length; i++) if (sup[i - 1] <= B.len / 2 && sup[i] >= B.len / 2) { sm = (sup[i - 1] + sup[i]) / 2; break; } const q = A(sm, 0, 0); /* 横在 C8 走的那一跨的中线上 */ k.box('wood', q[0], q[1], S.wzAt(q[0], q[1]) + 0.5, 0.6, 2 * hw + 4, 1.0, ang); } // 故障注入（测试用）：桥下横一根梁，C8 必须报出来
         for (const pr of B.piers) { for (const q of pr.rows) k.box('wood', q[0], q[1], pr.zb, SITE.SPEC.bridge.pierW, SITE.SPEC.bridge.pierW, pr.zt - pr.zb, ang); k.seg('wood', pr.rows[0][0], pr.rows[0][1], pr.rows[1][0], pr.rows[1][1], pr.zt - 0.45, 0.5, 0.45); } },
       dobashi(k, p, S) { // 土桥路面：沿剖面铺一条略高于地形的碎石路面
         const r = S.ramps.find(q => q.part === p), L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0), n = Math.max(2, Math.ceil(L / 1.5)), ang = Math.atan2(p.y1 - p.y0, p.x1 - p.x0), nx = -Math.sin(ang), ny = Math.cos(ang), hw = p.w / 2 - 0.4;
@@ -172,6 +177,14 @@
         for (let i = 1; i < r.pts.length - 1; i++) { const q = r.pts[i], N = 10; for (let j = 0; j < N; j++) { const a0 = j / N * Math.PI * 2, a1 = (j + 1) / N * Math.PI * 2, P1 = [q[0] + Math.cos(a0) * hw, q[1] + Math.sin(a0) * hw], P2 = [q[0] + Math.cos(a1) * hw, q[1] + Math.sin(a1) * hw]; k.tri('road', [q[0], q[1], zr(q[0], q[1])], [P1[0], P1[1], zr(...P1)], [P2[0], P2[1], zr(...P2)]); } } }
     }
     // ---------- 地形网格 ----------
+    // r7b：= THREE.BufferGeometry.computeVertexNormals()（r160，带/不带索引）在类型数组上直接做，浮点运算次序相同，只为提速（不走逐顶点 getX/setXYZ）
+    function fastNormals(g) {
+      const P = g.attributes.position.array, N = new Float32Array(P.length), I = g.index ? g.index.array : null;
+      const face = (a, b, c) => { const bx = P[b], by = P[b + 1], bz = P[b + 2], cx = P[c] - bx, cy = P[c + 1] - by, cz = P[c + 2] - bz, ax = P[a] - bx, ay = P[a + 1] - by, az = P[a + 2] - bz; return [cy * az - cz * ay, cz * ax - cx * az, cx * ay - cy * ax]; };
+      if (I) { for (let i = 0; i < I.length; i += 3) { const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3, n = face(a, b, c); for (const v of [a, b, c]) { N[v] += n[0]; N[v + 1] += n[1]; N[v + 2] += n[2]; } } }
+      else for (let a = 0; a + 8 < P.length; a += 9) { const n = face(a, a + 3, a + 6); for (const v of [a, a + 3, a + 6]) { N[v] = n[0]; N[v + 1] = n[1]; N[v + 2] = n[2]; } }
+      for (let v = 0; v < N.length; v += 3) { const x = N[v], y = N[v + 1], z = N[v + 2], inv = 1 / (Math.sqrt(x * x + y * y + z * z) || 1); N[v] = x * inv; N[v + 1] = y * inv; N[v + 2] = z * inv; }
+      g.setAttribute('normal', new THREE.BufferAttribute(N, 3)); }
     function terrainMesh(S) {
       const { NX, NY, H, CLS, TAG, LOCK, cell } = S, n = NX * NY, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
       const nino = S.regions.filter(g => g.name === 'ninomaru').sort((a, b) => b.area - a.area)[0];
@@ -197,7 +210,7 @@
         if (SPL && SPL[a] >= 0) { const T = SPT[SPL[a]].tris; for (let k = 0; k < T.length; k += 9) { const ar = (T[k + 3] - T[k]) * (T[k + 7] - T[k + 1]) - (T[k + 6] - T[k]) * (T[k + 4] - T[k + 1]); if (Math.abs(ar) < 1e-12) continue; const v0 = vid(T[k], T[k + 1], T[k + 2], a), v1 = vid(T[k + 3], T[k + 4], T[k + 5], a), v2 = vid(T[k + 6], T[k + 7], T[k + 8], a); idx[t++] = v0; if (ar > 0) { idx[t++] = v1; idx[t++] = v2; } else { idx[t++] = v2; idx[t++] = v1; } } continue; }
         idx[t++] = a; idx[t++] = b; idx[t++] = d; idx[t++] = a; idx[t++] = d; idx[t++] = c; }
       const P2 = new Float32Array(pos.length + xp.length), C2 = new Float32Array(col.length + cp.length); P2.set(pos); P2.set(xp, pos.length); C2.set(col); C2.set(cp, col.length);
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P2, 3)); g.setAttribute('color', new THREE.BufferAttribute(C2, 3)); g.setIndex(new THREE.BufferAttribute(idx.subarray(0, t), 1)); g.computeVertexNormals();
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P2, 3)); g.setAttribute('color', new THREE.BufferAttribute(C2, 3)); g.setIndex(new THREE.BufferAttribute(idx.subarray(0, t), 1)); fastNormals(g);
       state.terrainTris = t / 3;
       const m = new THREE.Mesh(g, stoneShader(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); m.receiveShadow = true; m.castShadow = true; m.name = 'terrain';
       void nino; void LOCK; return m;
@@ -220,22 +233,30 @@
       };
       return mat;
     }
-    function outerGround(S) { // 网格以外（±700 m 内）：4 m 粗网格，按 data 的曲轮多边形取高（城下 0 / 河 -7），与细网格边界对齐、只建细网格外的格子
+    function outerGround(S) { // 网格以外（±700 m 内）：4 m 粗网格，按 data 的曲轮多边形取高（r7b：各曲轮的拟合地面 T.P.；水体取该水体的堀底），与细网格边界对齐、只建细网格外的格子
       const grp = new THREE.Group(), gs = SITE.SPEC.grid, c = 4, R0 = 700, n = R0 * 2 / c + 1, pos = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3);
-      const lv = (x, y) => { const g = S.regionAt(x, y); return g ? (g.name === 'city' ? 0 : g.z) : S.BED; };
+      const lv = (x, y) => { const g = S.regionAt(x, y); return g ? g.surf.at(x, y) : S.bodyAtPt(x, y).bed; }, wet = (x, y) => !S.regionAt(x, y);
       for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-        const x = -R0 + i * c, y = -R0 + j * c, q = j * n + i, inside = x > gs.x0 && x < gs.x1 && y > gs.y0 && y < gs.y1, h = inside ? 0 : lv(x, y);
-        pos[q * 3] = x; pos[q * 3 + 1] = h - (h >= 0 ? 0.02 : 0); pos[q * 3 + 2] = -y; const k = h < -1 ? [0.2, 0.24, 0.2] : [0.55, 0.53, 0.49], r = 0.9 + 0.12 * Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453 % 1);
+        const x = -R0 + i * c, y = -R0 + j * c, q = j * n + i, inside = x > gs.x0 && x < gs.x1 && y > gs.y0 && y < gs.y1, gr = inside ? null : S.regionAt(x, y), h = inside ? 0 : gr ? gr.surf.at(x, y) : S.bodyAtPt(x, y).bed; // = lv(x, y)，曲轮只查一次
+        pos[q * 3] = x; pos[q * 3 + 1] = h - 0.02; pos[q * 3 + 2] = -y; const k = !inside && !gr ? [0.2, 0.24, 0.2] : [0.55, 0.53, 0.49], r = 0.9 + 0.12 * Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453 % 1);
         col[q * 3] = k[0] * r; col[q * 3 + 1] = k[1] * r; col[q * 3 + 2] = k[2] * r;
       }
       const idx = []; for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) { const x = -R0 + i * c, y = -R0 + j * c; if (x >= gs.x0 && x + c <= gs.x1 && y >= gs.y0 && y + c <= gs.y1) continue; const a = j * n + i, b = a + 1, cc = a + n, d = cc + 1; idx.push(a, b, d, a, d, cc); }
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); fastNormals(g);
       const om = new THREE.Mesh(g, stoneShader(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }))); om.receiveShadow = true; om.name = 'outer'; grp.add(om);
-      const mat = new THREE.MeshStandardMaterial({ color: 0x8a867c, roughness: 1 });
-      const o = new THREE.Shape([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]].map(p => new THREE.Vector2(...p))); o.holes.push(new THREE.Path([[-R0, -R0], [-R0, R0], [R0, R0], [R0, -R0]].map(p => new THREE.Vector2(...p))));
-      const m = new THREE.Mesh(new THREE.ShapeGeometry(o), mat); m.rotation.x = -Math.PI / 2; m.position.y = -0.02; grp.add(m);
-      const water = new THREE.Mesh(new THREE.PlaneGeometry(18000, 18000), new THREE.MeshStandardMaterial({ color: 0x3b6872, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.9 }));
-      water.rotation.x = -Math.PI / 2; water.position.y = S.WZ; water.receiveShadow = true; water.name = 'water'; grp.add(water);
+      // ±700 m 以外：一圈大环（8 个顶点），外圈取内圈角点的城下拟合面高度（不把拟合平面外推到 9 km），与粗网格外缘接上
+      const mat = new THREE.MeshStandardMaterial({ color: 0x8a867c, roughness: 1 }), city = S.regions.find(g => g.name === 'city'), cz = (x, y) => city.surf.at(x, y) - 0.02;
+      const RO = 9000, ring = [[-RO, -RO], [RO, -RO], [RO, RO], [-RO, RO]], inn = [[-R0, -R0], [R0, -R0], [R0, R0], [-R0, R0]], fp = new Float32Array(8 * 3), fi = [];
+      [...ring, ...inn].forEach((p, i) => { fp[i * 3] = p[0]; fp[i * 3 + 1] = i < 4 ? cz(inn[i][0], inn[i][1]) : lv(p[0], p[1]) - 0.02; fp[i * 3 + 2] = -p[1]; });
+      for (let i = 0; i < 4; i++) { const a = i, b = (i + 1) % 4, c2 = 4 + i, d2 = 4 + (i + 1) % 4; fi.push(a, b, d2, a, d2, c2); }
+      const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.BufferAttribute(fp, 3)); fg.setIndex(fi); fastNormals(fg); const m = new THREE.Mesh(fg, mat); m.material.side = THREE.DoubleSide; grp.add(m);
+      // r7b：水面 = 每个连通水体在自己的实测水位（T.P.）上一块多边形；再加一张最低水位的大水面兜底（只会在地面以下露出）
+      const wmat = new THREE.MeshStandardMaterial({ color: 0x3b6872, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.9 });
+      // 兜底水面不是水体：放在全部渲染地面（网格 + 外圈拟合面的四角）以下，城下拟合平面外推到网格角时（东北角低于最低水位）不会被它淹掉
+      let baseZ = S.WZ; for (let q = 0; q < S.H.length; q++) if (S.H[q] < baseZ) baseZ = S.H[q]; for (const p of [[-R0, -R0], [R0, -R0], [R0, R0], [-R0, R0]]) baseZ = Math.min(baseZ, lv(p[0], p[1]), cz(p[0], p[1])); baseZ -= 0.5;
+      const base = new THREE.Mesh(new THREE.PlaneGeometry(18000, 18000), wmat); base.rotation.x = -Math.PI / 2; base.position.y = baseZ; base.name = 'water'; grp.add(base);
+      for (const b of S.waterBodies) { if (!b.ring || b.ring.length < 3) continue; const sh = new THREE.Shape(b.ring.map(p => new THREE.Vector2(p[0], p[1])));
+        const wm = new THREE.Mesh(new THREE.ShapeGeometry(sh), wmat); wm.rotation.x = -Math.PI / 2; wm.position.y = b.level; wm.receiveShadow = true; wm.name = 'water'; grp.add(wm); }
       return grp;
     }
     function treesMesh(S) {
@@ -271,7 +292,8 @@
       world = new THREE.Group(); world.name = 'world';
       world.add(terrainMesh(site)); world.add(outerGround(site));
       const k = Kit();
-      for (const p of site.parts) { if (p.fam === 'tenshu') continue; const f = FAM[p.fam]; if (f) f(k, p, site); }
+      for (const p of site.parts) { if (p.fam === 'tenshu') continue; const f = FAM[p.fam]; if (f) f(k, p, site);
+        if (!p.wall && p.poly && p.zb !== undefined && p.z - p.zb > 0.02 && !SITE.SPEC.found.ishigakiBase.includes(p.fam)) k.prism('stone', p.poly, p.zb - 0.3, p.z); } // r7b：斜面台地上的基础（基壇）：地板 z 到最低地面 zb（再埋 0.3 m）
       roadsMesh(k, site);
       for (const m of k.meshes()) world.add(m);
       const tb = site.parts.find(p => p.fam === 'tenshu');
@@ -309,17 +331,30 @@
     // ---------- 相机物理体：碰撞场、视角规则、过渡路径、每帧约束（web-r3）----------
     const CAMX = window.CASTLE_CAMERA, w3 = v => [v.x, -v.z, v.y], setV = (v, a) => v.set(a[0], a[2], -a[1]);
     // 视角 = 规则：目标点（看什么）+ 方位角（相机在目标的哪一侧，度，东=0 逆时针）+ 仰角 + 距离 + 目标本体半径 rf（视线检查时不算遮挡）
+    // r7b：目标点按引用取（曲轮 / 门 / 部件 / 石垣边 / 桥），高度从生成结果里读——不再手写 z（r2–r7a 写死的 14、9、44 在 T.P. 高程下全错）
+    //   region：该曲轮（主块）多边形面积重心，z = 台地设计面；gate：门中心，z = 门地板 + dz；part：按 fam 取部件，z = 地板 + dz；
+    //   edge：曲轮在 dir 方向最外的石垣边的中点、向外移到墙面中部，z = (墙顶 + 水位)/2；bridge：跨中桥面下 3 m（r5）
     const VIEWS = {
-      aerial: { target: [-20, -60, 14], az: -130, el: 27, dist: 940, rf: 40 },        // 本丸地面（全城视野，目标=一片区域）
-      top: { target: [0, -60, 14], az: -90, el: 89.9, dist: 1650, rf: 40 },
-      otemon: { target: [-264, -255.5, 9], az: -171, el: 6, dist: 84, rf: 6 },        // 大手门（门中高）
-      tenshu: { target: [0.5, 0.3, 44], az: -75, el: 3, dist: 160, rf: 24 },          // 天守（塔身中部）
-      eastwall: { target: [144, 30, 4], az: -74, el: 3, dist: 104, rf: 10 },          // 东侧石垣面（本丸东缘 x≈144，z −7→14 的中部），相机在内堀水面上
-      otejoint: { target: [-268, -262, 6], az: -14, el: 18, dist: 35, rf: 5 },        // 大手门枡形里：高丽门 + 两侧土塀 + 连接墙
-      sakura: { target: [-12, -228, 18], az: 47, el: 19, dist: 46, rf: 6 },           // 本丸桜门 + 枡形 + 铁门
+      aerial: { ref: { region: 'honmaru' }, az: -130, el: 27, dist: 940, rf: 40 },          // 本丸地面（全城视野，目标=一片区域）
+      top: { ref: { region: 'honmaru' }, az: -90, el: 89.9, dist: 1650, rf: 40 },
+      otemon: { ref: { gate: 'otemon', dz: 4 }, az: -171, el: 6, dist: 84, rf: 6 },          // 大手门（门中高）
+      tenshu: { ref: { part: 'tenshu', dz: 30 }, az: -75, el: 3, dist: 160, rf: 24 },         // 天守（塔身中部：天守台面以上 30 m）
+      eastwall: { ref: { edge: 'honmaru', dir: [1, 0] }, az: -74, el: 3, dist: 104, rf: 10 },  // 本丸东侧石垣面中部，相机在内堀水面上
+      otejoint: { ref: { gate: 'otemon', dz: 0, back: 7 }, az: -14, el: 18, dist: 35, rf: 5 }, // 大手门枡形里：高丽门往里 7 m（高丽门 + 两侧土塀 + 连接墙）
+      sakura: { ref: { gate: 'sakura', dz: 4 }, az: 47, el: 19, dist: 46, rf: 6 },             // 本丸桜门 + 枡形 + 铁门
       otegate: { walk: 'otemon', at: 'gate', ahead: 10, rf: 0.5 },                     // 站在大手门（高丽门）门洞里、眼高 1.6 m，沿步行路线向枡形里看（规则：H14 步行路线上离门洞中心最近的点）
       bridge: { bridge: 'gokuraku', daz: 35, el: 14, dist: 75, rf: 12 },             // r5：極楽橋侧面（目标 = 跨中桥面下 3 m；方位 = 桥的横向 + 35°），看桥墩/跨度/桥台
     };
+    function refTarget(ref) {
+      const main = name => site.regions.filter(g => g.name === name).sort((a, b) => b.area - a.area)[0];
+      if (ref.region) { const g = main(ref.region), P = g.rings[0]; let A = 0, cx = 0, cy = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], k = a[0] * b[1] - b[0] * a[1]; A += k; cx += (a[0] + b[0]) * k; cy += (a[1] + b[1]) * k; } cx /= 3 * A; cy /= 3 * A; return [cx, cy, g.surf.at(cx, cy)]; }
+      if (ref.gate) { const g = gateById(ref.gate); if (!g) return null; const v = g.nin || [-Math.sin(g.ang), Math.cos(g.ang)], b = ref.back || 0; return [g.x + v[0] * b, g.y + v[1] * b, (b ? site.surfaceAt(g.x + v[0] * b, g.y + v[1] * b) : g.z) + (ref.dz || 0)]; }
+      if (ref.part) { const p = site.parts.find(q => q.fam === ref.part); return p ? [p.x, p.y, p.z + (ref.dz || 0)] : null; }
+      if (ref.edge) { const g = main(ref.edge); let best = null, bv = -1e18; for (const e of g.edges) { if (!e.B || e.low.g) continue; const v = ((e.ax + e.bx) / 2) * ref.dir[0] + ((e.ay + e.by) / 2) * ref.dir[1]; if (e.len > 10 && v > bv) { bv = v; best = e; } } if (!best) return null;
+        const mx = (best.ax + best.bx) / 2, my = (best.ay + best.by) / 2, x = mx - best.nx * best.B / 2, y = my - best.ny * best.B / 2, top = g.surf.at(mx - best.nx * best.B, my - best.ny * best.B); return [x, y, (top + site.wzAt(mx + best.nx * 2, my + best.ny * 2)) / 2]; }
+      return null;
+    }
+    const resolveView = r => { if (!r.ref) return r; const t = refTarget(r.ref); return Object.assign({}, r, { target: t || refTarget({ region: 'honmaru' }) }); };
     const LEGACY = { // r2 的硬编码相机（只用于审计对比）
       aerial: [[-560, -700, 430], [-20, -60, 0]], top: [[0, -60, 1650], [0, -59.9, 0]], otemon: [[-345, -268, 9], [-262, -255, 9]], tenshu: [[40, -150, 22], [0, 0, 40]],
       eastwall: [[172, -70, -4], [120, 40, 12]], otejoint: [[-236, -270, 14], [-268, -262, 3]], sakura: [[18, -196, 30], [-12, -228, 15]],
@@ -329,7 +364,7 @@
     function gateRoute(gate, ok) {
       const WK = site.spec.walk, g = gate.region, r = gate.ramp, vdir = gate.nin || [-Math.sin(gate.ang), Math.cos(gate.ang)];
       const side = (x, y) => (x - gate.x) * vdir[0] + (y - gate.y) * vdir[1], dd = (x, y) => Math.hypot(x - gate.x, y - gate.y);
-      const level = (x, y) => Math.abs(site.surfaceAt(x, y) - g.z) < 0.1 && site.zoneAt(x, y) === g;
+      const level = (x, y) => Math.abs(site.surfaceAt(x, y) - g.surf.at(x, y)) < 0.1 && site.zoneAt(x, y) === g;   // r7b：台地面是函数
       let starts, goal;
       if (gate.nin && r && r.p1) { starts = [r.p1]; goal = (x, y) => side(x, y) > 0 && dd(x, y) >= WK.goal && level(x, y); }
       else { starts = [20, 16, 24, 12].map(s => [gate.x - vdir[0] * s, gate.y - vdir[1] * s]); goal = (x, y) => side(x, y) > 0 && dd(x, y) >= 20 && level(x, y); }
@@ -349,7 +384,7 @@
     function route(id) { if (!ROUTES[id]) { const g = gateById(id); ROUTES[id] = g ? gateRoute(g) : { ok: false, why: 'nogate' }; } return ROUTES[id]; }
     const aheadOf = (P, s, a) => { const L = P.L; if (s + a <= L) return P.posAt(s + a); const e = P.posAt(L), b = P.posAt(Math.max(0, L - 1)), d = [e[0] - b[0], e[1] - b[1], e[2] - b[2]], l = Math.hypot(...d) || 1, x = s + a - L; return [e[0] + d[0] / l * x, e[1] + d[1] / l * x, e[2] + d[2] / l * x]; };
     function walkPreset(r) {
-      const W = route(r.walk); if (!W.ok) return { cam: [0, -60, 900], tgt: [0, -60, 14], cost: Infinity, k: null };
+      const W = route(r.walk); if (!W.ok) { const t = refTarget({ region: 'honmaru' }); return { cam: [t[0], t[1], t[2] + 900], tgt: t, cost: Infinity, k: null }; }
       const g = gateById(r.walk), P = F.polyPath(W.pts, { tgt: [0, 0, 0] }, { tgt: [0, 0, 0] }); let best = 0, bd = 1e9, s = 0;
       for (let i = 0; i < W.pts.length; i++) { if (i) s += dist3(W.pts[i - 1], W.pts[i]); const d = Math.hypot(W.pts[i][0] - g.x, W.pts[i][1] - g.y); if (d < bd) { bd = d; best = s; } }
       const t = aheadOf(P, best, r.ahead); t[2] -= 0.5; return { cam: P.posAt(best), tgt: t, cost: 0, k: 'walk' };
@@ -369,8 +404,11 @@
           else F.addTris(pos, idx, o.matrixWorld.equals(new THREE.Matrix4()) ? null : o.matrixWorld.elements); }
         for (const ch of o.children) walk(ch); };
       walk(world); const t1 = performance.now(); F.finish(); ROUTES = {}; lastCam = null; const t2 = performance.now();
-      const bridgeRule = r => { const B = (site.bridges || []).find(b => b.gate.spec.id === r.bridge); if (!B) return Object.assign({}, r, { target: [0, -60, 14], az: -90 }); const m = B.P(B.len / 2, 0); return Object.assign({}, r, { target: [m[0], m[1], B.topAt(B.len / 2) - 3], az: Math.atan2(B.v[1], B.v[0]) * 180 / Math.PI + r.daz }); };
-      PRE = {}; for (const [k, r] of Object.entries(VIEWS)) PRE[k] = r.walk ? walkPreset(r) : F.fixPreset(r.bridge ? bridgeRule(r) : r);
+      const bridgeRule = r => { const B = (site.bridges || []).find(b => b.gate.spec.id === r.bridge); if (!B) return Object.assign({}, r, { target: refTarget({ region: 'honmaru' }), az: -90 }); const m = B.P(B.len / 2, 0); return Object.assign({}, r, { target: [m[0], m[1], B.topAt(B.len / 2) - 3], az: Math.atan2(B.v[1], B.v[0]) * 180 / Math.PI + r.daz }); };
+      PRE = {}; for (const [k, r] of Object.entries(VIEWS)) {
+        // r7b：步行视角（门洞里）要先在 1 m 栅格上寻路（~0.15 s），改为第一次用到时才求（结果与预先求相同；首帧不需要它）
+        if (r.walk) { let v = null; Object.defineProperty(PRE, k, { enumerable: true, configurable: true, get: () => v || (v = walkPreset(r)) }); }
+        else PRE[k] = F.fixPreset(r.bridge ? bridgeRule(r) : resolveView(r)); }
       state.camT = { collect: Math.round(t1 - t0), finish: Math.round(t2 - t1), presets: Math.round(performance.now() - t2) };
       state.camField = F; state.presets = PRE; state.stats.camMs = Math.round(performance.now() - t0);
     }
@@ -435,14 +473,14 @@
       for (const B of site.bridges || []) {
         const sup = [B.sA].concat(B.piers.map(p => p.s), [B.sB]).sort((a, b) => a - b), mid = B.len / 2; let a = sup[0], b = sup[sup.length - 1];
         for (let i = 1; i < sup.length; i++) if (sup[i - 1] <= mid && sup[i] >= mid) { a = sup[i - 1]; b = sup[i]; break; }
-        const sm = (a + b) / 2, gap = b - a - SITE.SPEC.bridge.pierW, zc = site.WZ + CAM_R + 0.4, roof = B.topAt(sm) - B.t, c0 = B.P(sm, 0), L = B.hw + 3 * CAM_R + 6;
+        const sm = (a + b) / 2, gap = b - a - SITE.SPEC.bridge.pierW, c0 = B.P(sm, 0), wz = site.wzAt(c0[0], c0[1]) /* r7b：桥下那片水的实测水位 */, zc = wz + CAM_R + 0.4, roof = B.topAt(sm) - B.t, L = B.hw + 3 * CAM_R + 6;
         const A = [c0[0] - B.v[0] * L, c0[1] - B.v[1] * L, zc], Bp = [c0[0] + B.v[0] * L, c0[1] + B.v[1] * L, zc];
         let ok = gap >= 2 * CAM_R + 0.6 && roof - zc >= CAM_R + 0.2, why = ok ? '' : '跨/净空不够';
         if (ok && !(F.valid(A) && F.valid(Bp) && F.openUp(A) && F.openUp(Bp))) { ok = false; why = '两端不合法'; }
         if (ok && !F.segFree(A, Bp, 0.25)) { ok = false; why = '扫掠被挡'; }
         if (ok) { let p = A; for (let k = 1; k <= 40; k++) p = F.move(p, [A[0] + (Bp[0] - A[0]) * k / 40, A[1] + (Bp[1] - A[1]) * k / 40, zc]); if (dist3(p, Bp) > 1e-3) { ok = false; why = '逐帧运动被挡'; } }
         let geo = 0; if (ok && F.hasGeo()) for (let k = 0; k <= 40; k++) if (F.geoCheck([A[0] + (Bp[0] - A[0]) * k / 40, A[1] + (Bp[1] - A[1]) * k / 40, zc])) geo++;
-        out.push({ bridge: B.name, ok, why, span: +(b - a).toFixed(2), clear: +(roof - site.WZ).toFixed(2), geo });
+        out.push({ bridge: B.name, ok, why, span: +(b - a).toFixed(2), clear: +(roof - wz).toFixed(2), wz, geo });
       }
       return out;
     }
