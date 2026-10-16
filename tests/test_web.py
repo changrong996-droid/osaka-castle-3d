@@ -4,7 +4,7 @@ Run:  python3 tests/test_web.py            (or: pytest tests/test_web.py)
 Needs: pip install playwright && python3 -m playwright install chromium
        (in the Hark sandbox:  . ../work/setup_pw.sh  provides a persistent Chromium + missing libs)
 
-Asserts: node fault injection (tests/test_faults.js: every H15–H18 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
+Asserts: (r6) camera collision uses the conforming (split) terrain · H1–H21 all 0 · node fault injection (tests/test_faults.js: every H15–H21 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
 C7 fast-drag tunneling fuzz), per-frame walk-through-Otemon animation clear + tunnel-free + actually under the gate lintel, extra fuzz,
 per-frame animated transitions clear, independent triangle-exact check, real mouse wheel/drag input never leaves the camera inside solids · URL hash reproducible
 (same hash -> same signature, other seed -> different) · writes one screenshot per view (incl. inside the Otemon gate opening) to web/shots/.
@@ -55,7 +55,11 @@ def run(shots=True):
             t = time.time()
             pg.goto(base + h)
             pg.wait_for_function('window.__castle && (window.__castle.ready || window.__castle.errors.length)', timeout=240000)
-            return time.time() - t
+            dt = time.time() - t
+            # r6：首次加载的 H 审计在第一帧之后跑 → 等它出结果
+            pg.wait_for_function('window.__castle && (window.__castle.auditResult || window.__castle.errors.length)', timeout=240000)
+            rep.setdefault('audit_ready_s', []).append(round(time.time() - t, 2))
+            return dt
 
         rep['load_s'] = round(load('#seed=1&lost=1&view=aerial&labels=1'), 2)
         if not pg.evaluate('!!__castle.ready'):
@@ -71,6 +75,12 @@ def run(shots=True):
         rep['cam_legacy'] = pg.evaluate('__castle.cameraAudit({legacy:true}).cnt')
         rep['cam_old_r3'] = pg.evaluate('__castle.cameraAudit({old:true}).cnt')  # web-r3 逻辑（柱状场 + 抬升）下的 C6/C7
         rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']
+        # r6：相机碰撞用的是切分后的地形（与渲染同一张三角网）：在切开的格里、切分地面以上 0.3 m 的点，到地形的精确间隙 ≤0.3 m（若还用网格三角，顶线处会多出最多 ~1 m）
+        rep['cam_terrain'] = pg.evaluate("""() => { const S = __castle.site, F = __castle.camField; let n = 0, over = 0, gridOff = 0, worst = 0;
+            for (let k = 0; k < S.splitTris.length; k += 7) { const sp = S.splitTris[k]; if (sp.kind === 'dead') continue; const T = sp.tris; for (let t = 0; t < T.length; t += 9) { const x = (T[t] + T[t + 3] + T[t + 6]) / 3, y = (T[t + 1] + T[t + 4] + T[t + 7]) / 3, z = S.heightAt(x, y);
+              if (z < S.WZ + 0.5) continue; n++; const d = F.clearance([x, y, z + 0.3], 3); worst = Math.max(worst, d); if (d > 0.3 + 1e-3) over++; // 负值 = 离别的几何（墙、树）更近，不算
+              const q = sp.q, i = q % S.NX, j = (q - i) / S.NX, u = (x - S.X(i)) / S.cell, v = (y - S.Y(j)) / S.cell, H = S.H, a = q, b = q + 1, c = q + S.NX, d2 = c + 1, zg = u >= v ? H[a] + u * (H[b] - H[a]) + v * (H[d2] - H[b]) : H[a] + v * (H[c] - H[a]) + u * (H[d2] - H[c]); if (Math.abs(zg - z) > 0.1) gridOff++; } }
+            return { n, over, gridOff, worst: +worst.toFixed(3), tris: __castle.terrainTris }; }""")
         # 步行穿过大手门：合成时钟逐帧驱动真实 step()，每帧检查合法、两帧之间不穿几何；统计在遮盖下（门洞里）的帧数和最低眼高
         rep['cam_walk'] = pg.evaluate("""() => { const C = __castle, F = C.camField, S = C.site; C.setView('otemon'); let t = 1000; if (!C.walkThrough('otemon', t)) return null; let prev = C.cur().cam, n = 0, bad = 0, tun = 0, under = 0, eyeMin = 1e9;
             while (C.anim() && n < 20000) { t += 16; C.step(t); n++; const q = C.cur().cam; if (!F.clear(q, 1e-3)) bad++; if (F.segHit(prev, q)) tun++; if (!F.above(q)) { under++; const e = q[2] - S.surfaceAt(q[0], q[1]); if (e < eyeMin) eyeMin = e; } prev = q; }
@@ -134,6 +144,9 @@ def check(rep):
     assert len(rep['cam_anim']) == len(VIEWS) * (len(VIEWS) - 1) and all(a['bad'] == 0 and a['end'] < 0.05 for a in rep['cam_anim']), [a for a in rep['cam_anim'] if a['bad'] or a['end'] >= 0.05]
     assert rep['cam_geo'] == {'C1': 0, 'C3': 0, 'C4': 0, 'C6': 0, 'C8': 0}, rep['cam_geo']
     assert rep['faults_node'] == 0, rep['faults_log']
+    ct = rep['cam_terrain']
+    assert ct['n'] > 1000 and ct['over'] == 0 and ct['gridOff'] > 0, ct
+    assert all(rep['audit_cnt'][f'H{i}'] == 0 for i in range(1, 22)), rep['audit_cnt']
     assert rep['c8_fault'] > 0, rep['c8_fault']
     assert all(b['ok'] for b in rep['cam_bridges']), rep['cam_bridges']
     w = rep['cam_walk']
