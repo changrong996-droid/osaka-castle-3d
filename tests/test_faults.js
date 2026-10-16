@@ -1,4 +1,4 @@
-// 故障注入：每条 r5 新规则（H15–H18）都要能抓到对应的违规。用法：node tests/test_faults.js（退出码 0 = 全部抓到）
+// 故障注入：每条 r5/r6 新规则（H15–H21）都要能抓到对应的违规。用法：node tests/test_faults.js（退出码 0 = 全部抓到）
 const W = require('path').join(__dirname, '..', 'web'); require(W + '/data.js'); require(W + '/site.js');
 const CS = globalThis.CASTLE_SITE, build = () => CS.build({ seed: 1, lost: true });
 const base = build().audit(); if (base.total) { console.log('基线审计不为 0', base.cnt); process.exit(1); }
@@ -17,7 +17,20 @@ const F = [
   ['H18', '门楣降到 1.8 m', S => { for (const p of S.parts) if (p.fam === 'yaguramon' && p.passages) p.passages.forEach(q => q.clearH = 1.8); }],
   ['H18', '路上种一棵阔叶树', S => { const [x, y] = mid(road(S)); S.trees.push({ fam: 'tree', x: x + 3, y, s: 1.2, r: 2.6, z: S.surfaceAt(x + 3, y), region: 0, kind: 'broad' }); }],
   ['H18', '木桥压低到水面上 1 m', S => { const B = S.bridges[0], f = B.topAt; B.topAt = s => s > B.sA + 2 && s < B.sB - 2 ? S.WZ + 1 + B.t : f(s); }],
+  // r6：地形顺从边线。注入时先把那一片的切分格退回网格（切分三角形存的是切分时的高度，只改 H 不会影响它们）
+  ['H19', '本丸东面一段石垣顶线退回 1.5 m 网格（台阶）', S => unsplit(S, 141, 30, 20)],
+  ['H19', '切分格里的顶线顶点下沉 0.3 m（顶线塌边）', S => near(S, 141, 30, 20, q => { const k = S.splitIdx[q]; if (k < 0) return; const T = S.splitTris[k].tris; for (let t = 0; t < T.length; t += 3) { const onGrid = Math.abs((T[t] - S.X(0)) / S.cell % 1) < 1e-9 && Math.abs((T[t + 1] - S.Y(0)) / S.cell % 1) < 1e-9; if (!onGrid && Math.abs(T[t + 2] - 14) < 1e-9) T[t + 2] = 13.7; } })],
+  ['H20', '本丸地面上挖一个 0.3 m 深的坑', S => { const q = flat(S, 0); unsplit(S, S.X(q % S.NX), S.Y(Math.floor(q / S.NX)), 4); S.H[q] -= 0.3; }],
+  ['H20', '二之丸地面一角翘起 0.15 m（坡度 10%）', S => { const q = flat(S, 2); S.H[q] += 0.15; }],
+  ['H21', '石垣脚线处地面被抬高 2 m（勾配面没落到堀底）', S => { unsplit(S, 141, 30, 20); near(S, 141, 30, 20, q => { if (S.TAG[q] === 1 && S.H[q] < -5) S.H[q] = -5; }); }],
+  ['H21', '石垣面陡成 1:0.1（扇勾配被拉直）', S => { unsplit(S, 141, 30, 20); near(S, 141, 30, 20, q => { if (S.TAG[q] === 1) { const z = S.H[q]; S.H[q] = z > 3.5 ? 14 : -7; } }); }],
 ];
+// r6 故障注入的辅助：在 (x, y) 周围 r m 内
+function near(S, x, y, r, f) { for (let j = 0; j < S.NY; j++) { const dy = S.Y(j) - y; if (Math.abs(dy) > r) continue; for (let i = 0; i < S.NX; i++) { const dx = S.X(i) - x; if (dx * dx + dy * dy <= r * r) f(j * S.NX + i); } } }
+function unsplit(S, x, y, r) { near(S, x, y, r + 2, q => { S.splitIdx[q] = -1; }); }
+function flat(S, gi) { // 曲轮 gi 内一个离顶线 >10 m、四周都是平台高程、没切分、没被整平/坡道改过的格点
+  const g = S.regions[gi]; for (let j = 2; j < S.NY - 2; j++) for (let i = 2; i < S.NX - 2; i++) { const q = j * S.NX + i; if (S.CLS[q] !== gi || S.TAG[q] !== 0 || S.LOCK[q] || S.H[q] !== g.z) continue; const x = S.X(i), y = S.Y(j); if (S.crestDist(g, x, y) < 10 || !S.inEncl(g, x, y)) continue; let ok = true; for (const d of [-S.NX - 1, -S.NX, -S.NX + 1, -1, 1, S.NX - 1, S.NX, S.NX + 1, 0]) if (S.H[q + d] !== g.z || S.splitIdx[q + d] >= 0 || S.splitIdx[q + d - 1] >= 0 || S.splitIdx[q + d - S.NX] >= 0 || S.splitIdx[q + d - S.NX - 1] >= 0 || S.TAG[q + d] !== 0) ok = false; if (ok && (j * 7 + i * 13) % 5 === 0) return q; }
+  throw new Error('flat: no point'); }
 let fail = 0;
 for (const [rule, name, inj] of F) { const S = build(); inj(S); const A = S.audit(); const n = A.cnt[rule]; console.log((n > 0 ? 'OK  ' : 'MISS') + ' ' + rule + ' ' + name + ' → ' + rule + '=' + n + '  ' + (A.items.find(i => i.rule === rule) || {}).msg); if (!(n > 0)) fail++; }
 console.log(fail ? 'FAULTS_MISSED ' + fail : 'FAULTS_OK'); process.exit(fail ? 1 : 0);
