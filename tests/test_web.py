@@ -4,9 +4,10 @@ Run:  python3 tests/test_web.py            (or: pytest tests/test_web.py)
 Needs: pip install playwright && python3 -m playwright install chromium
        (in the Hark sandbox:  . ../work/setup_pw.sh  provides a persistent Chromium + missing libs)
 
-Asserts: page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C5 == 0, extra fuzz,
+Asserts: page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
+C7 fast-drag tunneling fuzz), per-frame walk-through-Otemon animation clear + tunnel-free + actually under the gate lintel, extra fuzz,
 per-frame animated transitions clear, independent triangle-exact check, real mouse wheel/drag input never leaves the camera inside solids · URL hash reproducible
-(same hash -> same signature, other seed -> different) · writes 5 view screenshots to web/shots/.
+(same hash -> same signature, other seed -> different) · writes one screenshot per view (incl. inside the Otemon gate opening) to web/shots/.
 three.js is requested from unpkg; when the sandbox cannot reach the CDN those requests are served from web/vendor/.
 """
 import functools, http.server, json, os, socketserver, sys, threading, time
@@ -14,7 +15,7 @@ import functools, http.server, json, os, socketserver, sys, threading, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, 'web')
 SHOTS = os.path.join(WEB, 'shots')
-VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura']
+VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura', 'otegate']
 VENDOR = {'build/three.module.js': 'three.module.js', 'examples/jsm/controls/OrbitControls.js': 'OrbitControls.js', 'examples/jsm/objects/Sky.js': 'Sky.js'}
 ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 
@@ -68,6 +69,12 @@ def run(shots=True):
         # 更强的模糊测试（3 个种子 × 1500 步）+ r2 旧相机逻辑在同一套检查下的违规数（对照）
         rep['cam_fuzz'] = [pg.evaluate(f'__castle.cameraAudit({{fuzz:1500, seed:{sd}}}).cnt.C4') for sd in (11, 23, 37)]
         rep['cam_legacy'] = pg.evaluate('__castle.cameraAudit({legacy:true}).cnt')
+        rep['cam_old_r3'] = pg.evaluate('__castle.cameraAudit({old:true}).cnt')  # web-r3 逻辑（柱状场 + 抬升）下的 C6/C7
+        rep['cam_gates'] = ca['gates']
+        # 步行穿过大手门：合成时钟逐帧驱动真实 step()，每帧检查合法、两帧之间不穿几何；统计在遮盖下（门洞里）的帧数和最低眼高
+        rep['cam_walk'] = pg.evaluate("""() => { const C = __castle, F = C.camField, S = C.site; C.setView('otemon'); let t = 1000; if (!C.walkThrough('otemon', t)) return null; let prev = C.cur().cam, n = 0, bad = 0, tun = 0, under = 0, eyeMin = 1e9;
+            while (C.anim() && n < 20000) { t += 16; C.step(t); n++; const q = C.cur().cam; if (!F.clear(q, 1e-3)) bad++; if (F.segHit(prev, q)) tun++; if (!F.above(q)) { under++; const e = q[2] - S.surfaceAt(q[0], q[1]); if (e < eyeMin) eyeMin = e; } prev = q; }
+            return { frames: n, bad, tun, under, eyeMin: +eyeMin.toFixed(2) }; }""")
         # 动画过渡：用合成时钟逐帧（16 ms）驱动真实的 step()（插值 + OrbitControls.update + 约束），每帧检查清空、终点 = 视角预设
         # （headless swiftshader 每帧渲染 ~1 s，按墙钟采样只能拿到 1–3 帧，所以不用 rAF）
         rep['cam_anim'] = pg.evaluate("""() => { const C = __castle, V = Object.keys(C.VIEWS), out = []; for (const a of V) for (const b of V) { if (a === b) continue;
@@ -77,6 +84,10 @@ def run(shots=True):
         load('#seed=1&lost=1&view=otemon&labels=0&camgeo=1')
         pg.wait_for_function('__castle.camAudit', timeout=120000)
         rep['cam_geo'] = pg.evaluate('__castle.cameraAudit({geo:true, fuzz:800, seed:5}).geo')
+        if shots:
+            for v in VIEWS:
+                pg.evaluate(f'__castle.setView("{v}")'); pg.evaluate('__castle.renderNow()'); pg.wait_for_timeout(200)
+                pg.screenshot(path=os.path.join(SHOTS, v + '.png'))
         bad_in = 0
         for v in ('otejoint', 'sakura'):  # 每个输入事件在 swiftshader 下要渲染一帧（~1 s），所以只做少量大幅度输入
             pg.evaluate(f'__castle.setView("{v}")'); pg.mouse.move(640, 400)
@@ -114,7 +125,9 @@ def check(rep):
     assert rep['cam_audit'] == 0, rep['cam_items']
     assert rep['cam_fuzz'] == [0, 0, 0], rep['cam_fuzz']
     assert len(rep['cam_anim']) == len(VIEWS) * (len(VIEWS) - 1) and all(a['bad'] == 0 and a['end'] < 0.05 for a in rep['cam_anim']), [a for a in rep['cam_anim'] if a['bad'] or a['end'] >= 0.05]
-    assert rep['cam_geo'] == {'C1': 0, 'C3': 0, 'C4': 0}, rep['cam_geo']
+    assert rep['cam_geo'] == {'C1': 0, 'C3': 0, 'C4': 0, 'C6': 0}, rep['cam_geo']
+    w = rep['cam_walk']
+    assert w and w['bad'] == 0 and w['tun'] == 0 and w['under'] > 0 and w['eyeMin'] >= 1.55, w
     assert rep['cam_input'] == 0
     assert rep['sig1'] == rep['sig1_again'], (rep['sig1'], rep['sig1_again'])
     assert rep['sig1'] != rep['sig2']
