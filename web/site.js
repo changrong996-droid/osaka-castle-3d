@@ -6,8 +6,12 @@
 //   2) 所有部件都用“引用”定位：门挂在曲轮边上（建筑名/遗址点/方向最远点 → 最近边），坡道=“从门 X 到曲轮 Y”（沿边外法线射线求终点），
 //      土塀=“沿本丸/二之丸每条石垣顶边内缩 1.5 m，在门/坡道/橹/建筑处留口”，失传橹=遗址点吸附到最近边角。
 //   3) audit()：硬规则 H1..H10，逐项计数 + 每个违规给出信息，并把违规部件标红。
-(function (G) {
+(function castleSite(G) {
   const D = G.CASTLE_DATA;
+  // r8a：结果包的键 = 本文件源码哈希 + 数据哈希 + 选项（见 web/pack.js）。数据哈希在模块加载时（任何 build 之前）求一次
+  const fnv = (s, h) => { h = h === undefined ? 2166136261 : h; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return ('00000000' + h.toString(16)).slice(-8); };
+  const DATA_HASH = fnv(JSON.stringify(D)); let SRC_HASH = null;
+  const genKey = o => { o = Object.assign({ seed: 1, lost: true, cell: 1.5 }, o || {}); if (!SRC_HASH) SRC_HASH = fnv(castleSite.toString()); return 'k1-' + SRC_HASH + '-' + DATA_HASH + '-s' + o.seed + '-l' + (o.lost ? 1 : 0) + '-c' + o.cell; };
 
   // ---------------- 声明式场地规格 ----------------
   const SPEC = {
@@ -110,7 +114,9 @@
 
   // ---------------- 主生成 ----------------
   function build(opt) {
-    opt = Object.assign({ seed: 1, lost: true, cell: SPEC.grid.cell }, opt || {});
+    // r8a：opt.pack = 已解析的结果包（CASTLE_PACK.parse）。读包时跳过所有计算步骤（`if (!PK)`），只建闭包与锚点对象，最后把包里的结果原地合并进来
+    const PK = opt && opt.pack && typeof opt.pack === 'object' && opt.pack.hdr ? opt.pack : null;
+    opt = Object.assign({ seed: 1, lost: true, cell: SPEC.grid.cell }, opt || {}); delete opt.pack;
     const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
     const IG = SPEC.ishigaki;
     // ---- r7b：台地面（常数或平面，T.P.）----
@@ -118,7 +124,7 @@
     const SURF = {}; for (const k of Object.keys(SPEC.surfaces)) SURF[k] = mkSurf(k);
     // ---- r7b：水体（水位、堀底）----
     const WAT = SPEC.water, WB = WAT.bodies.map((b, k) => ({ k, id: b.id, name: b.name, src: b.src, shore: b.shore, ring: b.pts, bb: bboxOf(b.pts), level0: b.level }));
-    const minLv = Math.min(...WB.map(b => b.level0)); for (const b of WB) { b.level = WAT.perBody ? b.level0 : minLv; b.bed = b.level - WAT.depth; }
+    const minLv = Math.min(...WB.map(b => b.level0)); for (const b of WB) { b.level = WAT.perBody ? b.level0 : minLv; b.bed = b.level - WAT.depth; b.bedFn = () => b.bed; } // bedFn：每个水体一个堀底函数（r8a：固定一个函数对象，包里按名字接回）
     const WZ = Math.min(...WB.map(b => b.level)), BED = Math.min(...WB.map(b => b.bed)); // 全城最低（只作下界用）
     const bodyAtPt = (x, y) => { for (const b of WB) if (x >= b.bb[0] && x <= b.bb[2] && y >= b.bb[1] && y <= b.bb[3] && inRing(x, y, b.ring)) return b; let best = null, bd = 1e18; for (const b of WB) { const d = polyDist(x, y, b.ring); if (d < bd) { bd = d; best = b; } } return best; };
     const S = { spec: SPEC, opt, parts: [], gates: [], ramps: [], notes: [], labels: [] };
@@ -150,7 +156,7 @@
     const inReg = (g, x, y) => g.band ? (zoneRef && zoneRef(x, y) === g) : (inPolyReg(g, x, y) && !(zoneRef && g.name === 'ninomaru' && zoneRef(x, y) !== g));
     const regionAt = (x, y) => { for (const g of order) if (inPolyReg(g, x, y)) return g; return null; };
     // 下层：曲轮面或水体堀底（r7b：都是 x,y 的函数）
-    const lowerAt = (x, y) => { const g = regionAt(x, y); if (g) return { g, at: g.surf.at }; const b = bodyAtPt(x, y); return { body: b, at: () => b.bed }; };
+    const lowerAt = (x, y) => { const g = regionAt(x, y); if (g) return { g, at: g.surf.at }; const b = bodyAtPt(x, y); return { body: b, at: b.bedFn }; };
     const levelAt = (x, y) => lowerAt(x, y).at(x, y);
     for (const g of R) g.rings.forEach((ring, ri) => {
       const n = ring.length, sg = (ringArea(ring) > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);
@@ -210,7 +216,7 @@
     const H = new Float64Array(NX * NY).fill(BED), CLS = new Int16Array(NX * NY).fill(-1), LOCK = new Uint8Array(NX * NY), TAG = new Uint8Array(NX * NY);
     const X = i => gs.x0 + i * c, Y = j => gs.y0 + j * c;
     // 操作 1：台地（扫描线填充各曲轮，按优先级从低到高写入）
-    for (const g of order.slice().reverse()) {
+    if (!PK) { for (const g of order.slice().reverse()) {
       const j0 = Math.max(0, Math.ceil((g.bb[1] - gs.y0) / c)), j1 = Math.min(NY - 1, Math.floor((g.bb[3] - gs.y0) / c));
       for (let j = j0; j <= j1; j++) {
         const y = Y(j), xs = [];
@@ -221,23 +227,23 @@
           for (let i = i0; i <= i1; i++) { const q = j * NX + i; H[q] = g.surf.at(X(i), y); CLS[q] = g.i; }
         }
       }
-    }
+    } } // PK: 读包时跳过（结果由包恢复）
     // 操作 1b：外堀外圈分离（颈切线 + 洪泛）
     // r7b：水体场——每个格点 → 最近的水体（水格按格心落在哪个水域多边形里定，其余格点多源 BFS 取最近），水格的高度 = 该水体堀底
-    const WBI = new Int16Array(NX * NY).fill(-1); {
+    const WBI = new Int16Array(NX * NY).fill(-1); if (!PK) { {
       // 格心落在哪个水域多边形里：按水体逆序扫描线填充（先列出的水体优先，与逐点判定相同，只为提速）
       for (let bk = WB.length - 1; bk >= 0; bk--) { const b = WB[bk], j0 = Math.max(0, Math.ceil((b.bb[1] - gs.y0) / c)), j1 = Math.min(NY - 1, Math.floor((b.bb[3] - gs.y0) / c));
         for (let j = j0; j <= j1; j++) { const xs = rowX(b.ring, Y(j), []).sort((p, q) => p - q); for (let k = 0; k + 1 < xs.length; k += 2) { /* 与 inRing 同一判定：xs[k] ≤ x < xs[k+1] */ let i0 = Math.ceil((xs[k] - gs.x0) / c), i1 = Math.floor((xs[k + 1] - gs.x0) / c); while (X(i0 - 1) >= xs[k]) i0--; while (X(i0) < xs[k]) i0++; while (X(i1) >= xs[k + 1]) i1--; while (X(i1 + 1) < xs[k + 1]) i1++; i0 = Math.max(0, i0); i1 = Math.min(NX - 1, i1); for (let i = i0; i <= i1; i++) { const q = j * NX + i; if (CLS[q] < 0) WBI[q] = b.k; } } } }
       const NN = NX * NY, QB = new Int32Array(NN); let qt = 0; for (let q = 0; q < NN; q++) if (WBI[q] >= 0) QB[qt++] = q; const nSeed = qt; // 定长队列（每格最多进一次）
       for (let h = 0; h < qt; h++) { const q = QB[h], i = q % NX, w = WBI[q]; if (i > 0 && WBI[q - 1] < 0) { WBI[q - 1] = w; QB[qt++] = q - 1; } if (i < NX - 1 && WBI[q + 1] < 0) { WBI[q + 1] = w; QB[qt++] = q + 1; } if (q >= NX && WBI[q - NX] < 0) { WBI[q - NX] = w; QB[qt++] = q - NX; } if (q + NX < NN && WBI[q + NX] < 0) { WBI[q + NX] = w; QB[qt++] = q + NX; } }
-      if (!nSeed) WBI.fill(0); }
-    const WZC = new Float64Array(NX * NY), BEDC = new Float64Array(NX * NY), LVk = WB.map(b => b.level), BDk = WB.map(b => b.bed); for (let q = 0; q < NX * NY; q++) { const w = WBI[q]; WZC[q] = LVk[w]; BEDC[q] = BDk[w]; if (CLS[q] < 0) H[q] = BDk[w]; }
+      if (!nSeed) WBI.fill(0); } } // PK: 读包时跳过（结果由包恢复）
+    const WZC = new Float64Array(NX * NY), BEDC = new Float64Array(NX * NY), LVk = WB.map(b => b.level), BDk = WB.map(b => b.bed); if (!PK) { for (let q = 0; q < NX * NY; q++) { const w = WBI[q]; WZC[q] = LVk[w]; BEDC[q] = BDk[w]; if (CLS[q] < 0) H[q] = BDk[w]; } } // PK: 读包时跳过（结果由包恢复）
     const vidR = (x, y) => { const i = clamp(Math.round((x - gs.x0) / c), 0, NX - 1), j = clamp(Math.round((y - gs.y0) / c), 0, NY - 1); return j * NX + i; };
     const wzAt = (x, y) => WZC[vidR(x, y)], bedAt = (x, y) => BEDC[vidR(x, y)], bodyAt = (x, y) => WB[WBI[vidR(x, y)]];
     const NINO = mainRegion('ninomaru'), BAND = { i: R.length, name: 'city', band: true, surf: SURF[SPEC.bandSurface], zAt: SURF[SPEC.bandSurface].at, edges: [], rings: [], bb: [0, 0, 0, 0], area: 0 };
     const vid = (x, y) => { const i = Math.round((x - gs.x0) / c), j = Math.round((y - gs.y0) / c); return (i < 0 || j < 0 || i >= NX || j >= NY) ? -1 : j * NX + i; };
     const landN = (x, y) => { const q = vid(x, y); return q >= 0 && CLS[q] === NINO.i; };
-    S.necks = {};
+    if (!PK) { S.necks = {};
     for (const gsp of SPEC.gates) {
       if (!gsp.neck) continue; const an = anchorOf(gsp.at, NINO); if (!an) continue; const [ax, ay, bd] = an;
       const angs = []; if (bd && bd.w > bd.d) for (let k = -15; k <= 15; k += 3) angs.push(bd.ang + k * Math.PI / 180); else for (let k = 0; k < 180; k += 5) angs.push(k * Math.PI / 180);
@@ -272,13 +278,13 @@
         const drop = NINO.surf.at(mx, my) - BAND.surf.at(mx, my);
         const e = mkEdge({ g: NINO, ring: -1, i: -1, ax: a[0], ay: a[1], bx: b[0], by: b[1], len, tx, ty, nx, ny, zlAt: BAND.surf.at, low: { g: BAND }, chord: gid }, NINO.surf, drop); NINO.edges.push(e); ch.edge = e;
       }
-    }
+    } } // PK: 读包时跳过（结果由包恢复）
     const zoneAt = (x, y) => { const g = regionAt(x, y); if (g && g.name === 'ninomaru') { const q = vid(x, y); if (q >= 0 && CLS[q] === BAND.i) return BAND; } return g; };
     S.zoneAt = zoneAt; S.regionAt = regionAt; S.BAND = BAND; zoneRef = zoneAt;
     // 二之丸外环上“只围着外圈”的边（内侧是外圈）标为 band：它的石垣只作用于外圈格点，不削内侧二之丸的转角
     // （一条长边可能一段围着内侧、一段围着外圈：标为 mixed，逐点按最近点所在一侧判断）
     bandAt = (e, x, y) => { const t = clamp(segT(x, y, e.ax, e.ay, e.bx, e.by), 0, 1), q = vid(e.ax + (e.bx - e.ax) * t - e.nx * (e.B + 1), e.ay + (e.by - e.ay) * t - e.ny * (e.B + 1)); return q >= 0 && CLS[q] === BAND.i; };
-    for (const e of NINO.edges) if (e.ring === 0 && e.B) { const n = Math.max(2, Math.ceil(e.len / 2)); let k = 0; for (let i = 0; i <= n; i++) { const f = i / n; if (bandAt(e, e.ax + (e.bx - e.ax) * f, e.ay + (e.by - e.ay) * f)) k++; } e.band = k === n + 1; e.mixed = k > 0 && k <= n; }
+    if (!PK) { for (const e of NINO.edges) if (e.ring === 0 && e.B) { const n = Math.max(2, Math.ceil(e.len / 2)); let k = 0; for (let i = 0; i <= n; i++) { const f = i / n; if (bandAt(e, e.ax + (e.bx - e.ax) * f, e.ay + (e.by - e.ay) * f)) k++; } e.band = k === n + 1; e.mixed = k > 0 && k <= n; }
     // 操作 2：石垣（多边形边=墙脚，向曲轮内侧按扇勾配升到台地顶；按格点所在台地的高度算）
     for (const g of R) for (const e of g.edges) {
       if (!e.B) continue; const pad = e.Bmax + c + 1; // 外圈格点用外圈自己的坡率（与 r6 同；外圈比二之丸低，退距更小）
@@ -288,7 +294,7 @@
         const q = j * NX + i; if (!((CLS[q] === g.i && !e.band && !(e.mixed && bandAt(e, X(i), Y(j)))) || (CLS[q] === BAND.i && g.name === 'ninomaru' && !e.chord))) continue;
         const hz = edgeZ(e, CLS[q] === BAND.i ? BAND.surf : g.surf, X(i), Y(j)); if (hz < H[q]) { H[q] = hz; TAG[q] = 1; } // TAG 1 = 石垣面
       }
-    }
+    } } // PK: 读包时跳过（结果由包恢复）
     if (G.__dbg) console.log('STAGE 0', Date.now() - t0);
     const BASE = H.slice();
     const baseAt = (x, y) => { let fx = (x - gs.x0) / c, fy = (y - gs.y0) / c; fx = clamp(fx, 0, NX - 1.0001); fy = clamp(fy, 0, NY - 1.0001); const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, a = j * NX + i, b = a + 1, cc = a + NX, d = cc + 1; return u >= v ? BASE[a] + u * (BASE[b] - BASE[a]) + v * (BASE[d] - BASE[b]) : BASE[a] + v * (BASE[cc] - BASE[a]) + u * (BASE[d] - BASE[cc]); };
@@ -455,11 +461,11 @@
     function passiveCell(q) { const poly = cellPoly(q); if (poly.length === 4) return null; const a = q, d = q + NX + 1, ctr = { x: X(q % NX) + c / 2, y: Y((q - q % NX) / NX) + c / 2, z: (H[a] + H[d]) / 2, inner: true }; return fanTris(poly, ctr); }
     const setSplit = (q, tris, kind) => { const T2 = pack(tris); if (SPL[q] >= 0) SPT[SPL[q]] = { q, tris: T2, kind, H: [H[q], H[q + 1], H[q + NX], H[q + NX + 1]] }; else { SPL[q] = SPT.length; SPT.push({ q, tris: T2, kind, H: [H[q], H[q + 1], H[q + NX], H[q + NX + 1]] }); } };
     if (G.__dbg) console.log('STAGE 1', Date.now() - t0);
-    if (opt.conform !== false) {
+    if (!PK) { if (opt.conform !== false) {
       const cand = new Uint8Array(NX * NY);
       candScan(H, TAG, cand, NX, NY, WZC);
       for (let q = 0; q < NX * NY; q++) { if (!cand[q]) continue; S.conform.cells++; const T3 = splitCell(q); if (T3) { setSplit(q, T3, 'split'); S.conform.split++; } }
-    }
+    } } // PK: 读包时跳过（结果由包恢复）
     // 角点被后来的操作改过的格：退回网格；然后给“边上有切点但自己没切”的格做被动切分（水密）
     function revalidate() { for (const sp of SPT.slice()) { if (sp.kind === 'dead') continue; const q = sp.q, cs = [q, q + 1, q + NX, q + NX + 1]; if (sp.kind === 'split' && cs.every(p => TAG[p] === 0 || TAG[p] === 1) && cs.some((p, k) => Math.abs(H[p] - sp.H[k]) > 1e-6)) { const T3 = splitCell(q); if (T3) { setSplit(q, T3, 'split'); continue; } } if (cs.some((p, k) => Math.abs(H[p] - sp.H[k]) > 1e-6 || (TAG[p] !== 0 && TAG[p] !== 1))) { sp.kind = 'dead'; SPL[q] = -1; S.conform.dropped++; if (typeof KILLED !== 'undefined') KILLED.push(q); } } }
     function passivePass() {
@@ -608,13 +614,13 @@
     }
     function nearestOn(pl, x, y) { let best = null; for (const sg of pl.segs) { const f = clamp((x - sg.a[0]) * sg.tx + (y - sg.a[1]) * sg.ty, 0, sg.len), px = sg.a[0] + sg.tx * f, py = sg.a[1] + sg.ty * f, d = Math.hypot(x - px, y - py); if (!best || d < best.d) best = { sg, f, p: [px, py], d, s: sg.s0 + f }; } return best; }
     const wallRegions = R.filter(g => WL.regions.includes(g.name) && (g.name !== 'ninomaru' || g === NINO));
-    S.loops = [];
+    if (!PK) { S.loops = [];
     for (const g of wallRegions) {
       const E = loopEdgesOf(g); if (E.length < 3) continue;
       const cr = repairLoop(simplifyLoop(untangle(offsetLoop(E, 0)), WL.simplify), g, 0, WL.simplify), ax = repairLoop(simplifyLoop(untangle(offsetLoop(E, WL.inset)), WL.simplify), g, WL.inset, WL.simplify);
       if (cr.length < 3 || ax.length < 3) { S.notes.push(g.name + ' 围合线内缩失败'); continue; }
       const bnd = E.map(e => [e.ax, e.ay]); S.loops.push({ g, E, bnd, bbb: bboxOf(bnd), crest: mkLine(cr), axis: mkLine(ax) });
-    }
+    } } // PK: 读包时跳过（结果由包恢复）
     const loopOf = g => S.loops.find(l => l.g === g);
     // 围合范围（矢量判定）：有围合线的曲轮以围合线外边界为准（颈切线外侧哪怕网格还标着二之丸也不算）
     const inEncl = (g, x, y) => { const lp = loopOf(g); if (!lp) return inReg(g, x, y); return x >= lp.bbb[0] && x <= lp.bbb[2] && y >= lp.bbb[1] && y <= lp.bbb[3] && inRing(x, y, lp.bnd) && inReg(g, x, y); };
@@ -651,7 +657,8 @@
 
     if (G.__dbg) console.log('STAGE 3', Date.now() - t0);
     // ---- 门：锚在实测位置 → 吸附到所在围合线的石垣顶线（门外侧面与顶线齐平），门洞垂直于墙 ----
-    for (const gsp of SPEC.gates) {
+    let replay = null; // r6 整平重放：在下面的块里定义，坡道/桥台之后还要用
+    if (!PK) { for (const gsp of SPEC.gates) {
       const g = mainRegion(gsp.region), an = anchorOf(gsp.at, g);
       if (!an) { S.notes.push('门 ' + gsp.name + ' 找不到引用'); continue; }
       const [axp, ayp, bdat] = an;
@@ -907,10 +914,10 @@
     }
     for (const p of S.parts) if (p.wall) { p.z = Math.min(p.z0, p.z1); p.refused = settle(p.poly, p.zs.at, 3); } // r7b：墙底顺着台地面（墙沿坡）
     // r6：后面的整平把某个切开格退回了网格，而这一格压在前面整平过的地基下 → 重放一遍所有整平，直到不再有新的退回
-    const replay = () => { for (let pass = 0; pass < 8 && KILLED.length; pass++) { const K = KILLED.splice(0), kb = K.map(q => [X(q % NX) - c, Y((q - q % NX) / NX) - c, X(q % NX) + 2 * c, Y((q - q % NX) / NX) + 2 * c]); settle.replay = true;
+    replay = () => { for (let pass = 0; pass < 8 && KILLED.length; pass++) { const K = KILLED.splice(0), kb = K.map(q => [X(q % NX) - c, Y((q - q % NX) / NX) - c, X(q % NX) + 2 * c, Y((q - q % NX) / NX) + 2 * c]); settle.replay = true;
         for (const [P2, z2, tg] of SETTLED) { const b2 = bboxOf(P2); if (kb.some(k => bbHit(k, b2, 0))) settle(P2, z2, tg); } settle.replay = false; revalidate(); } }; // 只重放压在新退回格上的地基
     replay();
-    revalidate();
+    revalidate(); } // PK: 读包时跳过（结果由包恢复）
 
     if (G.__dbg) console.log('STAGE 6', Date.now() - t0);
     const rampProf = (r, f) => { const s = f * r.len, l = SPEC.ramp.landing; return s <= l ? r.z0 : r.z0 + (r.z1 - r.z0) * (s - l) / (r.len - l); };
@@ -921,7 +928,7 @@
       const s2 = f * r.len, l = SPEC.ramp.landing, w = s2 <= l ? 0 : (s2 - l) / (r.len - l); return rampProf(r, f) + (r.cross0 + (r.cross1 - r.cross0) * w) * o; };
     S.rampZ = rampZ;
     // ---- 操作：坡道（土桥）——路面整平并锁定，两侧放坡；已锁定（地基）格点不动 ----
-    for (const r of S.ramps) {
+    if (!PK) { for (const r of S.ramps) {
       if (!r.p1 || r.via !== 'dobashi') continue;
       // r5：侧坡按“站在什么上”选勾配——站在护城河底（水/干堀）或原有石垣面上的是石垣面土桥（0.3），站在平地（陆地颈）上的是土坡（1.5，休止角）
       const [x0, y0] = r.p0, [x1, y1] = r.p1, hw = r.width / 2, ss = SPEC.ramp.sideSlope, se = SPEC.ramp.earthSlope, run = Math.max(r.z0, r.z1) - BED;
@@ -943,19 +950,19 @@
     }
     // r6：坡道路面可能改到压在地基下的切开格（受保护角点）→ 这些格退回网格；再重放一遍整平，让地基下的网格三角整平（与 r5 的“先整平后坡道”结果一致）
     if (G.__dbg) console.log('STAGE 10', Date.now() - t0);
-    revalidate(); replay();
+    revalidate(); replay(); } // PK: 读包时跳过（结果由包恢复）
 
     // ================= r5：木桥结构（桥面 + 两端桥台 + 桥墩，按“支撑/跨度”规则生成）=================
     // 桥面沿坡道轴线，从门内 bear 处一直铺到对岸平地 bear 处（两端平搭在地面上 = 桥台）；中间每跨 ≤ maxSpan，
     // 桥墩只能落在平整的堀底/地面上（脚下高差 ≤ level），墩顶顶住桥面底。
     const TM = () => (typeof performance !== 'undefined' ? performance : Date).now(); S.tm = { pre: TM() - t0 }; let tq = TM();
-    const BRG = SPEC.bridge; S.bridges = [];
+    // 木桥的两个函数（桥面高 topAt(s)、桥面坐标 P(s, o)）：现场生成与读包共用同一个构造
+    const brFns = B => { const r = B.ramp, u = B.u, v = B.v; B.topAt = s => s <= 0 ? r.z0 : s >= r.len ? r.z1 : rampProf(r, s / r.len); B.P = (s, o) => [r.p0[0] + u[0] * s + v[0] * o, r.p0[1] + u[1] * s + v[1] * o]; return B; };
+    if (!PK) { const BRG = SPEC.bridge; S.bridges = [];
     for (const r of S.ramps) {
       if (!r.p1 || r.via !== 'bridge') continue;
       const u = [(r.p1[0] - r.p0[0]) / r.len, (r.p1[1] - r.p0[1]) / r.len], v = [-u[1], u[0]], hw = r.width / 2;
-      const topAt = s => s <= 0 ? r.z0 : s >= r.len ? r.z1 : rampProf(r, s / r.len);
-      const P = (s, o) => [r.p0[0] + u[0] * s + v[0] * o, r.p0[1] + u[1] * s + v[1] * o];
-      const B = { id: S.bridges.length, ramp: r, gate: r.gate, name: r.gate.name, p0: r.p0, p1: r.p1, u, v, hw, w: r.width, len: r.len, s0: -BRG.bear, s1: r.len + BRG.bear, t: BRG.deckT, topAt, P, piers: [] };
+      const B = brFns({ id: S.bridges.length, ramp: r, gate: r.gate, name: r.gate.name, p0: r.p0, p1: r.p1, u, v, hw, w: r.width, len: r.len, s0: -BRG.bear, s1: r.len + BRG.bear, t: BRG.deckT, piers: [] }), topAt = B.topAt, P = B.P;
       const gmax = s => Math.max(heightAt(...P(s, -hw)), heightAt(...P(s, 0)), heightAt(...P(s, hw)));
       const sup = s => gmax(s) >= topAt(s) - B.t - BRG.level;
       // 桥台（支座）：桥面两端与地面接触的区段 → 地面整平到桥面顶（桥面平搭在桥台上；不在中段切进石垣，也不埋进地面）
@@ -999,12 +1006,12 @@
       if (!even && fw && bw && fw.length === bw.length) { const bwr = bw.slice().reverse(), avg = fw.map((s, i) => Math.round((s + bwr[i]) / 2 / st) * st); if (avg.every(okS) && spansOK(avg)) ps = avg; } // 前向/后向两个可行解的平均：跨度更均匀
       if (!ps) { S.notes.push(B.name + ' 桥墩无处可落（某一跨 > ' + M + ' m）'); ps = []; }
       for (const s of ps) { const [lo, hi] = foot(s); B.piers.push({ s, zb: (lo + hi) / 2, zt: topAt(s) - B.t, rows: rows.map(o => P(s, o)) }); }
-    }
+    } } // PK: 读包时跳过（结果由包恢复）
     if (G.__dbg) console.log('STAGE 13', Date.now() - t0);
     // ---- 表面（磁吸）：地面与桥面里最高的一个（桥面含两端桥台段）----
     function deckAt(x, y) { let h = null; for (const B of S.bridges) { const dx = x - B.p0[0], dy = y - B.p0[1], s = dx * B.u[0] + dy * B.u[1], o = dx * B.v[0] + dy * B.v[1]; if (s < B.s0 || s > B.s1 || Math.abs(o) > B.hw) continue; const z = B.topAt(s); h = h === null ? z : Math.max(h, z); } return h; }
     function surfaceAt(x, y) { const g = heightAt(x, y), b = deckAt(x, y); return b === null ? g : Math.max(g, b); }
-    Object.assign(S, { NX, NY, cell: c, H, BASE, CLS, TAG, X, Y, WZ, BED, heightAt, surfaceAt, deckAt, baseAt, wzAt, bedAt, bodyAt, WZC, BEDC, waterBodies: WB, SURF, Bat });
+    if (!PK) { Object.assign(S, { NX, NY, cell: c, H, BASE, CLS, TAG, X, Y, WZ, BED, heightAt, surfaceAt, deckAt, baseAt, wzAt, bedAt, bodyAt, WZC, BEDC, waterBodies: WB, SURF, Bat });
 
     if (G.__dbg) console.log('STAGE 7', Date.now() - t0);
     // ================= r5：可步行表面网络 =================
@@ -1142,10 +1149,20 @@
 
     S.tm.trees = TM() - tq;
     // ---- 标注 ----
-    for (const p of S.parts) if (p.name && p.fam !== 'dobei' && p.fam !== 'mwall' && !p.ramp) S.labels.push({ text: p.name, x: p.x, y: p.y, z: p.z + ({ tenshu: 62, yagura3: 22, yagura2: 17, yaguramon: 15, gate: 10, tamon: 14 }[p.fam] || 10), lost: !!p.lost, fam: p.fam });
+    for (const p of S.parts) if (p.name && p.fam !== 'dobei' && p.fam !== 'mwall' && !p.ramp) S.labels.push({ text: p.name, x: p.x, y: p.y, z: p.z + ({ tenshu: 62, yagura3: 22, yagura2: 17, yaguramon: 15, gate: 10, tamon: 14 }[p.fam] || 10), lost: !!p.lost, fam: p.fam }); } // PK: 读包时跳过（结果由包恢复）
 
     Object.assign(S, { NX, NY, cell: c, H, BASE, CLS, LOCK, TAG, heightAt, surfaceAt, deckAt, crestDist, inReg, levelAt, X, Y, WZ, BED, treeGeom, baseAt, wzAt, bedAt, bodyAt, WZC, BEDC, waterBodies: WB, SURF, Bat, padZ, bodyAtPt });
-    S._dbg = { splitCell, cellPoly, edgePts, opZ, opM, clsSurf, clsAt, ozEdges, edgeZ, bandAt: (e, x, y) => bandAt(e, x, y) }; // 只供调试/测试脚本用
+    // r8a：锚点表（结果包的编码/解码共用）：现场由同一份代码创建、被闭包引用的对象——解码时原地合并，闭包读到的就是包里的数据
+    const anchors = () => { const merge = { S, R, BAND, SURF, WB, H, CLS, LOCK, TAG, WBI, WZC, BEDC, BASE, SPL, SPT }; R.forEach((g, i) => { merge['R' + i] = g; }); WB.forEach((b, k) => { merge['WB' + k] = b; }); for (const k of Object.keys(SURF)) merge['SURF.' + k] = SURF[k];
+      const fns = {}; for (const k of Object.keys(SURF)) fns['surf:' + k] = SURF[k].at; WB.forEach((b, k) => { fns['bed:' + k] = b.bedFn; });
+      // 预测（只为压缩率，逐位异或）：水位/堀底 = 所属水体的值；台地填充后的高度 = 所属类的台地面（与操作 1 同一表达式）、水格 = 堀底；最终高度 ≈ BASE
+      const pred = { WZC: get => { const W = get('WBI'), o = new Float64Array(W.length); for (let q = 0; q < W.length; q++) o[q] = LVk[W[q]]; return o; }, BEDC: get => { const W = get('WBI'), o = new Float64Array(W.length); for (let q = 0; q < W.length; q++) o[q] = BDk[W[q]]; return o; },
+        BASE: get => { const K = get('CLS'), Bd = get('BEDC'), o = new Float64Array(K.length); for (let j = 0; j < NY; j++) { const y = Y(j); for (let i = 0; i < NX; i++) { const q = j * NX + i, k = K[q]; o[q] = k < 0 ? Bd[q] : clsSurf(k).at(X(i), y); } } return o; }, H: get => get('BASE') };
+      const custom = { SPT: { codec: 'gridTris', X, Y, x0: gs.x0, y0: gs.y0, c, NX, NY, zf: Object.keys(SURF).map(k => SURF[k].at), H, Hname: 'H' } };
+      return { merge, fns, pred, custom, consts: { SPEC, D }, extra: { WBI } }; };
+    if (PK) { const T1 = TM(); G.CASTLE_PACK.restore(PK, anchors()); for (const B of S.bridges) brFns(B); S.tm = { pack: TM() - T1 }; S.fromPack = true; }
+    S._anchors = anchors;
+    S._dbg = PK ? null : { splitCell, cellPoly, edgePts, opZ, opM, clsSurf, clsAt, ozEdges, edgeZ, bandAt: (e, x, y) => bandAt(e, x, y) }; // 只供调试/测试脚本用（读包时没有：切分器的内部表没有建）
     S.ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
     S.audit = () => audit(S); S.signature = () => signature(S);
     return S;
@@ -1584,5 +1601,5 @@
     return h.toString(16) + '-' + S.parts.length + '-' + S.trees.length;
   }
 
-  G.CASTLE_SITE = { SPEC, RULES, build, audit, rectPoly, segPoly, inPoly, polyDist, treeGeom, walkGrid, netAudit, conformAudit, _physics: physics };
+  G.CASTLE_SITE = { SPEC, RULES, build, genKey, audit, rectPoly, segPoly, inPoly, polyDist, treeGeom, walkGrid, netAudit, conformAudit, _physics: physics };
 })(typeof window !== 'undefined' ? window : globalThis);
