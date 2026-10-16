@@ -154,7 +154,7 @@
           for (const sd of [-1, 1]) k.quad('deck', A(s0, sd * hw, z0 - t), A(s1, sd * hw, z1 - t), A(s1, sd * hw, z1), A(s0, sd * hw, z0));
           const r0 = Math.max(s0, 0), r1 = Math.min(s1, B.len); if (r1 > r0) for (const sd of [-1, 1]) { const ra = A(r0, sd * hw * 0.95, 0), rb = A(r1, sd * hw * 0.95, 0); k.seg('vermil', ra[0], ra[1], rb[0], rb[1], (B.topAt(r0) + B.topAt(r1)) / 2 + 0.9, 0.2, 0.2); } }
         const np = Math.max(2, Math.round(B.len / 2)); for (let i = 0; i <= np; i++) { const s = B.len * i / np; for (const sd of [-1, 1]) { const q = A(s, sd * hw * 0.95, 0); k.box('vermil', q[0], q[1], B.topAt(s), 0.22, 0.22, 1.1, ang); } }
-        if (P.fault === 'c8') { const sm = B.len / 2, q = A(sm, 0, 0); k.box('wood', q[0], q[1], S.WZ + 0.5, 0.6, 2 * hw + 30, 1.0, ang); } // 故障注入（测试用）：桥下横一根梁，C8 必须报出来
+        if (P.fault === 'c8') { const sup = [B.sA].concat(B.piers.map(q2 => q2.s), [B.sB]).sort((a2, b2) => a2 - b2); let sm = B.len / 2; for (let i = 1; i < sup.length; i++) if (sup[i - 1] <= B.len / 2 && sup[i] >= B.len / 2) { sm = (sup[i - 1] + sup[i]) / 2; break; } const q = A(sm, 0, 0); /* 横在 C8 走的那一跨的中线上 */ k.box('wood', q[0], q[1], S.WZ + 0.5, 0.6, 2 * hw + 4, 1.0, ang); } // 故障注入（测试用）：桥下横一根梁，C8 必须报出来
         for (const pr of B.piers) { for (const q of pr.rows) k.box('wood', q[0], q[1], pr.zb, SITE.SPEC.bridge.pierW, SITE.SPEC.bridge.pierW, pr.zt - pr.zb, ang); k.seg('wood', pr.rows[0][0], pr.rows[0][1], pr.rows[1][0], pr.rows[1][1], pr.zt - 0.45, 0.5, 0.45); } },
       dobashi(k, p, S) { // 土桥路面：沿剖面铺一条略高于地形的碎石路面
         const r = S.ramps.find(q => q.part === p), L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0), n = Math.max(2, Math.ceil(L / 1.5)), ang = Math.atan2(p.y1 - p.y0, p.x1 - p.x0), nx = -Math.sin(ang), ny = Math.cos(ang), hw = p.w / 2 - 0.4;
@@ -186,9 +186,19 @@
         const r = hash(i, j), big = 0.5 + 0.5 * Math.sin(S.X(i) * 0.05 + Math.cos(S.Y(j) * 0.04) * 2.0), v = c === C.stone ? 0.75 + 0.5 * r : 0.88 + 0.16 * r + (c === C.grass ? 0.12 * big : 0);
         col[q * 3] = c[0] * v; col[q * 3 + 1] = c[1] * v; col[q * 3 + 2] = c[2] * v;
       }
-      const idx = new Uint32Array((NX - 1) * (NY - 1) * 6); let t = 0;
-      for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) { const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1; idx[t++] = a; idx[t++] = b; idx[t++] = d; idx[t++] = a; idx[t++] = d; idx[t++] = c; }
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
+      // r6：被石垣顶线/墙脚线切开的格（S.splitIdx → S.splitTris）用切分三角形代替网格的两个三角形；新顶点按 x/y/z 精确焊接（相邻格逐位相同 → 水密、法线连续）
+      const SPL = S.splitIdx, SPT = S.splitTris || [], x0 = S.X(0), y0 = S.Y(0); let nsv = 0; for (const sp of SPT) if (sp.kind !== 'dead') nsv += sp.tris.length / 3;
+      const idx = new Uint32Array((NX - 1) * (NY - 1) * 6 + nsv), xp = [], cp = [], vmap = new Map(); let t = 0;
+      const vid = (x, y, z, a) => { const fi = (x - x0) / cell, fj = (y - y0) / cell, ri = Math.round(fi), rj = Math.round(fj); if (Math.abs(fi - ri) < 1e-9 && Math.abs(fj - rj) < 1e-9 && ri >= 0 && rj >= 0 && ri < NX && rj < NY) return rj * NX + ri;
+        const key = x + ',' + y + ',' + z; let v = vmap.get(key); if (v !== undefined) return v; // 精确焊接：相邻格共用的切点 x/y/z 逐位相同；同一平面位置不同高度（陡坎两侧）的点不合并
+        v = n + xp.length / 3; vmap.set(key, v); xp.push(x, z, -y);
+        let bq = a, bd = 1e9; for (const q of [a, a + 1, a + NX, a + NX + 1]) { const d = Math.abs(H[q] - z); if (d < bd) { bd = d; bq = q; } } cp.push(col[bq * 3], col[bq * 3 + 1], col[bq * 3 + 2]); return v; }; // 新顶点的颜色 = 高度最接近的角点的颜色（台地顶 / 石垣面 / 下层地面）
+      for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) { const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1;
+        if (SPL && SPL[a] >= 0) { const T = SPT[SPL[a]].tris; for (let k = 0; k < T.length; k += 9) { const ar = (T[k + 3] - T[k]) * (T[k + 7] - T[k + 1]) - (T[k + 6] - T[k]) * (T[k + 4] - T[k + 1]); if (Math.abs(ar) < 1e-12) continue; const v0 = vid(T[k], T[k + 1], T[k + 2], a), v1 = vid(T[k + 3], T[k + 4], T[k + 5], a), v2 = vid(T[k + 6], T[k + 7], T[k + 8], a); idx[t++] = v0; if (ar > 0) { idx[t++] = v1; idx[t++] = v2; } else { idx[t++] = v2; idx[t++] = v1; } } continue; }
+        idx[t++] = a; idx[t++] = b; idx[t++] = d; idx[t++] = a; idx[t++] = d; idx[t++] = c; }
+      const P2 = new Float32Array(pos.length + xp.length), C2 = new Float32Array(col.length + cp.length); P2.set(pos); P2.set(xp, pos.length); C2.set(col); C2.set(cp, col.length);
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P2, 3)); g.setAttribute('color', new THREE.BufferAttribute(C2, 3)); g.setIndex(new THREE.BufferAttribute(idx.subarray(0, t), 1)); g.computeVertexNormals();
+      state.terrainTris = t / 3;
       const m = new THREE.Mesh(g, stoneShader(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); m.receiveShadow = true; m.castShadow = true; m.name = 'terrain';
       void nino; void LOCK; return m;
     }
@@ -229,7 +239,7 @@
       return grp;
     }
     function treesMesh(S) {
-      const grp = new THREE.Group(), N = S.trees.length; if (!N) return grp;
+      const grp = new THREE.Group(), N = S.trees.length; grp.userData.trees = true; if (!N) return grp;
       const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.38, 1, 6), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1 }), N);
       const crownG = new THREE.IcosahedronGeometry(1, 1), crown = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ roughness: 0.9 }), N * 2);
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
@@ -252,10 +262,12 @@
 
     // ---------- 构建 ----------
     let site = null, world = null, tenshuProto = null;
-    function buildWorld(opt) {
+    // r6：首次加载时 H 系列审计在第一帧画出来之后再跑（审计只读几何、只标记违规；结果出来后补画违规标记、面板更新）。
+    // 之后的重建（换 seed / 现状）照旧同步审计。测试等 __castle.auditResult。
+    function buildWorld(opt, deferAudit) {
       const t0 = performance.now();
       if (world) { scene.remove(world); world.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-      site = SITE.build(opt); const A = site.audit();
+      site = SITE.build(opt); state.auditResult = null; const A = deferAudit ? null : site.audit();
       world = new THREE.Group(); world.name = 'world';
       world.add(terrainMesh(site)); world.add(outerGround(site));
       const k = Kit();
@@ -265,18 +277,24 @@
       const tb = site.parts.find(p => p.fam === 'tenshu');
       if (tb) { if (!tenshuProto) tenshuProto = window.CASTLE_TENSHU.build(THREE, { maxAniso: renderer.capabilities.getMaxAnisotropy() }); const t = tenshuProto; t.position.copy(W(tb.x, tb.y, tb.z)); t.rotation.y = tb.ang; world.add(t); }
       world.add(treesMesh(site));
-      const bad = new THREE.Group(); bad.name = 'bad';
-      for (const p of site.parts) if (p.bad) { const bb = p.poly ? p.poly : [[p.x0, p.y0], [p.x1, p.y1]]; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of bb) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); } const z = (p.z !== undefined ? p.z : Math.min(p.z0, p.z1)); const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 2, 26, y1 - y0 + 2), badMat); m.position.copy(W((x0 + x1) / 2, (y0 + y1) / 2, z + 12)); bad.add(m); }
-      world.add(bad);
+      if (A) world.add(badMarks()); state.signature = site.signature();
       const labels = new THREE.Group(); labels.name = 'labels';
       for (const L of site.labels) { const sp = labelSprite(L.text, L.lost); sp.position.copy(W(L.x, L.y, L.z)); labels.add(sp); }
       labels.visible = P.labels; world.add(labels);
       scene.add(world);
       let verts = 0, tris = 0; world.traverse(o => { if (o.isMesh && o.geometry) { const g = o.geometry, c = g.attributes.position.count, inst = o.isInstancedMesh ? o.count : 1; verts += c * inst; tris += (g.index ? g.index.count / 3 : c / 3) * inst; } });
-      state.site = site; state.auditResult = A; state.signature = site.signature(); state.stats = { verts, tris: Math.round(tris), buildMs: Math.round(site.ms), sceneMs: Math.round(performance.now() - t0), parts: site.parts.length, trees: site.trees.length, dobei: site.dobei.length, lostPlaced: site.lostPlaced.length, lostSkipped: site.lostSkipped };
-      buildField(); showAudit(A); showStats();
-      state.camAudit = null; setTimeout(() => { state.camAudit = cameraAudit(); showCamAudit(state.camAudit); }, 50);
+      state.site = site; state.stats = { verts, tris: Math.round(tris), buildMs: Math.round(site.ms), sceneMs: Math.round(performance.now() - t0), parts: site.parts.length, trees: site.trees.length, dobei: site.dobei.length, lostPlaced: site.lostPlaced.length, lostSkipped: site.lostSkipped, conform: site.conform && { cells: site.conform.cells, split: site.conform.split, passive: site.conform.passive, dropped: site.conform.dropped, fans: site.conform.fans.length } };
+      buildField(); showStats();
+      const s0 = site, doAudit = () => { if (site !== s0) return; const t1 = performance.now(), A2 = A || site.audit(); state.stats.auditMs = A ? null : Math.round(performance.now() - t1); state.auditResult = A2; showAudit(A2); showStats();
+        if (!A && A2.total) { world.add(badMarks()); const tr = world.children.find(o => o.isGroup && o.userData.trees); if (tr && site.trees.some(t => t.bad)) { world.remove(tr); world.add(treesMesh(site)); } requestRender(); } };
+      state.camAudit = null; const doCam = () => setTimeout(() => { if (site === s0) { state.camAudit = cameraAudit(); showCamAudit(state.camAudit); } }, 50);
+      if (A) { doAudit(); doCam(); } else { $('audit').innerHTML = '<div class="ah">硬规则审计：运行中…</div>'; requestAnimationFrame(() => setTimeout(() => { doAudit(); doCam(); }, 0)); }
       requestRender();
+    }
+    function badMarks() {
+      const bad = new THREE.Group(); bad.name = 'bad';
+      for (const p of site.parts) if (p.bad) { const bb = p.poly ? p.poly : [[p.x0, p.y0], [p.x1, p.y1]]; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of bb) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); } const z = (p.z !== undefined ? p.z : Math.min(p.z0, p.z1)); const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 2, 26, y1 - y0 + 2), badMat); m.position.copy(W((x0 + x1) / 2, (y0 + y1) / 2, z + 12)); bad.add(m); }
+      return bad;
     }
 
     // ---------- 界面 ----------
@@ -287,7 +305,7 @@
       h += '</table>'; if (!ok) h += '<div class="items">' + A.items.slice(0, 12).map(it => `<div>${it.rule} · ${it.name}：${it.msg}</div>`).join('') + '</div>';
       el.innerHTML = h;
     }
-    function showStats() { const s = state.stats; $('stats').textContent = `${(s.verts / 1e3).toFixed(0)}k 顶点 · ${(s.tris / 1e3).toFixed(0)}k 三角形 · ${s.parts} 部件 · ${s.trees} 树 · 生成 ${s.buildMs} ms · 场景 ${s.sceneMs} ms · 碰撞场 ${s.camMs} ms`; }
+    function showStats() { const s = state.stats; $('stats').textContent = `${(s.verts / 1e3).toFixed(0)}k 顶点 · ${(s.tris / 1e3).toFixed(0)}k 三角形 · ${s.parts} 部件 · ${s.trees} 树 · 生成 ${s.buildMs} ms · 场景 ${s.sceneMs} ms · 碰撞场 ${s.camMs} ms${s.auditMs ? ' · 审计 ' + s.auditMs + ' ms' : ''}${s.conform ? ' · 地形切分 ' + s.conform.split + '+' + s.conform.passive + ' 格' : ''}`; }
     // ---------- 相机物理体：碰撞场、视角规则、过渡路径、每帧约束（web-r3）----------
     const CAMX = window.CASTLE_CAMERA, w3 = v => [v.x, -v.z, v.y], setV = (v, a) => v.set(a[0], a[2], -a[1]);
     // 视角 = 规则：目标点（看什么）+ 方位角（相机在目标的哪一侧，度，东=0 逆时针）+ 仰角 + 距离 + 目标本体半径 rf（视线检查时不算遮挡）
@@ -488,7 +506,7 @@
     $('seed').value = P.seed; $('seed').onchange = e => { P.seed = Math.max(1, +e.target.value | 0); writeHash(P); buildWorld(P); };
     $('hide').onclick = () => $('ui').classList.toggle('min');
 
-    buildWorld(P); setView(P.view, true);
+    buildWorld(P, true); setView(P.view, true);
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
     state.goView = v => setView(v, false); state.walkThrough = (id, now) => walkThrough(id, now); state.route = route; state.walkAnim = walkAnim; state.enforce = enforce; state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
