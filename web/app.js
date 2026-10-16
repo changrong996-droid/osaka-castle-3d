@@ -137,7 +137,8 @@
         const b = p.data, z = p.z, H0 = 4.6; let pieces = [b.fp];
         for (const q of p.passages || []) { const m = [Math.cos(q.ang), Math.sin(q.ang)], c0 = m[0] * q.x + m[1] * q.y, next = [];
           for (const P of pieces) { const A = clipHalf(P, m, c0 - q.w / 2), B = clipHalf(P, [-m[0], -m[1]], -(c0 + q.w / 2)); if (A.length >= 3) next.push(A); if (B.length >= 3) next.push(B); }
-          pieces = next; const dv = [-m[1], m[0]]; for (const sd of [-1, 1]) k.box('wood', q.x + m[0] * sd * q.w / 4, q.y + m[1] * sd * q.w / 4, z, q.w / 2 - 0.1, 0.25, H0 - 0.2, q.ang); k.box('iron', q.x, q.y, z + H0 - 0.5, q.w, q.len, 0.5, q.ang); void dv; }
+          pieces = next; const dv = [-m[1], m[0]], lw = q.w / 2 - 0.1; // 门扇开着（H14：门洞可通行）：每扇绕门洞侧的枢轴转 90°，贴在通道侧壁上
+          for (const sd of [-1, 1]) k.box('wood', q.x + m[0] * sd * (q.w / 2 - 0.2) + dv[0] * lw / 2, q.y + m[1] * sd * (q.w / 2 - 0.2) + dv[1] * lw / 2, z, 0.25, lw, H0 - 0.2, q.ang); k.box('iron', q.x, q.y, z + H0 - 0.5, q.w, q.len, 0.5, q.ang); }
         for (const P of pieces) k.prism('stone', P, z, z + H0);
         k.prism('lacquer', b.fp, z + H0, z + H0 + 0.6); k.prism('plaster', b.fp, z + H0 + 0.6, z + H0 + 4.2); k.prism('ridge', b.roof, z + H0 + 3.9, z + H0 + 4.5, 'tile'); if (b.roof2 && b.roof2.length >= 3) k.prism('tile', b.roof2, z + H0 + 4.5, z + H0 + 6.1, 'ridge'); },
       dobei(k, p) { const e = (j, w) => j === 'joint' ? w / 2 : 0, L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L;
@@ -284,12 +285,49 @@
       eastwall: { target: [144, 30, 4], az: -74, el: 3, dist: 104, rf: 10 },          // 东侧石垣面（本丸东缘 x≈144，z −7→14 的中部），相机在内堀水面上
       otejoint: { target: [-268, -262, 6], az: -14, el: 18, dist: 35, rf: 5 },        // 大手门枡形里：高丽门 + 两侧土塀 + 连接墙
       sakura: { target: [-12, -228, 18], az: 47, el: 19, dist: 46, rf: 6 },           // 本丸桜门 + 枡形 + 铁门
+      otegate: { walk: 'otemon', at: 'gate', ahead: 10, rf: 0.5 },                     // 站在大手门（高丽门）门洞里、眼高 1.6 m，沿步行路线向枡形里看（规则：H14 步行路线上离门洞中心最近的点）
     };
     const LEGACY = { // r2 的硬编码相机（只用于审计对比）
       aerial: [[-560, -700, 430], [-20, -60, 0]], top: [[0, -60, 1650], [0, -59.9, 0]], otemon: [[-345, -268, 9], [-262, -255, 9]], tenshu: [[40, -150, 22], [0, 0, 40]],
       eastwall: [[172, -70, -4], [120, 40, 12]], otejoint: [[-236, -270, 14], [-268, -262, 3]], sakura: [[18, -196, 30], [-12, -228, 15]],
     };
-    let F = null, PRE = {};
+    let F = null, PRE = {}, ROUTES = {};
+    // ---------- 步行（web-r4）：门的 H14 路线（坡道/桥外端 → 门洞 → 曲轮地面 ≥goal），眼高 1.6 m 的相机球沿路线全程合法 ----------
+    function gateRoute(gate, ok) {
+      const WK = site.spec.walk, g = gate.region, r = gate.ramp, vdir = gate.nin || [-Math.sin(gate.ang), Math.cos(gate.ang)];
+      const side = (x, y) => (x - gate.x) * vdir[0] + (y - gate.y) * vdir[1], dd = (x, y) => Math.hypot(x - gate.x, y - gate.y);
+      const level = (x, y) => Math.abs(site.surfaceAt(x, y) - g.z) < 0.1 && site.zoneAt(x, y) === g;
+      let starts, goal;
+      if (gate.nin && r && r.p1) { starts = [r.p1]; goal = (x, y) => side(x, y) > 0 && dd(x, y) >= WK.goal && level(x, y); }
+      else { starts = [20, 16, 24, 12].map(s => [gate.x - vdir[0] * s, gate.y - vdir[1] * s]); goal = (x, y) => side(x, y) > 0 && dd(x, y) >= 20 && level(x, y); }
+      let res = null; const atGate = (x, y) => Math.hypot(x - gate.x, y - gate.y) <= 0.75; // 两段：起点 → 门洞中心 → 曲轮地面（保证真的穿过这座门的门洞）
+      for (const st of starts) { const M = WK.margin, box = [Math.min(st[0], gate.x) - M, Math.min(st[1], gate.y) - M, Math.max(st[0], gate.x) + M, Math.max(st[1], gate.y) + M];
+        const r1 = F.walkRoute(st, atGate, box, { ok, slope: WK.slope }); if (!r1.ok) { res = { ok: false, why: r1.why === 'start' ? 'start' : 'to-gate' }; if (r1.why === 'start') continue; break; }
+        const g0 = r1.raw[r1.raw.length - 1], r2 = F.walkRoute(g0, goal, box, { ok, slope: WK.slope }); res = r2.ok ? { ok: true, raw: r1.raw.concat(r2.raw.slice(1)), exp: r1.exp + r2.exp } : { ok: false, why: 'from-gate' }; break; }
+      if (!res.ok) return { ok: false, why: res.why, gate: gate.name };
+      const pts = ok ? res.raw : F.walkSmooth(res.raw); let bad = 0, thr = 1e9; const chk = ok || (q => F.valid(q, 1e-3));
+      for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], N = Math.max(1, Math.ceil(dist3(a, b) / 0.25)); for (let k = 1; k <= N; k++) { const u = k / N; if (!chk([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u])) bad++; } }
+      for (const p of pts) thr = Math.min(thr, Math.hypot(p[0] - gate.x, p[1] - gate.y)); // 必须穿过门洞（离门洞中心 ≤ 门洞半宽）
+      const eye = pts.map(p => p[2] - site.surfaceAt(p[0], p[1]));
+      return { ok: !bad && thr <= gate.open / 2, bad, thr, pts, gate: gate.name, exp: res.exp, eyeMin: Math.min(...eye), eyeMax: Math.max(...eye) };
+    }
+    const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    const gateById = id => site.gates.find(g => g.spec.id === id);
+    function route(id) { if (!ROUTES[id]) { const g = gateById(id); ROUTES[id] = g ? gateRoute(g) : { ok: false, why: 'nogate' }; } return ROUTES[id]; }
+    const aheadOf = (P, s, a) => { const L = P.L; if (s + a <= L) return P.posAt(s + a); const e = P.posAt(L), b = P.posAt(Math.max(0, L - 1)), d = [e[0] - b[0], e[1] - b[1], e[2] - b[2]], l = Math.hypot(...d) || 1, x = s + a - L; return [e[0] + d[0] / l * x, e[1] + d[1] / l * x, e[2] + d[2] / l * x]; };
+    function walkPreset(r) {
+      const W = route(r.walk); if (!W.ok) return { cam: [0, -60, 900], tgt: [0, -60, 14], cost: Infinity, k: null };
+      const g = gateById(r.walk), P = F.polyPath(W.pts, { tgt: [0, 0, 0] }, { tgt: [0, 0, 0] }); let best = 0, bd = 1e9, s = 0;
+      for (let i = 0; i < W.pts.length; i++) { if (i) s += dist3(W.pts[i - 1], W.pts[i]); const d = Math.hypot(W.pts[i][0] - g.x, W.pts[i][1] - g.y); if (d < bd) { bd = d; best = s; } }
+      const t = aheadOf(P, best, r.ahead); t[2] -= 0.5; return { cam: P.posAt(best), tgt: t, cost: 0, k: 'walk' };
+    }
+    // 步行动画：沿路线，相机在眼高，目标 = 前方 8 m、低 0.5 m（略俯视，避开 OrbitControls 的极角上限）
+    function walkAnim(id, speed) {
+      const W = route(id); if (!W.ok) return null; const P = F.polyPath(W.pts, { tgt: [0, 0, 0] }, { tgt: [0, 0, 0] }), L = P.L;
+      const at = t => { const k = clamp01(t), s = L * (k < 0.08 ? k * k / 0.16 : k > 0.92 ? 1 - (1 - k) * (1 - k) / 0.16 : (k - 0.04) / 0.92); const cam = P.posAt(s), tg = aheadOf(P, s, 8); tg[2] -= 0.5; return { cam, tgt: tg }; };
+      return { at, L, dur: L / (speed || 6), maxLift: 0, kind: 'walk' };
+    }
+    const clamp01 = t => t < 0 ? 0 : t > 1 ? 1 : t;
     function buildField() {
       const t0 = performance.now(); F = CAMX.create(site, { R: CAM_R, keepTris: P.camgeo }); world.updateMatrixWorld(true);
       const skip = new Set(['terrain', 'outer', 'water', 'labels', 'bad']), m4 = new THREE.Matrix4(), mm = new THREE.Matrix4();
@@ -297,8 +335,9 @@
           if (o.isInstancedMesh) { for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); mm.multiplyMatrices(o.matrixWorld, m4); F.addTris(pos, idx, mm.elements, true); } }
           else F.addTris(pos, idx, o.matrixWorld.equals(new THREE.Matrix4()) ? null : o.matrixWorld.elements); }
         for (const ch of o.children) walk(ch); };
-      walk(world); F.finish();
-      PRE = {}; for (const [k, r] of Object.entries(VIEWS)) PRE[k] = F.fixPreset(r);
+      walk(world); const t1 = performance.now(); F.finish(); ROUTES = {}; lastCam = null; const t2 = performance.now();
+      PRE = {}; for (const [k, r] of Object.entries(VIEWS)) PRE[k] = r.walk ? walkPreset(r) : F.fixPreset(r);
+      state.camT = { collect: Math.round(t1 - t0), finish: Math.round(t2 - t1), presets: Math.round(performance.now() - t2) };
       state.camField = F; state.presets = PRE; state.stats.camMs = Math.round(performance.now() - t0);
     }
     let anim = null;
@@ -306,14 +345,25 @@
     function setView(name, instant) {
       if (!VIEWS[name]) name = 'aerial'; const v = PRE[name]; P.view = name; writeHash(P);
       document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === name));
-      if (instant) { anim = null; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); enforce(); requestRender(); return; }
-      const pth = F.path(cur(), v); anim = { pth, s: performance.now() }; requestRender();
+      if (instant) { anim = null; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); lastCam = v.cam.slice(); enforce(); requestRender(); return; }
+      const pth = F.path(cur(), v); anim = { list: [pth], i: 0, pth, s: performance.now() }; requestRender();
+    }
+    // 步行穿门：先过渡到路线起点（看向前方），再沿 H14 路线以眼高走过门洞
+    function walkThrough(id, now) {
+      const W = walkAnim(id || 'otemon'); if (!W) return false; const s0 = W.at(0), pth = F.path(cur(), s0);
+      anim = { list: [pth, W], i: 0, pth, s: now === undefined ? performance.now() : now }; requestRender(); return true;
     }
     // 每帧约束：目标不低于地面；相机球心若进入实体/地下，取位移最小的修正（抬升或沿视线收回）
-    let fixes = 0;
-    function enforce() {
+    // web-r4：相机从上一帧合法位置连续运动到期望位置（扫掠 + 接触滑移，防穿薄墙）；瞬移/重建后按“合法且向上开放”落点
+    let fixes = 0, lastCam = null;
+    function enforce(teleport) {
       const t = w3(controls.target), fl = F.floorAt(t[0], t[1]); if (t[2] < fl) { t[2] = fl; setV(controls.target, t); }
-      const c = w3(camera.position), r = F.resolve(c, t, controls.minDistance); if (r) { setV(camera.position, r); camera.lookAt(controls.target); fixes++; return true; } return false;
+      const c = w3(camera.position), r = (!lastCam || teleport) ? F.place(c) : F.move(lastCam, c); lastCam = r;
+      if (dist3(r, c) > 1e-6) { setV(camera.position, r); camera.lookAt(controls.target); fixes++; return true; } return false;
+    }
+    function enforceR3() { // web-r3 旧逻辑（只用于对照审计）
+      const t = w3(controls.target), fl = F.floorAt(t[0], t[1]); if (t[2] < fl) { t[2] = fl; setV(controls.target, t); }
+      const c = w3(camera.position), r = F.resolveLegacy(c, t, controls.minDistance); if (r) { setV(camera.position, r); camera.lookAt(controls.target); return true; } return false;
     }
     state.camFixes = () => fixes;
     controls.addEventListener('start', () => { anim = null; });
@@ -322,9 +372,10 @@
     addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); requestRender(); });
     function step(now) {
       let moved = false; if (!F) return false;
-      if (anim) { const k = (now - anim.s) / (anim.pth.dur * 1000), q = anim.pth.at(k); setV(camera.position, q.cam); setV(controls.target, q.tgt); if (k >= 1) anim = null; moved = true; }
+      if (anim) { const k = (now - anim.s) / (anim.pth.dur * 1000), q = anim.pth.at(k); setV(camera.position, q.cam); setV(controls.target, q.tgt); moved = true;
+        if (k >= 1) { if (anim.i + 1 < anim.list.length) { anim.i++; anim.s = now; anim.pth = anim.list[anim.i]; } else anim = null; } }
       if (controls.update()) moved = true;
-      if (enforce()) { controls.update(); moved = true; }
+      if (enforce()) moved = true; // 约束之后不再 controls.update()（它会按阻尼余量再挪一次相机，绕过约束）；下一帧从新位置继续
       return moved;
     }
     renderer.setAnimationLoop(now => {
@@ -332,44 +383,60 @@
       if (need) { renderer.render(scene, camera); need = false; state.frames = (state.frames || 0) + 1; }
     });
 
-    // ---------- 相机审计 C1–C5 ----------
+    // ---------- 相机审计 C1–C7 ----------
     const CRULES = [
       { id: 'C1', name: '视角相机球体不在实体内/地下/水下' },
       { id: 'C2', name: '视角相机到目标视线无遮挡' },
       { id: 'C3', name: '任意两视角之间的过渡路径全程清空（0.25 m 采样）' },
       { id: 'C4', name: '随机旋转/平移/缩放 模糊测试：相机始终清空' },
       { id: 'C5', name: '近裁剪面四角在相机球内（近处墙面不被切）' },
+      { id: 'C6', name: '每座门：眼高 1.6 m 沿 H14 路线穿过门洞，全程清空（失败门数）' },
+      { id: 'C7', name: '快速拖动/穿越模糊测试：相邻两帧之间球心不穿过任何几何' },
     ];
     function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-    // 模糊测试：随机施加 OrbitControls 的三种操作（旋转/平移/缩放，含大幅度与把目标平移到全城任意处），然后跑真实的一帧（controls.update + 约束）
-    function fuzz(n, seed, legacy, geo) {
-      const save = cur(), rnd = rng(seed || 7), sp = new THREE.Spherical(), off = new THREE.Vector3(); let bad = 0, badGeo = 0, checked = 0; const ex = [];
+    // 模糊测试：随机施加 OrbitControls 的操作（旋转/缩放/平移/穿过目标的推拉，含大幅度；以及把目标瞬移到全城任意处），然后跑真实的一帧约束
+    // mode: 'new'（web-r4 扫掠）| 'r3'（web-r3 柱状场抬升）| 'none'（r2 无约束）
+    function fuzz(n, seed, mode, geo, start) {
+      const save = cur(), rnd = rng(seed || 7), sp = new THREE.Spherical(), off = new THREE.Vector3(); let bad = 0, badGeo = 0, checked = 0, tun = 0; const ex = [], exT = [];
+      if (start) { const v = PRE[start]; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); lastCam = v.cam.slice(); }
+      if (mode === 'new') enforce(!lastCam || !F.valid(lastCam));
       for (let i = 0; i < n; i++) {
-        const a = rnd();
-        if (a < 0.35) { off.copy(camera.position).sub(controls.target); sp.setFromVector3(off); sp.theta += (rnd() - 0.5) * 1.6; sp.phi += (rnd() - 0.5) * 0.9; off.setFromSpherical(sp); camera.position.copy(controls.target).add(off); }
-        else if (a < 0.65) { off.copy(camera.position).sub(controls.target); const s = rnd() < 0.5 ? 0.2 + rnd() * 0.6 : 1 + rnd() * 1.5; off.multiplyScalar(s); camera.position.copy(controls.target).add(off); }
-        else if (a < 0.9) { const d = camera.position.distanceTo(controls.target), v = new THREE.Vector3((rnd() - 0.5), (rnd() - 0.5) * 0.4, (rnd() - 0.5)).multiplyScalar(d * 0.8); camera.position.add(v); controls.target.add(v); }
-        else { const x = -420 + rnd() * 840, y = -520 + rnd() * 860, z = site.surfaceAt(x, y), d = 3 + rnd() * 60, v = new THREE.Vector3(); setV(v, [x, y, z]); const o = camera.position.clone().sub(controls.target).setLength(d); controls.target.copy(v); camera.position.copy(v).add(o); }
-        controls.update(); if (!legacy) { if (enforce()) controls.update(); }
+        const a = rnd(), prev = w3(camera.position); let jump = false;
+        if (a < 0.3) { off.copy(camera.position).sub(controls.target); sp.setFromVector3(off); sp.theta += (rnd() - 0.5) * 1.6; sp.phi += (rnd() - 0.5) * 0.9; off.setFromSpherical(sp); camera.position.copy(controls.target).add(off); }
+        else if (a < 0.55) { off.copy(camera.position).sub(controls.target); const s = rnd() < 0.5 ? 0.2 + rnd() * 0.6 : 1 + rnd() * 1.5; off.multiplyScalar(s); camera.position.copy(controls.target).add(off); }
+        else if (a < 0.7) { off.copy(camera.position).sub(controls.target); off.multiplyScalar(-(0.3 + rnd())); camera.position.copy(controls.target).add(off); } // 推拉穿过目标（快速拖动最容易穿墙的情形）
+        else if (a < 0.92) { const d = camera.position.distanceTo(controls.target), v = new THREE.Vector3((rnd() - 0.5), (rnd() - 0.5) * 0.4, (rnd() - 0.5)).multiplyScalar(d * 0.8); camera.position.add(v); controls.target.add(v); }
+        else { jump = true; const x = -420 + rnd() * 840, y = -520 + rnd() * 860, z = site.surfaceAt(x, y), d = 3 + rnd() * 60, v = new THREE.Vector3(); setV(v, [x, y, z]); const o = camera.position.clone().sub(controls.target).setLength(d); controls.target.copy(v); camera.position.copy(v).add(o); }
+        controls.update(); if (mode === 'new') enforce(jump); else if (mode === 'r3') enforceR3();
         const c = w3(camera.position); if (!F.clear(c, 1e-3)) { bad++; if (ex.length < 5) ex.push(c.map(v => +v.toFixed(1))); }
+        const mv = mode === 'new' && !jump ? (F.lastMove() || [prev, c]) : [prev, c]; let hit = false; if (!jump) for (let k = 1; k < mv.length && !hit; k++) hit = !!F.segHit(mv[k - 1], mv[k]);
+        if (hit) { tun++; if (exT.length < 3) exT.push([prev.map(v => +v.toFixed(1)), c.map(v => +v.toFixed(1))]); }
         if (geo && F.hasGeo() && i % geo === 0) { checked++; if (F.geoCheck(c)) badGeo++; }
       }
-      setV(camera.position, save.cam); setV(controls.target, save.tgt); controls.update(); requestRender();
-      return { n, bad, badGeo, checked, ex };
+      setV(camera.position, save.cam); setV(controls.target, save.tgt); controls.update(); lastCam = null; if (mode === 'new') enforce(true); requestRender();
+      return { n, bad, badGeo, checked, ex, tun, exT };
     }
+    const C7_STARTS = ['otegate', 'otejoint', 'sakura', 'eastwall', 'tenshu'];
+    function tunnelFuzz(mode, n, seed) { let tun = 0, bad = 0; const ex = []; C7_STARTS.forEach((v, i) => { const f = fuzz(n || 120, (seed || 101) + i, mode, 0, v); tun += f.tun; bad += f.bad; ex.push(...f.exT); }); return { tun, bad, ex: ex.slice(0, 3) }; }
+    function gateAudit(old) { const out = []; for (const g of site.gates) { const r = old ? gateRoute(g, q => F.clearOld(q, 1e-3)) : route(g.spec.id); out.push({ gate: g.name, ok: !!r.ok, why: r.why, bad: r.bad, thr: r.thr && +r.thr.toFixed(2), n: r.pts && r.pts.length, eye: r.eyeMin !== undefined ? [+r.eyeMin.toFixed(2), +r.eyeMax.toFixed(2)] : null }); } return out; }
     function cameraAudit(o) {
-      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0 };
+      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0 };
       const pre = {}; for (const k of names) pre[k] = legacy ? { cam: LEGACY[k][0], tgt: LEGACY[k][1] } : PRE[k];
       for (const k of names) { const p = pre[k];
-        if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机 z=' + p.cam[2].toFixed(1) + ' < 需要 ' + F.need(p.cam[0], p.cam[1]).toFixed(1)); }
+        if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机球不合法 ' + p.cam.map(v => v.toFixed(1))); }
         if (o.geo && F.hasGeo() && F.geoCheck(p.cam)) geo.C1++;
         if (!F.los(p.cam, p.tgt, VIEWS[k].rf).ok) { cnt.C2++; items.push('C2 ' + k + ' 视线被挡'); } }
-      for (const a of names) for (const b of names) { if (a === b) continue; const pth = legacy ? F.linear(pre[a], pre[b]) : F.path(pre[a], pre[b]), nb = F.pathBad(pth); if (nb) { cnt.C3++; if (items.length < 30) items.push('C3 ' + a + '→' + b + ' ' + nb + ' 个采样点不清空'); }
+      const lifts = [];
+      for (const a of names) for (const b of names) { if (a === b) continue; const pth = legacy ? F.linear(pre[a], pre[b]) : F.path(pre[a], pre[b]), nb = F.pathBad(pth); if (!legacy) lifts.push(pth.maxLift); if (nb) { cnt.C3++; if (items.length < 30) items.push('C3 ' + a + '→' + b + ' ' + nb + ' 个采样点不清空'); }
         if (o.geo && F.hasGeo()) for (let k = 0; k <= 40; k++) if (F.geoCheck(pth.at(k / 40).cam)) { geo.C3++; break; } }
-      const fz = fuzz(o.fuzz || 400, o.seed || 7, legacy, o.geo ? 5 : 0); cnt.C4 = fz.bad; geo.C4 = fz.badGeo; if (fz.bad) items.push('C4 模糊测试 ' + fz.bad + '/' + fz.n + ' 步相机不清空，例 ' + JSON.stringify(fz.ex[0]));
+      const fz = fuzz(o.fuzz || 400, o.seed || 7, legacy ? 'none' : 'new', o.geo ? 5 : 0); cnt.C4 = fz.bad; geo.C4 = fz.badGeo; if (fz.bad) items.push('C4 模糊测试 ' + fz.bad + '/' + fz.n + ' 步相机不清空，例 ' + JSON.stringify(fz.ex[0]));
       const t = Math.tan(camera.fov * Math.PI / 360), corner = camera.near * Math.sqrt(1 + t * t * (1 + camera.aspect * camera.aspect)); if (!(corner < CAM_R)) { cnt.C5++; items.push('C5 近平面角距 ' + corner.toFixed(2)); }
+      let gates = null, tf = null;
+      if (!legacy) { gates = gateAudit(!!o.old); cnt.C6 = gates.filter(g => !g.ok).length; for (const g of gates) if (!g.ok) items.push('C6 ' + g.gate + ' 步行穿门失败（' + (g.why || ('不清空 ' + g.bad + ' / 离门洞中心 ' + g.thr + ' m')) + '）');
+        if (o.geo && F.hasGeo()) for (const g of site.gates) { const r = route(g.spec.id); if (r.pts) for (let k = 0; k < r.pts.length; k += 4) if (F.geoCheck(r.pts[k])) { geo.C6++; break; } }
+        tf = tunnelFuzz(o.old ? 'r3' : 'new', o.c7n, o.seed); cnt.C7 = tf.tun; if (tf.tun) items.push('C7 ' + tf.tun + ' 次两帧之间穿过几何，例 ' + JSON.stringify(tf.ex[0])); }
       const total = Object.values(cnt).reduce((s, v) => s + v, 0);
-      return { total, cnt, items, geo, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])) };
+      return { total, cnt, items, geo, gates, c7: tf, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
     }
     function showCamAudit(A) {
       const el = $('camaudit'); if (!el) return; const ok = A.total === 0;
@@ -378,6 +445,7 @@
       h += '</table>'; if (!ok) h += '<div class="items">' + A.items.slice(0, 8).map(s => `<div>${s}</div>`).join('') + '</div>'; el.innerHTML = h;
     }
     document.querySelectorAll('#views button').forEach(b => b.onclick = () => setView(b.dataset.v));
+    if ($('walk')) $('walk').onclick = () => walkThrough('otemon');
     $('labels').checked = P.labels; $('labels').onchange = e => { P.labels = e.target.checked; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels; requestRender(); };
     $('lost').checked = P.lost; $('lost').onchange = e => { P.lost = e.target.checked; writeHash(P); $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状'; buildWorld(P); };
     $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状';
@@ -387,7 +455,7 @@
     buildWorld(P); setView(P.view, true);
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
-    state.goView = v => setView(v, false); state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
+    state.goView = v => setView(v, false); state.walkThrough = (id, now) => walkThrough(id, now); state.route = route; state.walkAnim = walkAnim; state.enforce = enforce; state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
     state.look = (a, b) => { camera.position.copy(W(...a)); controls.target.copy(W(...b)); controls.update(); renderer.render(scene, camera); };
     state.renderNow = () => { controls.update(); renderer.render(scene, camera); };
     state.rebuild = o => { Object.assign(P, o); writeHash(P); buildWorld(P); };
