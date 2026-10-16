@@ -11,7 +11,7 @@
   // ---------- URL 参数（#seed=1&lost=1&view=aerial&labels=1&cell=1.5）----------
   function readHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0' };
+    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1' };
   }
   function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? 1 : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
 
@@ -34,9 +34,12 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.72;
     document.body.appendChild(renderer.domElement);
     const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xbfc8cc, 1400, 4200);
-    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.5, 9000);
+    const CAM_R = 1.5; // 相机球体半径（m）
+    // 近裁剪面按规则：近平面四角到相机的距离 ≤ 0.9R（球体保证几何离相机 ≥R，所以近处墙面不会被近平面切掉），在此前提下取最大以保深度精度
+    const nearFor = (fov, asp) => { const t = Math.tan(fov * Math.PI / 360); return 0.9 * CAM_R / Math.sqrt(1 + t * t * (1 + asp * asp)); };
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, nearFor(40, innerWidth / innerHeight), 9000);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 5; controls.maxDistance = 3000;
+    controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 3; controls.maxDistance = 3000;
     const sky = new Sky(); sky.scale.setScalar(8000); scene.add(sky);
     const su = sky.material.uniforms; su.turbidity.value = 6; su.rayleigh.value = 1.5; su.mieCoefficient.value = 0.005; su.mieDirectionalG.value = 0.8;
     const sun = new THREE.DirectionalLight(0xfff0dc, 3.0); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
@@ -256,7 +259,8 @@
       scene.add(world);
       let verts = 0, tris = 0; world.traverse(o => { if (o.isMesh && o.geometry) { const g = o.geometry, c = g.attributes.position.count, inst = o.isInstancedMesh ? o.count : 1; verts += c * inst; tris += (g.index ? g.index.count / 3 : c / 3) * inst; } });
       state.site = site; state.auditResult = A; state.signature = site.signature(); state.stats = { verts, tris: Math.round(tris), buildMs: Math.round(site.ms), sceneMs: Math.round(performance.now() - t0), parts: site.parts.length, trees: site.trees.length, dobei: site.dobei.length, lostPlaced: site.lostPlaced.length, lostSkipped: site.lostSkipped };
-      showAudit(A); showStats();
+      buildField(); showAudit(A); showStats();
+      state.camAudit = null; setTimeout(() => { state.camAudit = cameraAudit(); showCamAudit(state.camAudit); }, 50);
       requestRender();
     }
 
@@ -268,32 +272,111 @@
       h += '</table>'; if (!ok) h += '<div class="items">' + A.items.slice(0, 12).map(it => `<div>${it.rule} · ${it.name}：${it.msg}</div>`).join('') + '</div>';
       el.innerHTML = h;
     }
-    function showStats() { const s = state.stats; $('stats').textContent = `${(s.verts / 1e3).toFixed(0)}k 顶点 · ${(s.tris / 1e3).toFixed(0)}k 三角形 · ${s.parts} 部件 · ${s.trees} 树 · 生成 ${s.buildMs} ms · 场景 ${s.sceneMs} ms`; }
-    const VIEWS = { // 世界坐标：相机位置 → 目标
-      aerial: [[-560, -700, 430], [-20, -60, 0]],
-      top: [[0, -60, 1650], [0, -59.9, 0]],
-      otemon: [[-345, -268, 9], [-262, -255, 9]],
-      tenshu: [[40, -150, 22], [0, 0, 40]],
-      eastwall: [[172, -70, -4], [120, 40, 12]],
-      otejoint: [[-236, -270, 14], [-268, -262, 3]],   // 大手门枡形里：高丽门 + 两侧土塀 + 连接墙 + 多门橹门洞
-      sakura: [[18, -196, 30], [-12, -228, 15]],         // 本丸桜门：门 + 枡形 + 铁门（直角转折）
+    function showStats() { const s = state.stats; $('stats').textContent = `${(s.verts / 1e3).toFixed(0)}k 顶点 · ${(s.tris / 1e3).toFixed(0)}k 三角形 · ${s.parts} 部件 · ${s.trees} 树 · 生成 ${s.buildMs} ms · 场景 ${s.sceneMs} ms · 碰撞场 ${s.camMs} ms`; }
+    // ---------- 相机物理体：碰撞场、视角规则、过渡路径、每帧约束（web-r3）----------
+    const CAMX = window.CASTLE_CAMERA, w3 = v => [v.x, -v.z, v.y], setV = (v, a) => v.set(a[0], a[2], -a[1]);
+    // 视角 = 规则：目标点（看什么）+ 方位角（相机在目标的哪一侧，度，东=0 逆时针）+ 仰角 + 距离 + 目标本体半径 rf（视线检查时不算遮挡）
+    const VIEWS = {
+      aerial: { target: [-20, -60, 14], az: -130, el: 27, dist: 940, rf: 40 },        // 本丸地面（全城视野，目标=一片区域）
+      top: { target: [0, -60, 14], az: -90, el: 89.9, dist: 1650, rf: 40 },
+      otemon: { target: [-264, -255.5, 9], az: -171, el: 6, dist: 84, rf: 6 },        // 大手门（门中高）
+      tenshu: { target: [0.5, 0.3, 44], az: -75, el: 3, dist: 160, rf: 24 },          // 天守（塔身中部）
+      eastwall: { target: [144, 30, 4], az: -74, el: 3, dist: 104, rf: 10 },          // 东侧石垣面（本丸东缘 x≈144，z −7→14 的中部），相机在内堀水面上
+      otejoint: { target: [-268, -262, 6], az: -14, el: 18, dist: 35, rf: 5 },        // 大手门枡形里：高丽门 + 两侧土塀 + 连接墙
+      sakura: { target: [-12, -228, 18], az: 47, el: 19, dist: 46, rf: 6 },           // 本丸桜门 + 枡形 + 铁门
     };
-    let anim = null;
-    function setView(name, instant) {
-      const v = VIEWS[name] || VIEWS.aerial; P.view = name; writeHash(P);
-      const to = W(...v[0]), tt = W(...v[1]);
-      if (instant) { camera.position.copy(to); controls.target.copy(tt); controls.update(); requestRender(); return; }
-      anim = { f: camera.position.clone(), ft: controls.target.clone(), t: to, tt, s: performance.now() }; requestRender();
-      document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === name));
+    const LEGACY = { // r2 的硬编码相机（只用于审计对比）
+      aerial: [[-560, -700, 430], [-20, -60, 0]], top: [[0, -60, 1650], [0, -59.9, 0]], otemon: [[-345, -268, 9], [-262, -255, 9]], tenshu: [[40, -150, 22], [0, 0, 40]],
+      eastwall: [[172, -70, -4], [120, 40, 12]], otejoint: [[-236, -270, 14], [-268, -262, 3]], sakura: [[18, -196, 30], [-12, -228, 15]],
+    };
+    let F = null, PRE = {};
+    function buildField() {
+      const t0 = performance.now(); F = CAMX.create(site, { R: CAM_R, keepTris: P.camgeo }); world.updateMatrixWorld(true);
+      const skip = new Set(['terrain', 'outer', 'water', 'labels', 'bad']), m4 = new THREE.Matrix4(), mm = new THREE.Matrix4();
+      const walk = o => { if (skip.has(o.name) || o.isSprite) return; if (o.isMesh && o.geometry) { const g = o.geometry, pos = g.attributes.position.array, idx = g.index ? g.index.array : null;
+          if (o.isInstancedMesh) { for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); mm.multiplyMatrices(o.matrixWorld, m4); F.addTris(pos, idx, mm.elements, true); } }
+          else F.addTris(pos, idx, o.matrixWorld.equals(new THREE.Matrix4()) ? null : o.matrixWorld.elements); }
+        for (const ch of o.children) walk(ch); };
+      walk(world); F.finish();
+      PRE = {}; for (const [k, r] of Object.entries(VIEWS)) PRE[k] = F.fixPreset(r);
+      state.camField = F; state.presets = PRE; state.stats.camMs = Math.round(performance.now() - t0);
     }
+    let anim = null;
+    const cur = () => ({ cam: w3(camera.position), tgt: w3(controls.target) });
+    function setView(name, instant) {
+      if (!VIEWS[name]) name = 'aerial'; const v = PRE[name]; P.view = name; writeHash(P);
+      document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === name));
+      if (instant) { anim = null; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); enforce(); requestRender(); return; }
+      const pth = F.path(cur(), v); anim = { pth, s: performance.now() }; requestRender();
+    }
+    // 每帧约束：目标不低于地面；相机球心若进入实体/地下，取位移最小的修正（抬升或沿视线收回）
+    let fixes = 0;
+    function enforce() {
+      const t = w3(controls.target), fl = F.floorAt(t[0], t[1]); if (t[2] < fl) { t[2] = fl; setV(controls.target, t); }
+      const c = w3(camera.position), r = F.resolve(c, t, controls.minDistance); if (r) { setV(camera.position, r); camera.lookAt(controls.target); fixes++; return true; } return false;
+    }
+    state.camFixes = () => fixes;
+    controls.addEventListener('start', () => { anim = null; });
     let need = true; function requestRender() { need = true; }
     controls.addEventListener('change', requestRender);
-    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); requestRender(); });
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); requestRender(); });
+    function step(now) {
+      let moved = false; if (!F) return false;
+      if (anim) { const k = (now - anim.s) / (anim.pth.dur * 1000), q = anim.pth.at(k); setV(camera.position, q.cam); setV(controls.target, q.tgt); if (k >= 1) anim = null; moved = true; }
+      if (controls.update()) moved = true;
+      if (enforce()) { controls.update(); moved = true; }
+      return moved;
+    }
     renderer.setAnimationLoop(now => {
-      if (anim) { const k = Math.min(1, (now - anim.s) / 1300), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; camera.position.lerpVectors(anim.f, anim.t, e); controls.target.lerpVectors(anim.ft, anim.tt, e); if (k >= 1) anim = null; need = true; }
-      if (controls.update()) need = true;
+      if (step(now)) need = true;
       if (need) { renderer.render(scene, camera); need = false; state.frames = (state.frames || 0) + 1; }
     });
+
+    // ---------- 相机审计 C1–C5 ----------
+    const CRULES = [
+      { id: 'C1', name: '视角相机球体不在实体内/地下/水下' },
+      { id: 'C2', name: '视角相机到目标视线无遮挡' },
+      { id: 'C3', name: '任意两视角之间的过渡路径全程清空（0.25 m 采样）' },
+      { id: 'C4', name: '随机旋转/平移/缩放 模糊测试：相机始终清空' },
+      { id: 'C5', name: '近裁剪面四角在相机球内（近处墙面不被切）' },
+    ];
+    function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+    // 模糊测试：随机施加 OrbitControls 的三种操作（旋转/平移/缩放，含大幅度与把目标平移到全城任意处），然后跑真实的一帧（controls.update + 约束）
+    function fuzz(n, seed, legacy, geo) {
+      const save = cur(), rnd = rng(seed || 7), sp = new THREE.Spherical(), off = new THREE.Vector3(); let bad = 0, badGeo = 0, checked = 0; const ex = [];
+      for (let i = 0; i < n; i++) {
+        const a = rnd();
+        if (a < 0.35) { off.copy(camera.position).sub(controls.target); sp.setFromVector3(off); sp.theta += (rnd() - 0.5) * 1.6; sp.phi += (rnd() - 0.5) * 0.9; off.setFromSpherical(sp); camera.position.copy(controls.target).add(off); }
+        else if (a < 0.65) { off.copy(camera.position).sub(controls.target); const s = rnd() < 0.5 ? 0.2 + rnd() * 0.6 : 1 + rnd() * 1.5; off.multiplyScalar(s); camera.position.copy(controls.target).add(off); }
+        else if (a < 0.9) { const d = camera.position.distanceTo(controls.target), v = new THREE.Vector3((rnd() - 0.5), (rnd() - 0.5) * 0.4, (rnd() - 0.5)).multiplyScalar(d * 0.8); camera.position.add(v); controls.target.add(v); }
+        else { const x = -420 + rnd() * 840, y = -520 + rnd() * 860, z = site.surfaceAt(x, y), d = 3 + rnd() * 60, v = new THREE.Vector3(); setV(v, [x, y, z]); const o = camera.position.clone().sub(controls.target).setLength(d); controls.target.copy(v); camera.position.copy(v).add(o); }
+        controls.update(); if (!legacy) { if (enforce()) controls.update(); }
+        const c = w3(camera.position); if (!F.clear(c, 1e-3)) { bad++; if (ex.length < 5) ex.push(c.map(v => +v.toFixed(1))); }
+        if (geo && F.hasGeo() && i % geo === 0) { checked++; if (F.geoCheck(c)) badGeo++; }
+      }
+      setV(camera.position, save.cam); setV(controls.target, save.tgt); controls.update(); requestRender();
+      return { n, bad, badGeo, checked, ex };
+    }
+    function cameraAudit(o) {
+      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0 };
+      const pre = {}; for (const k of names) pre[k] = legacy ? { cam: LEGACY[k][0], tgt: LEGACY[k][1] } : PRE[k];
+      for (const k of names) { const p = pre[k];
+        if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机 z=' + p.cam[2].toFixed(1) + ' < 需要 ' + F.need(p.cam[0], p.cam[1]).toFixed(1)); }
+        if (o.geo && F.hasGeo() && F.geoCheck(p.cam)) geo.C1++;
+        if (!F.los(p.cam, p.tgt, VIEWS[k].rf).ok) { cnt.C2++; items.push('C2 ' + k + ' 视线被挡'); } }
+      for (const a of names) for (const b of names) { if (a === b) continue; const pth = legacy ? F.linear(pre[a], pre[b]) : F.path(pre[a], pre[b]), nb = F.pathBad(pth); if (nb) { cnt.C3++; if (items.length < 30) items.push('C3 ' + a + '→' + b + ' ' + nb + ' 个采样点不清空'); }
+        if (o.geo && F.hasGeo()) for (let k = 0; k <= 40; k++) if (F.geoCheck(pth.at(k / 40).cam)) { geo.C3++; break; } }
+      const fz = fuzz(o.fuzz || 400, o.seed || 7, legacy, o.geo ? 5 : 0); cnt.C4 = fz.bad; geo.C4 = fz.badGeo; if (fz.bad) items.push('C4 模糊测试 ' + fz.bad + '/' + fz.n + ' 步相机不清空，例 ' + JSON.stringify(fz.ex[0]));
+      const t = Math.tan(camera.fov * Math.PI / 360), corner = camera.near * Math.sqrt(1 + t * t * (1 + camera.aspect * camera.aspect)); if (!(corner < CAM_R)) { cnt.C5++; items.push('C5 近平面角距 ' + corner.toFixed(2)); }
+      const total = Object.values(cnt).reduce((s, v) => s + v, 0);
+      return { total, cnt, items, geo, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])) };
+    }
+    function showCamAudit(A) {
+      const el = $('camaudit'); if (!el) return; const ok = A.total === 0;
+      let h = `<div class="ah ${ok ? 'ok' : 'ng'}">相机审计：${ok ? '全部通过 ✓' : A.total + ' 项违规'}</div><table>`;
+      for (const r of CRULES) h += `<tr class="${A.cnt[r.id] ? 'ng' : ''}"><td>${r.id}</td><td>${r.name}</td><td>${A.cnt[r.id]}</td></tr>`;
+      h += '</table>'; if (!ok) h += '<div class="items">' + A.items.slice(0, 8).map(s => `<div>${s}</div>`).join('') + '</div>'; el.innerHTML = h;
+    }
     document.querySelectorAll('#views button').forEach(b => b.onclick = () => setView(b.dataset.v));
     $('labels').checked = P.labels; $('labels').onchange = e => { P.labels = e.target.checked; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels; requestRender(); };
     $('lost').checked = P.lost; $('lost').onchange = e => { P.lost = e.target.checked; writeHash(P); $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状'; buildWorld(P); };
@@ -304,6 +387,7 @@
     buildWorld(P); setView(P.view, true);
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
+    state.goView = v => setView(v, false); state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
     state.look = (a, b) => { camera.position.copy(W(...a)); controls.target.copy(W(...b)); controls.update(); renderer.render(scene, camera); };
     state.renderNow = () => { controls.update(); renderer.render(scene, camera); };
     state.rebuild = o => { Object.assign(P, o); writeHash(P); buildWorld(P); };
