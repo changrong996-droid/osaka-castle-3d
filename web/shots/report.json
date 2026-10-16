@@ -1,14 +1,15 @@
 {
  "errors": [],
  "audit_ready_s": [
-  4.4,
-  3.92,
-  5.16,
-  5.13,
-  3.92,
-  4.08
+  3.61,
+  2.67,
+  4.29,
+  3.8,
+  5.14,
+  8.11,
+  3.82
  ],
- "load_s": 2.74,
+ "load_s": 1.57,
  "audit": 0,
  "audit_cnt": {
   "H1": 0,
@@ -38,8 +39,8 @@
  "stats": {
   "verts": 1336058,
   "tris": 1481772,
-  "buildMs": 1828,
-  "sceneMs": 2299,
+  "buildMs": 232,
+  "sceneMs": 523,
   "parts": 244,
   "trees": 1039,
   "dobei": 192,
@@ -58,10 +59,18 @@
    "dropped": 405,
    "fans": 15
   },
-  "camMs": 200,
-  "auditMs": 1080
+  "camMs": 213,
+  "auditMs": 1394
  },
- "app_load_ms": 2526,
+ "app_load_ms": 1314,
+ "pack": {
+  "used": true,
+  "file": "bake/s1-l1.bin.gz",
+  "bytes": 999582,
+  "fetchMs": 113,
+  "unzipMs": 61,
+  "restoreMs": 232
+ },
  "cam_audit": 0,
  "cam_cnt": {
   "C1": 0,
@@ -811,6 +820,10 @@
  "cam_input": 0,
  "c8_fault": 1,
  "sig1_again": "79bc17ca-244-1039",
+ "sig1_live": "79bc17ca-244-1039",
+ "pack_off": null,
+ "audit_live": 0,
+ "load_live_s": 5.14,
  "sig2": "99c055a3-244-998",
  "audit_seed2": 0,
  "audit_now": 0,
@@ -837,5 +850,12 @@
   "OK   H21 石垣脚线处地面被抬高（勾配面没落到下层） → H21=2  12 处勾配不符：实测 0.52 / 设计 0.40",
   "OK   H21 石垣面陡成近乎垂直（勾配被拉直） → H21=1  2 处勾配不符：实测 0.48 / 设计 0.40",
   "FAULTS_OK"
+ ],
+ "pack_node": 0,
+ "pack_log": [
+  "bake/s1-l1.bin.gz gz 999582 live 1701 ms pack 151 ms sig 79bc17ca-244-1039 79bc17ca-244-1039 diffs 0",
+  "  audit total 0 0 same post-audit diffs 0",
+  "  tamper check caught",
+  "PACK_OK"
  ]
 }
