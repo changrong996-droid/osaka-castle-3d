@@ -45,6 +45,7 @@
     { const el = 0.6, az = THREE.MathUtils.degToRad(215), v = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - el, az); su.sunPosition.value.copy(v); sun.position.copy(v).multiplyScalar(1500); sun.target.position.set(0, 0, 0); }
     // world (x 东, y 北, z 上) -> three (x, z, -y)
     const W = (x, y, z) => new THREE.Vector3(x, z, -y);
+    function clipHalf(P, m, c0) { const out = [], f = q => m[0] * q[0] + m[1] * q[1] - c0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], fa = f(a), fb = f(b); if (fa <= 0) out.push(a); if ((fa < 0) !== (fb < 0) && fa !== 0 && fb !== 0) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); } } return out; }
 
     // ---------- 材质 ----------
     const M = {
@@ -112,20 +113,35 @@
       yagura3(k, p) { const w = p.w, d = p.d; k.box('stone', p.x, p.y, p.z, w + 0.4, d + 0.4, 0.6, p.ang); k.box('plaster', p.x, p.y, p.z + 0.6, w, d, 6.0, p.ang); k.windows(p.x, p.y, p.z + 3.4, w, d, p.ang, 4);
         k.hip('tile', p.x, p.y, p.z + 6.4, w, d, p.ang, 1.7, 1.8, 0.6); const w2 = w * 0.78, d2 = d * 0.78; k.box('plaster', p.x, p.y, p.z + 7.2, w2, d2, 4.0, p.ang); k.windows(p.x, p.y, p.z + 8.8, w2, d2, p.ang, 3);
         k.hip('tile', p.x, p.y, p.z + 10.8, w2, d2, p.ang, 1.5, 1.6, 0.6); const w3 = w * 0.58, d3 = d * 0.58; k.box('plaster', p.x, p.y, p.z + 11.5, w3, d3, 3.6, p.ang); k.windows(p.x, p.y, p.z + 13.0, w3, d3, p.ang, 2); k.hip('tile', p.x, p.y, p.z + 14.9, w3, d3, p.ang, 1.4, 2.6, 0.2); },
-      gate(k, p) { const w = p.w, d = p.d, c = Math.cos(p.ang), s = Math.sin(p.ang), at = (u, v) => [p.x + u * c - v * s, p.y + u * s + v * c];
-        for (const sd of [-1, 1]) { const [x, y] = at(sd * w * 0.32, 0); k.box('iron', x, y, p.z, 0.9, 0.9, 6.2, p.ang); const [x2, y2] = at(sd * w * 0.32, d * 0.38); k.box('iron', x2, y2, p.z, 0.5, 0.5, 4.2, p.ang); const [x3, y3] = at(sd * w * 0.18, 0); k.box('iron', x3, y3, p.z, w * 0.27, 0.25, 5.2, p.ang); }
-        k.box('iron', p.x, p.y, p.z + 5.4, w * 0.82, 0.7, 0.7, p.ang); k.gable('tile', p.x, p.y, p.z + 6.1, w * 0.86, 1.6, p.ang, 0.5, 1.3);
-        for (const sd of [-1, 1]) { const [x, y] = at(sd * w * 0.32, d * 0.38); k.gable('tile', x, y, p.z + 4.4, 1.6, d * 0.8, p.ang + Math.PI / 2, 0.3, 0.7); } },
+      gate(k, p) { // 高丽门：主柱立在土塀轴线上（两侧土塀正好顶到柱外侧面），控柱在门内侧，门扇向内开
+        const c = Math.cos(p.ang), s = Math.sin(p.ang), at = (u, v) => [p.x + u * c - v * s, p.y + u * s + v * c];
+        const o = p.open || p.w * 0.7, av = p.axisV !== undefined ? p.axisV : 0, si = p.inSign || 1, pu = o / 2 + 0.45, rv = av + si * Math.min(3.2, p.d * 0.5);
+        for (const sd of [-1, 1]) {
+          const [x, y] = at(sd * pu, av); k.box('iron', x, y, p.z, 0.9, 0.9, 6.2, p.ang); k.box('stone', x, y, p.z, 1.2, 1.2, 0.35, p.ang);
+          const [x2, y2] = at(sd * pu, rv); k.box('iron', x2, y2, p.z, 0.5, 0.5, 4.2, p.ang); const [xb, yb] = at(sd * pu, (av + rv) / 2); k.box('iron', xb, yb, p.z + 3.6, 0.3, Math.abs(rv - av), 0.3, p.ang);
+          const [x3, y3] = at(sd * (o / 2 - 0.2), av + si * o / 4 + si * 0.3); k.box('wood', x3, y3, p.z + 0.1, 0.18, o / 2 - 0.2, 5.0, p.ang);
+          const [x4, y4] = at(sd * pu, (av + rv) / 2); k.gable('tile', x4, y4, p.z + 4.4, 1.6, Math.abs(rv - av) + 0.8, p.ang + Math.PI / 2, 0.3, 0.7);
+        }
+        const [cx, cy] = at(0, av); k.box('iron', cx, cy, p.z + 5.4, o + 1.8, 0.7, 0.7, p.ang); k.gable('tile', cx, cy, p.z + 6.1, o + 2.4, 1.8, p.ang, 0.6, 1.4); },
       yaguramon(k, p) { const w = p.w, d = p.d, c = Math.cos(p.ang), s = Math.sin(p.ang), at = (u, v) => [p.x + u * c - v * s, p.y + u * s + v * c];
-        for (const sd of [-1, 1]) { const [x, y] = at(sd * (w / 4 + 1.75), 0); k.box('stone', x, y, p.z, w / 2 - 3.5, d, 4.6, p.ang); }
-        k.box('iron', p.x, p.y, p.z, 5.0, d * 0.3, 4.4, p.ang);
+        const o = p.open || 5.0; for (const sd of [-1, 1]) { const [x, y] = at(sd * (w / 4 + o / 4), 0); k.box('stone', x, y, p.z, w / 2 - o / 2, d, 4.6, p.ang); }
+        k.box('iron', p.x, p.y, p.z + 4.0, p.open || 5.0, d, 0.6, p.ang);
         k.box('plaster', p.x, p.y, p.z + 4.6, w, d, 4.2, p.ang); k.windows(p.x, p.y, p.z + 6.4, w, d, p.ang, Math.max(3, Math.round(w / 3))); k.hip('tile', p.x, p.y, p.z + 8.6, w, d, p.ang, 1.6, 2.6, 0.3); },
       kura(k, p) { const w = p.w * 0.95, d = p.d * 0.9; k.box(p.name === '焔硝蔵' ? 'stone' : 'lacquer', p.x, p.y, p.z, w + 0.2, d + 0.2, 1.3, p.ang); k.box('plaster', p.x, p.y, p.z + 1.3, w, d, 3.9, p.ang); k.gable('tile', p.x, p.y, p.z + 5.2, w, d, p.ang, 0.9, d * 0.38); },
       hall(k, p) { const w = p.w * 0.85, d = p.d * 0.8; k.box('stone', p.x, p.y, p.z, w + 1.6, d + 1.6, 0.8, p.ang); k.box('wood', p.x, p.y, p.z + 0.8, w, d, 4.4, p.ang); k.hip('tile', p.x, p.y, p.z + 5.0, w, d, p.ang, 2.2, d * 0.36, 0.25); },
       pavilion(k, p) { const w = p.w * 0.7, d = p.d * 0.7, c = Math.cos(p.ang), s = Math.sin(p.ang); for (const a of [-1, 1]) for (const b of [-1, 1]) k.box('wood', p.x + a * w / 2 * c - b * d / 2 * s, p.y + a * w / 2 * s + b * d / 2 * c, p.z, 0.3, 0.3, 3, p.ang); k.box('stone', p.x, p.y, p.z, 2.4, 2.4, 0.9, p.ang); k.hip('tile', p.x, p.y, p.z + 3, w, d, p.ang, 0.9, 1.6, 0.1); },
-      tamon(k, p) { const b = p.data, z = p.z; k.prism('lacquer', b.fp, z, z + 1.2); k.prism('plaster', b.fp, z + 1.2, z + 5.5); k.prism('ridge', b.roof, z + 5.2, z + 5.8, 'tile'); if (b.roof2 && b.roof2.length >= 3) k.prism('tile', b.roof2, z + 5.8, z + 7.4, 'ridge'); },
-      dobei(k, p) { k.seg('lacquer', p.x0, p.y0, p.x1, p.y1, p.z, p.t + 0.04, 0.5); k.seg('plaster', p.x0, p.y0, p.x1, p.y1, p.z + 0.5, p.t, p.h - 0.5); k.seg('tile', p.x0, p.y0, p.x1, p.y1, p.z + p.h, p.t + 0.7, 0.28); k.seg('ridge', p.x0, p.y0, p.x1, p.y1, p.z + p.h + 0.28, 0.3, 0.22); },
-      mwall(k, p) { k.seg('stone', p.x0, p.y0, p.x1, p.y1, p.z, p.t, p.h); FAM.dobei(k, { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, z: p.z + p.h, t: 0.6, h: 2.0 }); },
+      tamon(k, p) { // 多门橹：石垣台座（门洞处切开）+ 一层白墙 + 屋顶；门洞里两扇门
+        const b = p.data, z = p.z, H0 = 4.6; let pieces = [b.fp];
+        for (const q of p.passages || []) { const m = [Math.cos(q.ang), Math.sin(q.ang)], c0 = m[0] * q.x + m[1] * q.y, next = [];
+          for (const P of pieces) { const A = clipHalf(P, m, c0 - q.w / 2), B = clipHalf(P, [-m[0], -m[1]], -(c0 + q.w / 2)); if (A.length >= 3) next.push(A); if (B.length >= 3) next.push(B); }
+          pieces = next; const dv = [-m[1], m[0]]; for (const sd of [-1, 1]) k.box('wood', q.x + m[0] * sd * q.w / 4, q.y + m[1] * sd * q.w / 4, z, q.w / 2 - 0.1, 0.25, H0 - 0.2, q.ang); k.box('iron', q.x, q.y, z + H0 - 0.5, q.w, q.len, 0.5, q.ang); void dv; }
+        for (const P of pieces) k.prism('stone', P, z, z + H0);
+        k.prism('lacquer', b.fp, z + H0, z + H0 + 0.6); k.prism('plaster', b.fp, z + H0 + 0.6, z + H0 + 4.2); k.prism('ridge', b.roof, z + H0 + 3.9, z + H0 + 4.5, 'tile'); if (b.roof2 && b.roof2.length >= 3) k.prism('tile', b.roof2, z + H0 + 4.5, z + H0 + 6.1, 'ridge'); },
+      dobei(k, p) { const e = (j, w) => j === 'joint' ? w / 2 : 0, L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L;
+        const sg = (m, z, w, h, ext) => { const a = ext ? e(p.j0, w) : 0, b = ext ? e(p.j1, w) : 0; k.seg(m, p.x0 - tx * a, p.y0 - ty * a, p.x1 + tx * b, p.y1 + ty * b, z, w, h); };
+        sg('lacquer', p.z, p.t + 0.04, 0.5, true); sg('plaster', p.z + 0.5, p.t, p.h - 0.5, true); sg('tile', p.z + p.h, p.t + 0.7, 0.28, true); sg('ridge', p.z + p.h + 0.28, 0.3, 0.22, true); },
+      mwall(k, p) { const L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0) || 1, tx = (p.x1 - p.x0) / L, ty = (p.y1 - p.y0) / L, a = p.j0 === 'joint' ? p.t / 2 : 0, b = p.j1 === 'joint' ? p.t / 2 : 0;
+        k.seg('stone', p.x0 - tx * a, p.y0 - ty * a, p.x1 + tx * b, p.y1 + ty * b, p.z, p.t, p.h); FAM.dobei(k, { x0: p.x0, y0: p.y0, x1: p.x1, y1: p.y1, z: p.z + p.h, t: 0.6, h: 2.0, j0: p.j0, j1: p.j1 }); },
       bridge(k, p, S) { const L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0), n = Math.ceil(L / 4), ang = Math.atan2(p.y1 - p.y0, p.x1 - p.x0), nx = -Math.sin(ang), ny = Math.cos(ang), r = S.ramps.find(q => q.part === p);
         for (let i = 0; i < n; i++) { const f0 = i / n, f1 = (i + 1) / n, z0 = S.rampProf(r, f0), z1 = S.rampProf(r, f1), a = [p.x0 + (p.x1 - p.x0) * f0, p.y0 + (p.y1 - p.y0) * f0], b = [p.x0 + (p.x1 - p.x0) * f1, p.y0 + (p.y1 - p.y0) * f1], hw = p.w / 2;
           const A = (pt, sd, z) => [pt[0] + nx * hw * sd, pt[1] + ny * hw * sd, z];
@@ -259,6 +275,8 @@
       otemon: [[-345, -268, 9], [-262, -255, 9]],
       tenshu: [[40, -150, 22], [0, 0, 40]],
       eastwall: [[172, -70, -4], [120, 40, 12]],
+      otejoint: [[-236, -270, 14], [-268, -262, 3]],   // 大手门枡形里：高丽门 + 两侧土塀 + 连接墙 + 多门橹门洞
+      sakura: [[18, -196, 30], [-12, -228, 15]],         // 本丸桜门：门 + 枡形 + 铁门（直角转折）
     };
     let anim = null;
     function setView(name, instant) {
@@ -286,6 +304,7 @@
     buildWorld(P); setView(P.view, true);
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
+    state.look = (a, b) => { camera.position.copy(W(...a)); controls.target.copy(W(...b)); controls.update(); renderer.render(scene, camera); };
     state.renderNow = () => { controls.update(); renderer.render(scene, camera); };
     state.rebuild = o => { Object.assign(P, o); writeHash(P); buildWorld(P); };
     state.loadMs = Math.round(performance.now() - T0);
