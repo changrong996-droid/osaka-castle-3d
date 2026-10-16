@@ -63,12 +63,37 @@ dryu = unary_union(dry) if dry else Polygon()
 nino = [g for g in parts(castle.difference(water).difference(hon.buffer(0.01)).difference(dryu)) if g.area > 3000]
 city = [g for g in parts(box(-700, -700, 700, 700).difference(castle).difference(water)) if g.area > 500]
 # elevations (m) relative to outer city ground; estimates, see docs/REFERENCES.md
-ELEV = dict(dry=-5.0, water=-7.0, city=0.0, ninomaru=4.0, honmaru=14.0)
+# r7b: the honmaru is not one terrace (GSI DEM5A: main terrace 32.9 m, yamazato-maru 21.3 m T.P.). Split along MEASURED lines:
+#   the main terrace = inside the measured honmaru ishigaki chain (OSM retaining walls, honmaru_chain above);
+#   what lies between the chain and the moat is either an ishigaki FACE (a band no wider than the widest possible face
+#   footprint) or a lower TERRACE.  Widest face footprint = PLATEAU max face height x batter p90 (data/fit_r7.json);
+#   a morphological opening with half that width keeps only the parts wider than any face -> the lower terrace (yamazato-maru);
+#   the thin bands stay with the main terrace (they are its outer wall faces down to the moat).
+FIT = json.load(open(os.path.join(os.path.dirname(os.path.abspath(out)), 'fit_r7.json'))) if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(out)), 'fit_r7.json')) else None
+yam = None
+if FIT:
+    FACE_HALF = 0.5 * FIT['ishigaki']['face_height_max'] * FIT['ishigaki']['batter_pct']['90']
+    rem = hon.difference(Polygon(HON_LINE).buffer(0))
+    op = rem.buffer(-FACE_HALF).buffer(FACE_HALF).intersection(rem)
+    cand = [g for g in parts(op) if g.area > 3000]
+    if cand:
+        yam = max(cand, key=lambda g: g.area)
+        hon_parts = sorted(parts(hon.difference(yam)), key=lambda g: -g.area)
+        hon = hon_parts[0]
+        for g in hon_parts[1:]: yam = yam.union(g) if g.distance(yam) < 0.5 else yam   # slivers cut off by the opening go to the terrace they touch
+        yam = max(parts(yam.buffer(0)), key=lambda g: g.area)
+        print('yamazato split: face half-width %.2f m; yamazato %.0f m2, honmaru main %.0f m2' % (FACE_HALF, yam.area, hon.area))
+ELEV = dict(dry=-5.0, water=-7.0, city=0.0, ninomaru=4.0, honmaru=14.0, yamazato=3.0)   # legacy relative values (only terrain.json 'z'); the browser model uses data/fit_r7.json surfaces (T.P.)
 def enc(g, name, z):
-    g = g.simplify(0.3)
     return dict(name=name, z=z, outer=[list(map(lambda v: round(v, 2), c)) for c in list(g.exterior.coords)[:-1]],
                 holes=[[list(map(lambda v: round(v, 2), c)) for c in list(h.coords)[:-1]] for h in g.interiors], area=round(g.area))
-regions = [enc(hon, 'honmaru', ELEV['honmaru'])] + [enc(g, 'dry', ELEV['dry']) for g in dry] + [enc(g, 'ninomaru', ELEV['ninomaru']) for g in nino] + [enc(g, 'city', ELEV['city']) for g in city]
+# r7b: simplify all land polygons as ONE coverage (shared boundaries simplify identically -> no slivers between neighbouring
+# land polygons; r7a simplified each polygon on its own, leaving <=0.3 m gaps that grid points could fall into as 'water')
+import shapely
+LAND = [(hon, 'honmaru')] + ([(yam, 'yamazato')] if yam is not None else []) + [(g, 'dry') for g in dry] + [(g, 'ninomaru') for g in nino] + [(g, 'city') for g in city]
+SIMP = shapely.coverage_simplify([g for g, _ in LAND], 0.3, simplify_boundary=True)
+LAND = [(max(parts(sg.buffer(0)), key=lambda q: q.area), nm) for sg, (_, nm) in zip(SIMP, LAND)]
+regions = [enc(g, nm, ELEV[nm]) for g, nm in LAND]
 def region_z(x, y):
     from shapely.geometry import Point
     p = Point(x, y)
