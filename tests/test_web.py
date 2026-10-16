@@ -4,7 +4,7 @@ Run:  python3 tests/test_web.py            (or: pytest tests/test_web.py)
 Needs: pip install playwright && python3 -m playwright install chromium
        (in the Hark sandbox:  . ../work/setup_pw.sh  provides a persistent Chromium + missing libs)
 
-Asserts: page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
+Asserts: node fault injection (tests/test_faults.js: every H15–H18 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
 C7 fast-drag tunneling fuzz), per-frame walk-through-Otemon animation clear + tunnel-free + actually under the gate lintel, extra fuzz,
 per-frame animated transitions clear, independent triangle-exact check, real mouse wheel/drag input never leaves the camera inside solids · URL hash reproducible
 (same hash -> same signature, other seed -> different) · writes one screenshot per view (incl. inside the Otemon gate opening) to web/shots/.
@@ -15,7 +15,7 @@ import functools, http.server, json, os, socketserver, sys, threading, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, 'web')
 SHOTS = os.path.join(WEB, 'shots')
-VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura', 'otegate']
+VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura', 'otegate', 'bridge']
 VENDOR = {'build/three.module.js': 'three.module.js', 'examples/jsm/controls/OrbitControls.js': 'OrbitControls.js', 'examples/jsm/objects/Sky.js': 'Sky.js'}
 ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 
@@ -70,7 +70,7 @@ def run(shots=True):
         rep['cam_fuzz'] = [pg.evaluate(f'__castle.cameraAudit({{fuzz:1500, seed:{sd}}}).cnt.C4') for sd in (11, 23, 37)]
         rep['cam_legacy'] = pg.evaluate('__castle.cameraAudit({legacy:true}).cnt')
         rep['cam_old_r3'] = pg.evaluate('__castle.cameraAudit({old:true}).cnt')  # web-r3 逻辑（柱状场 + 抬升）下的 C6/C7
-        rep['cam_gates'] = ca['gates']
+        rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']
         # 步行穿过大手门：合成时钟逐帧驱动真实 step()，每帧检查合法、两帧之间不穿几何；统计在遮盖下（门洞里）的帧数和最低眼高
         rep['cam_walk'] = pg.evaluate("""() => { const C = __castle, F = C.camField, S = C.site; C.setView('otemon'); let t = 1000; if (!C.walkThrough('otemon', t)) return null; let prev = C.cur().cam, n = 0, bad = 0, tun = 0, under = 0, eyeMin = 1e9;
             while (C.anim() && n < 20000) { t += 16; C.step(t); n++; const q = C.cur().cam; if (!F.clear(q, 1e-3)) bad++; if (F.segHit(prev, q)) tun++; if (!F.above(q)) { under++; const e = q[2] - S.surfaceAt(q[0], q[1]); if (e < eyeMin) eyeMin = e; } prev = q; }
@@ -99,6 +99,10 @@ def run(shots=True):
             pg.wait_for_timeout(300)
             bad_in += pg.evaluate('(() => { const q = __castle.cur(); return (__castle.camField.clear(q.cam, 1e-3) ? 0 : 1) + (__castle.camField.geoCheck(q.cam) ? 1 : 0); })()')
         rep['cam_input'] = bad_in
+        # 故障注入（C8）：桥下横一根梁，C8 必须报出来
+        load('#seed=1&lost=1&view=top&labels=0&fault=c8')
+        pg.wait_for_function('__castle.camAudit', timeout=120000)
+        rep['c8_fault'] = pg.evaluate('__castle.camAudit.cnt.C8')
         # reproducibility
         load('#seed=1&lost=1&view=top&labels=0')
         rep['sig1_again'] = pg.evaluate('__castle.signature')
@@ -113,6 +117,9 @@ def run(shots=True):
             pg.screenshot(path=os.path.join(SHOTS, 'aerial_now.png'))
         b.close()
     srv.shutdown()
+    import subprocess  # 故障注入（H15–H18）：node tests/test_faults.js
+    pr = subprocess.run(['node', os.path.join(ROOT, 'tests', 'test_faults.js')], capture_output=True, text=True)
+    rep['faults_node'] = pr.returncode; rep['faults_log'] = pr.stdout.strip().splitlines()
     json.dump(rep, open(os.path.join(SHOTS, 'report.json'), 'w'), ensure_ascii=False, indent=1)
     return rep
 
@@ -125,7 +132,10 @@ def check(rep):
     assert rep['cam_audit'] == 0, rep['cam_items']
     assert rep['cam_fuzz'] == [0, 0, 0], rep['cam_fuzz']
     assert len(rep['cam_anim']) == len(VIEWS) * (len(VIEWS) - 1) and all(a['bad'] == 0 and a['end'] < 0.05 for a in rep['cam_anim']), [a for a in rep['cam_anim'] if a['bad'] or a['end'] >= 0.05]
-    assert rep['cam_geo'] == {'C1': 0, 'C3': 0, 'C4': 0, 'C6': 0}, rep['cam_geo']
+    assert rep['cam_geo'] == {'C1': 0, 'C3': 0, 'C4': 0, 'C6': 0, 'C8': 0}, rep['cam_geo']
+    assert rep['faults_node'] == 0, rep['faults_log']
+    assert rep['c8_fault'] > 0, rep['c8_fault']
+    assert all(b['ok'] for b in rep['cam_bridges']), rep['cam_bridges']
     w = rep['cam_walk']
     assert w and w['bad'] == 0 and w['tun'] == 0 and w['under'] > 0 and w['eyeMin'] >= 1.55, w
     assert rep['cam_input'] == 0
