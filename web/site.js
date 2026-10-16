@@ -11,7 +11,7 @@
 
   // ---------------- 声明式场地规格 ----------------
   const SPEC = {
-    version: 'web-r2',
+    version: 'web-r5',
     ken: 1.97,                                                           // 1 間（只用作“碎墙”下限与参数量纲）
     levels: { water: -7, dry: -5, city: 0, ninomaru: 4, honmaru: 14 },   // 与 data/terrain.json 的 elev 一致（估值）
     WZ: -6,                                                              // 水面
@@ -37,11 +37,17 @@
       { id: 'tamatsukuri', name: '玉造口', at: { point: '玉造口' }, region: 'ninomaru', to: 'city', via: 'dobashi', width: 12, size: [10, 6], neck: true },
       { id: 'kitashikiri', name: '北仕切門', at: { building: '北仕切門' }, region: 'ninomaru', to: null, internal: true },
     ],
-    ramp: { maxLen: 170, sideSlope: 0.3, landing: 2.5, maxGrade: 0.3, endIn: 1.5, neckGrade: 0.08 },
+    ramp: { maxLen: 170, sideSlope: 0.3, earthSlope: 1.5, landing: 2.5, maxGrade: 0.3, endIn: 1.5, neckGrade: 0.08 },
     // 外堀外侧的一圈土地在 OSM 里与二之丸连成一片（土桥=陆地窄颈）。规则：在每个 neck 门处找最窄的横截线（颈），
     // 从二之丸内部种子洪泛，过不了颈的二之丸格点都归为“城下”(city, 0 m)。
     band: { seed: { building: '豊国神社' }, neckSearch: 30, chordMax: 70 },
     yagura: { cornerTurnDeg: 35, cornerRadius: 22, snapRadius: 20, setback: 0.1, snapReal: 10, honmaru: { fam: 'yagura3', w: 13, d: 11 }, ninomaru: { fam: 'yagura2', w: 12, d: 10 } },
+    // ---- r5：可步行表面网络 / 桥 / 净空（参数来源见 docs/RULES.md）----
+    net: { slope: 0.3, cross: 0.05, tol: 0.6, pocket: 30, noAccess: ['dry'], roadRegions: ['honmaru', 'ninomaru'], dest: ['tenshu', 'hall'], endSnap: 1.5, termReach: 25 },
+    bridge: { bear: 1.0, maxSpan: 5.9, deckT: 0.5, pierW: 0.7, pierRow: 0.6, level: 0.1, minPierH: 0.5, cont: 0.1 },   // 木梁跨度 ≤3 間；桥面两端搭在桥台上 ≥1 m
+    dobashi: { batMin: 0.2, batMax: 0.4, earth: 1.5, toe: 0.3 },        // 土桥侧面：石垣面（水平/竖直 0.2–0.4）或土坡（≥1.5）；坡脚落到原地面/堀底
+    clear: { person: 1.7, margin: 0.4, boat: 2.0 },                      // 步行面以上净高 ≥2.1 m；木桥下水面净空 ≥2 m
+    passH: { gate: 5.4, yaguramon: 4.0, tamon: 4.1 },                    // 门洞净高（门楣下沿离地），渲染与审计共用
     trees: { counts: { ninomaru: 1100, honmaru: 140 }, minSpacing: 5, clearBuild: 5, clearEdge: 7, lawn: { hull: ['乾櫓', '坤櫓跡', '千貫櫓', '北仕切門'] } },
   };
 
@@ -68,7 +74,11 @@
   function rectPoly(cx, cy, w, d, ang, m) { m = m || 0; const c = Math.cos(ang), s = Math.sin(ang), hw = w / 2 + m, hd = d / 2 + m; return [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c]); }
   function segPoly(x0, y0, x1, y1, t, m) { const L = Math.hypot(x1 - x0, y1 - y0) || 1e-6; return rectPoly((x0 + x1) / 2, (y0 + y1) / 2, L + 2 * (m || 0), t + 2 * (m || 0), Math.atan2(y1 - y0, x1 - x0)); }
   const inPoly = (x, y, P) => inRing(x, y, P);
-  function polyDist(x, y, P) { let d = 1e9; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; d = Math.min(d, segDist(x, y, a[0], a[1], b[0], b[1])); } return inPoly(x, y, P) ? -d : d; }
+  function polyDist(x, y, P) { // 有符号距离（内负外正）；单遍：边距离平方 + 奇偶穿越（大多边形仍用分桶索引判内外）
+    const n = P.length; let d2 = 1e18, inside = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) { const ax = P[j][0], ay = P[j][1], bx = P[i][0], by = P[i][1], dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy; let t = l ? ((x - ax) * dx + (y - ay) * dy) / l : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; const ex = x - ax - t * dx, ey = y - ay - t * dy, e = ex * ex + ey * ey; if (e < d2) d2 = e;
+      if (n < 24 && (by > y) !== (ay > y) && x < dx * (y - by) / (ay - by) * -1 + bx + 0 * dy) inside = !inside; }
+    if (n >= 24) inside = inRing(x, y, P); const d = Math.sqrt(d2); return inside ? -d : d; }
   function segsCross(a, b, c, d) { const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]); const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d); return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0)) && d1 * d2 < 0 && d3 * d4 < 0; }
   function polysOverlap(A, B) { // 一般多边形（可凹）是否有面积重叠：边相交或一方顶点在另一方内
     for (let i = 0; i < A.length; i++) for (let j = 0; j < B.length; j++) if (segsCross(A[i], A[(i + 1) % A.length], B[j], B[(j + 1) % B.length])) return true;
@@ -115,7 +125,16 @@
     });
     const RN = n => R.filter(g => g.name === n);
     let bandAt = () => false;
-    const crestDist = (g, x, y) => { let m = 1e9; for (const e of g.edges) { if (e.band || (e.mixed && bandAt(e, x, y))) continue; const d = segDist(x, y, e.ax, e.ay, e.bx, e.by); if (d - e.B < m) m = d - e.B; } return inReg(g, x, y) ? m : -m; };
+    // 石垣顶线距离场（只为提速：边数组 + 包围盒下界剪枝 + 从上一次的最近边开始；结果与逐边计算完全相同）
+    const edgeIdx = g => { if (g._ei && g._ei.n === g.edges.length) return g._ei; const E = g.edges, n = E.length, A = new Float64Array(n * 9); E.forEach((e, k) => { A.set([e.ax, e.ay, e.bx, e.by, e.B, Math.min(e.ax, e.bx), Math.min(e.ay, e.by), Math.max(e.ax, e.bx), Math.max(e.ay, e.by)], k * 9); }); return (g._ei = { n, A, last: 0 }); };
+    const NC = [0, -1, 0, 0];
+    const nearCrest = (g, x, y) => { // → NC = [m = min(d − B), 最近边下标, 最近点 x, y]（复用同一个数组，不分配）
+      const I = edgeIdx(g), A = I.A, E = g.edges, n = I.n; let m = 1e9, bi = -1, qx = 0, qy = 0;
+      for (let kk = -1; kk < n; kk++) { const k = kk < 0 ? I.last : kk; if (k >= n || (kk >= 0 && k === I.last)) continue; const e = E[k]; if (e.band || (e.mixed && bandAt(e, x, y))) continue;
+        const o = k * 9, B = A[o + 4], ddx = Math.max(A[o + 5] - x, 0, x - A[o + 7]), ddy = Math.max(A[o + 6] - y, 0, y - A[o + 8]); if (Math.sqrt(ddx * ddx + ddy * ddy) - B >= m) continue;
+        const ax = A[o], ay = A[o + 1], dx = A[o + 2] - ax, dy = A[o + 3] - ay, l = dx * dx + dy * dy; let t = l ? ((x - ax) * dx + (y - ay) * dy) / l : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; const px = ax + t * dx, py = ay + t * dy, d = Math.sqrt((x - px) * (x - px) + (y - py) * (y - py)) - B; if (d < m) { m = d; bi = k; qx = px; qy = py; } }
+      if (bi >= 0) I.last = bi; NC[0] = m; NC[1] = bi; NC[2] = qx; NC[3] = qy; return NC; };
+    const crestDist = (g, x, y) => { const m = nearCrest(g, x, y)[0]; return inReg(g, x, y) ? m : -m; };
     S.regions = R;
     // ---- 引用解析 ----
     const BLD = D.buildings, P = D.points || {};
@@ -207,6 +226,7 @@
       }
     }
     const BASE = H.slice();
+    const baseAt = (x, y) => { let fx = (x - gs.x0) / c, fy = (y - gs.y0) / c; fx = clamp(fx, 0, NX - 1.0001); fy = clamp(fy, 0, NY - 1.0001); const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, a = j * NX + i, b = a + 1, cc = a + NX, d = cc + 1; return u >= v ? BASE[a] + u * (BASE[b] - BASE[a]) + v * (BASE[d] - BASE[b]) : BASE[a] + v * (BASE[cc] - BASE[a]) + u * (BASE[d] - BASE[cc]); };
     // 高度插值：与渲染网格的三角剖分完全一致（每格对角线 a-d）
     function heightAt(x, y) {
       let fx = (x - gs.x0) / c, fy = (y - gs.y0) / c; fx = clamp(fx, 0, NX - 1.0001); fy = clamp(fy, 0, NY - 1.0001);
@@ -306,7 +326,7 @@
     }
     // 斜接内缩不考虑深边端头的圆角（深石垣边在浅边旁会“咬”进来）：按距离场把折线上低于目标值的点沿最近边推回，再简化
     function repairLoop(V, g, target, tol) {
-      const near = p => { let m = 1e9, cp = null, B = 0; for (const e of g.edges) { if (e.band || (e.mixed && bandAt(e, p[0], p[1]))) continue; const t = clamp(segT(p[0], p[1], e.ax, e.ay, e.bx, e.by), 0, 1), qx = e.ax + (e.bx - e.ax) * t, qy = e.ay + (e.by - e.ay) * t, d = Math.hypot(p[0] - qx, p[1] - qy) - e.B; if (d < m) { m = d; cp = [qx, qy]; B = e.B; } } return { m, cp, B }; };
+      const near = p => { const r = nearCrest(g, p[0], p[1]); return { m: r[0], cp: r[1] >= 0 ? [r[2], r[3]] : null, B: r[1] >= 0 ? g.edges[r[1]].B : 0 }; };
       const P = []; let moved = 0;
       for (let k = 0; k < V.length; k++) {
         const a = V[k], b = V[(k + 1) % V.length], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5)), S2 = [];
@@ -386,7 +406,7 @@
       }
       gate.poly = rectPoly(gate.x, gate.y, gate.w, gate.d, gate.ang);
       const inSign = gate.nin ? Math.sign(-Math.sin(gate.ang) * gate.nin[0] + Math.cos(gate.ang) * gate.nin[1]) : 1;
-      const part = addPart({ fam, name: gsp.name, x: gate.x, y: gate.y, ang: gate.ang, w: gate.w, d: gate.d, z: gate.z, poly: gate.poly, region: g.i, gate: gsp.id, open, inSign, axisV: inSign * (-gate.d / 2 + WL.inset), passages: [{ poly: rectPoly(gate.x, gate.y, open, gate.d + 0.6, gate.ang) }] });
+      const part = addPart({ fam, name: gsp.name, x: gate.x, y: gate.y, ang: gate.ang, w: gate.w, d: gate.d, z: gate.z, poly: gate.poly, region: g.i, gate: gsp.id, open, inSign, axisV: inSign * (-gate.d / 2 + WL.inset), passages: [{ poly: rectPoly(gate.x, gate.y, open, gate.d + 0.6, gate.ang), clearH: SPEC.passH[fam] }] });
       gate.part = part; S.gates.push(gate);
       gate.passage = rectPoly(gate.x, gate.y, open * 0.9, gate.d + 12, gate.ang);
       // 坡道：从门外侧面中点（=门洞中线与石垣顶线的交点）沿外法线射线，直到进入目标曲轮的平顶
@@ -497,7 +517,7 @@
           const r = best.runs.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]))[0], vc = gate.d + (vmax - gate.d) * (r[0] + r[1]) / 2, dir = [t[0] * best.q.sd, t[1] * best.q.sd];
           let len = 0; const [sx, sy] = at(best.q.sd > 0 ? umax : umin, vc); while (len < 60 && (len < 1 || inPoly(sx + dir[0] * len, sy + dir[1] * len, inner.poly))) len += 0.25;
           len += 0.6; const pc = [sx + dir[0] * (len / 2 - 0.3), sy + dir[1] * (len / 2 - 0.3)], pang = Math.atan2(dir[1], dir[0]) + Math.PI / 2;
-          inner.passages = (inner.passages || []).concat([{ poly: rectPoly(pc[0], pc[1], gate.open, len, pang), x: pc[0], y: pc[1], ang: pang, w: gate.open, len }]);
+          inner.passages = (inner.passages || []).concat([{ poly: rectPoly(pc[0], pc[1], gate.open, len, pang), x: pc[0], y: pc[1], ang: pang, w: gate.open, len, clearH: SPEC.passH.tamon }]);
           inner.masugataOf = gate.spec.id; ig = { part: inner, side: best.q.sd, c: pc, dir };
         }
       } else {
@@ -511,7 +531,7 @@
         let pick = null;
         for (let vt = vmax; vt <= MS.maxReach && !pick; vt += 2) for (const sd of [1, -1].sort((a, b) => score(b) - score(a))) {
           // 候选：① 顶到后角 ② 紧贴防御线（门前段为 0，必要时加深方院让后段 ≥1 間）③ 中间（两侧剩余墙段都 ≥1 間）
-          const u = sd > 0 ? umax + MT / 2 : umin - MT / 2, vb = vt + MT / 2, cands = [[vt + MT - 6, vt]];
+          const u = sd > 0 ? umax + MT / 2 : umin - MT / 2, vb = vt + MT / 2, cands = [[Math.min(vt + MT - 6, vt - gate.open / 2), vt]]; // r5：顶到后角时门洞（不是门体）与后墙内面齐平，后墙不挡门洞
           let lo = null; for (let vc = v0 + 5.5; vc <= MS.maxReach; vc += 0.5) if (fitsAt(u, vc)) { lo = vc; break; }
           if (lo !== null) { let a = lo - 0.5, b = lo; for (let it = 0; it < 12; it++) { const m2 = (a + b) / 2; if (fitsAt(u, m2)) b = m2; else a = m2; } cands.push([b, Math.max(vt, b + 6 + KEN)]); }
           for (let vc = vb - 6 - KEN - MT / 2; vc >= v0 + 6 + KEN; vc -= 0.5) cands.push([vc, vt]);
@@ -521,7 +541,7 @@
         if (!pick) { S.notes.push(gate.name + ' 枡形侧边放不下渡橹门'); continue; }
         vmax = pick.vt; M.vmax = vmax; M.court = [at(umin, v0), at(umax, v0), at(umax, vmax), at(umin, vmax)];
         const [ix, iy] = at(pick.u, pick.vc);
-        const part = addPart({ fam: 'yaguramon', name: m.innerName, x: ix, y: iy, ang: iang, w: 12, d: 7, z: g.z, poly: rectPoly(ix, iy, 12, 7, iang), region: g.i, masugataOf: gate.spec.id, open: gate.open, passages: [{ poly: rectPoly(ix, iy, gate.open, 7.6, iang) }] });
+        const part = addPart({ fam: 'yaguramon', name: m.innerName, x: ix, y: iy, ang: iang, w: 12, d: 7, z: g.z, poly: rectPoly(ix, iy, 12, 7, iang), region: g.i, masugataOf: gate.spec.id, open: gate.open, passages: [{ poly: rectPoly(ix, iy, gate.open, 7.6, iang), clearH: SPEC.passH.yaguramon }] });
         ig = { part, side: pick.sd, c: [ix, iy], dir: [t[0] * pick.sd, t[1] * pick.sd] };
       }
       M.innerGate = ig;
@@ -609,25 +629,159 @@
     // ---- 操作：坡道（土桥）——路面整平并锁定，两侧放坡；已锁定（地基）格点不动 ----
     for (const r of S.ramps) {
       if (!r.p1 || r.via !== 'dobashi') continue;
-      const [x0, y0] = r.p0, [x1, y1] = r.p1, hw = r.width / 2, ss = SPEC.ramp.sideSlope, run = Math.max(r.z0, r.z1) - BED;
-      const R2 = hw + run * ss + c, bb = [Math.min(x0, x1) - R2, Math.min(y0, y1) - R2, Math.max(x0, x1) + R2, Math.max(y0, y1) + R2];
+      // r5：侧坡按“站在什么上”选勾配——站在护城河底（水/干堀）或原有石垣面上的是石垣面土桥（0.3），站在平地（陆地颈）上的是土坡（1.5，休止角）
+      const [x0, y0] = r.p0, [x1, y1] = r.p1, hw = r.width / 2, ss = SPEC.ramp.sideSlope, se = SPEC.ramp.earthSlope, run = Math.max(r.z0, r.z1) - BED;
+      const R2 = hw + Math.max(run * ss, (Math.max(r.z0, r.z1) - L.city) * se) + c, bb = [Math.min(x0, x1) - R2, Math.min(y0, y1) - R2, Math.max(x0, x1) + R2, Math.max(y0, y1) + R2];
       const i0 = Math.max(0, Math.floor((bb[0] - gs.x0) / c)), i1 = Math.min(NX - 1, Math.ceil((bb[2] - gs.x0) / c)), j0 = Math.max(0, Math.floor((bb[1] - gs.y0) / c)), j1 = Math.min(NY - 1, Math.ceil((bb[3] - gs.y0) / c));
       const L2 = r.len; let n = 0;
+      const moatQ = q => q < 0 || CLS[q] < 0 || TAG[q] === 1 || (R[CLS[q]] && R[CLS[q]].name === 'dry') || BASE[q] < (CLS[q] === BAND.i ? BAND.z : R[CLS[q]] ? R[CLS[q]].z : BED) - 0.5;
+      // 每 1 m 一个断面、每侧：土坡在碰到地面之前就会撞上石垣面/护城河 → 这一侧整段做成石垣面（否则土坡会在岸边留下一道土崖）
+      const ux = (x1 - x0) / L2, uy = (y1 - y0) / L2, NS = Math.ceil(L2), stoneSide = [new Uint8Array(NS + 1), new Uint8Array(NS + 1)];
+      for (let k = 0; k <= NS; k++) { const tk = Math.min(1, k / L2), pz = rampProf(r, tk), cx0 = x0 + (x1 - x0) * tk, cy0 = y0 + (y1 - y0) * tk; for (const [si, sd] of [[0, -1], [1, 1]]) { const oMax = hw + c * 0.75 + Math.max(0, pz - L.city) * se; for (let o = hw + c * 0.75; o <= oMax; o += 0.5) { if (moatQ(vid(cx0 - uy * sd * o, cy0 + ux * sd * o))) { stoneSide[si][k] = 1; break; } } } }
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const q = j * NX + i, x = X(i), y = Y(j); if (LOCK[q] === 2 || LOCK[q] === 3) continue;
         const t = segT(x, y, x0, y0, x1, y1); if (t < -0.02 || t > 1 + 0.5 / L2 * 0 + 0.0) { if (t < -0.02 || t > 1) continue; }
         const tc = clamp(t, 0, 1), d = Math.hypot(x - (x0 + (x1 - x0) * tc), y - (y0 + (y1 - y0) * tc)), prof = rampProf(r, tc);
         if (d <= hw + c * 0.75) { H[q] = prof; LOCK[q] = 1; TAG[q] = 2; n++; }
-        else if (d <= R2) { const hs = prof - (d - hw - c * 0.75) / ss; if (hs > H[q]) { H[q] = hs; TAG[q] = 3; } }
+        else if (d <= R2) { const side = ((x - x0) * -uy + (y - y0) * ux) > 0 ? 1 : 0, moat = moatQ(q) || stoneSide[side][clamp(Math.round(tc * L2), 0, NS)], hs = prof - (d - hw - c * 0.75) / (moat ? ss : se); if (hs > H[q]) { H[q] = hs; TAG[q] = moat ? 3 : 5; } }
       }
       r.cells = n;
     }
 
-    // ---- 表面（磁吸）：地面与桥面里最高的一个 ----
-    const bridges = S.ramps.filter(r => r.p1 && r.via === 'bridge');
-    function deckAt(x, y) { let h = null; for (const r of bridges) { const t = segT(x, y, r.p0[0], r.p0[1], r.p1[0], r.p1[1]); if (t < 0 || t > 1) continue; const d = segDist(x, y, r.p0[0], r.p0[1], r.p1[0], r.p1[1]); if (d <= r.width / 2) { const z = rampProf(r, t); h = h === null ? z : Math.max(h, z); } } return h; }
+    // ================= r5：木桥结构（桥面 + 两端桥台 + 桥墩，按“支撑/跨度”规则生成）=================
+    // 桥面沿坡道轴线，从门内 bear 处一直铺到对岸平地 bear 处（两端平搭在地面上 = 桥台）；中间每跨 ≤ maxSpan，
+    // 桥墩只能落在平整的堀底/地面上（脚下高差 ≤ level），墩顶顶住桥面底。
+    const TM = () => (typeof performance !== 'undefined' ? performance : Date).now(); S.tm = { pre: TM() - t0 }; let tq = TM();
+    const BRG = SPEC.bridge; S.bridges = [];
+    for (const r of S.ramps) {
+      if (!r.p1 || r.via !== 'bridge') continue;
+      const u = [(r.p1[0] - r.p0[0]) / r.len, (r.p1[1] - r.p0[1]) / r.len], v = [-u[1], u[0]], hw = r.width / 2;
+      const topAt = s => s <= 0 ? r.z0 : s >= r.len ? r.z1 : rampProf(r, s / r.len);
+      const P = (s, o) => [r.p0[0] + u[0] * s + v[0] * o, r.p0[1] + u[1] * s + v[1] * o];
+      const B = { id: S.bridges.length, ramp: r, gate: r.gate, name: r.gate.name, p0: r.p0, p1: r.p1, u, v, hw, w: r.width, len: r.len, s0: -BRG.bear, s1: r.len + BRG.bear, t: BRG.deckT, topAt, P, piers: [] };
+      const gmax = s => Math.max(heightAt(...P(s, -hw)), heightAt(...P(s, 0)), heightAt(...P(s, hw)));
+      const sup = s => gmax(s) >= topAt(s) - B.t - BRG.level;
+      // 桥台（支座）：桥面两端与地面接触的区段 → 地面整平到桥面顶（桥面平搭在桥台上；不在中段切进石垣，也不埋进地面）
+      { let a = B.s0; while (a + 0.25 <= B.s1 && sup(a + 0.25)) a += 0.25; let b = B.s1; while (b - 0.25 >= a && sup(b - 0.25)) b -= 0.25;
+        for (const [lo, hi] of [[B.s0 - c, a + 0.25], [b - 0.25, B.s1 + c]]) { const bb = bboxOf([P(lo, -hw - c), P(lo, hw + c), P(hi, -hw - c), P(hi, hw + c)]);
+          for (let j = Math.max(0, Math.floor((bb[1] - gs.y0) / c)); j <= Math.min(NY - 1, Math.ceil((bb[3] - gs.y0) / c)); j++) for (let i = Math.max(0, Math.floor((bb[0] - gs.x0) / c)); i <= Math.min(NX - 1, Math.ceil((bb[2] - gs.x0) / c)); i++) {
+            const q = j * NX + i, dx = X(i) - r.p0[0], dy = Y(j) - r.p0[1], s = dx * u[0] + dy * u[1], o = dx * v[0] + dy * v[1]; if (s < lo || s > hi || Math.abs(o) > hw + c || CLS[q] < 0) continue;
+            const z = topAt(clamp(s, B.s0, B.s1)); if ((LOCK[q] === 2 || LOCK[q] === 3) && Math.abs(H[q] - z) > 1e-3) continue; H[q] = z; TAG[q] = 4; } } }
+      // 支座段（整幅桥面都搭在桥台上）的内端：跨度从这里量
+      const full = s => [-hw, 0, hw].every(o => heightAt(...P(s, o)) >= topAt(s) - B.t - BRG.level);
+      let sA = B.s0; while (sA + 0.25 <= B.s1 && full(sA + 0.25)) sA += 0.25;
+      let sB = B.s1; while (sB - 0.25 >= sA && full(sB - 0.25)) sB -= 0.25;
+      B.sA = sA; B.sB = sB;
+      const rows = [-1, 1].map(sd => sd * hw * BRG.pierRow), pw = BRG.pierW / 2, M = BRG.maxSpan, st = 0.25;
+      const foot = s => { let lo = 1e9, hi = -1e9; for (const o of rows) for (const [a, b] of [[0, 0], [-pw, -pw], [pw, -pw], [pw, pw], [-pw, pw]]) { const z = heightAt(...P(s + a, o + b)); if (z < lo) lo = z; if (z > hi) hi = z; } return [lo, hi]; };
+      const okS = s => { const [lo, hi] = foot(s); return hi - lo <= BRG.level && hi < topAt(s) - B.t - BRG.minPierH; };
+      const greedy = (from, to, dir) => { const out = []; let prev = from; for (let guard = 0; guard < 400 && (to - prev) * dir > M + 1e-9; guard++) { let pick = null; for (let s = prev + dir * M; (s - prev) * dir > st / 2; s -= dir * st) if (okS(s)) { pick = s; break; } if (pick === null) return null; out.push(pick); prev = pick; } return out; };
+      const spansOK = ps => { const a = [sA].concat(ps, [sB]); for (let i = 1; i < a.length; i++) if (a[i] - a[i - 1] > M + 1e-9 || a[i] < a[i - 1]) return false; return true; };
+      // 可落墩的位置若是一段连续区间 [L0,L1]（平整的堀底）：首墩在 L0、末墩在 L1，中间等分（每跨 ≤ M）；否则贪心
+      let ivs = [], cur = null; for (let s = Math.ceil(sA / st) * st; s <= sB; s += st) { if (okS(s)) { if (cur) cur[1] = s; else ivs.push(cur = [s, s]); } else cur = null; }
+      let even = null; if (ivs.length === 1) { const [L0, L1] = ivs[0]; if (L0 - sA <= M && sB - L1 <= M) { const k = Math.max(0, Math.ceil((L1 - L0) / M - 1e-9)); even = k === 0 ? [L0] : Array.from({ length: k + 1 }, (_, i) => Math.round((L0 + (L1 - L0) * i / k) / st * 4) / 4 * st); if (!(even.every(okS) && spansOK(even))) even = null; } }
+      const fw = greedy(sA, sB, 1), bw = greedy(sB, sA, -1); let ps = even || fw;
+      if (!even && fw && bw && fw.length === bw.length) { const bwr = bw.slice().reverse(), avg = fw.map((s, i) => Math.round((s + bwr[i]) / 2 / st) * st); if (avg.every(okS) && spansOK(avg)) ps = avg; } // 前向/后向两个可行解的平均：跨度更均匀
+      if (!ps) { S.notes.push(B.name + ' 桥墩无处可落（某一跨 > ' + M + ' m）'); ps = []; }
+      for (const s of ps) { const [lo, hi] = foot(s); B.piers.push({ s, zb: (lo + hi) / 2, zt: topAt(s) - B.t, rows: rows.map(o => P(s, o)) }); }
+      S.bridges.push(B);
+    }
+    // ---- 表面（磁吸）：地面与桥面里最高的一个（桥面含两端桥台段）----
+    function deckAt(x, y) { let h = null; for (const B of S.bridges) { const dx = x - B.p0[0], dy = y - B.p0[1], s = dx * B.u[0] + dy * B.u[1], o = dx * B.v[0] + dy * B.v[1]; if (s < B.s0 || s > B.s1 || Math.abs(o) > B.hw) continue; const z = B.topAt(s); h = h === null ? z : Math.max(h, z); } return h; }
     function surfaceAt(x, y) { const g = heightAt(x, y), b = deckAt(x, y); return b === null ? g : Math.max(g, b); }
+    Object.assign(S, { NX, NY, cell: c, H, BASE, CLS, TAG, X, Y, WZ, BED, heightAt, surfaceAt, deckAt, baseAt });
 
+    // ================= r5：可步行表面网络 =================
+    // 节点 = 门洞两侧的“端点”（门内/门外各沿门洞轴线走到净宽够的地方）+ 目的地建筑（天守、殿舍）；
+    // 边 = 穿门段（直线穿过门洞）+ 坡道/土桥/木桥 + 曲轮内道路（同一连通地面上所有端点的 Steiner 树：多源 Dijkstra + Voronoi 边 + MST）。
+    S.tm.bridges = TM() - tq; tq = TM();
+    const NET = SPEC.net; S.terms = []; S.roads = [];
+    const WG = walkGrid(S, { closeGates: true }), N2 = NX * NY, edgeSeed  // 门关上：每块曲轮地面/枡形方院各自是一个连通块，门/坡道/桥是块之间的边
+    = new Uint8Array(N2);
+    { const hs = WG.hs, bk = WG.blk, lim = NET.slope * c + 0.02, crs = NET.cross * c + 0.01, gate = (q, k) => !bk[k] && Math.abs(hs[q] - hs[k]) > crs; // 种子 = 障碍格本身 + 坡折两侧的格（DT ≈ 到障碍/坡折的净距） // 道路要在平地上：坡度 > 横坡上限的格也算“边”（路面两侧不能落在斜坡上）
+      void lim; for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const q = j * NX + i; if (bk[q] || (i + 1 < NX && gate(q, q + 1)) || (i > 0 && gate(q, q - 1)) || (j + 1 < NY && gate(q, q + NX)) || (j > 0 && gate(q, q - NX))) edgeSeed[q] = 1; } }
+    S.tm.seed = TM() - tq; const DT = chamfer(edgeSeed, NX, NY); for (let q = 0; q < N2; q++) DT[q] *= c; S.tm.dt = TM() - tq;
+    S.netDT = DT;
+    const maxOpen = Math.max(...S.gates.map(g => g.open)), seekNeed = maxOpen / 2 + c / 2;
+    const roadZone = (x, y) => { const z = zoneAt(x, y); return !!z && !z.band && NET.roadRegions.includes(z.name); };
+    const seek = (x, y, dir, need) => { for (let a = 0; a <= NET.termReach; a += 0.5) { const px = x + dir[0] * a, py = y + dir[1] * a, q = vid(px, py); if (q >= 0 && !WG.blk[q] && DT[q] >= need) return [px, py]; } return null; };
+    // 端点：从门洞面沿门洞轴线往外走，直到净宽够（先按本门的门洞宽，之后按所在地面上最宽的门洞重新找一次）
+    const addTerm = (kind, base, dir, open, name) => {
+      const p = seek(base[0], base[1], dir, open / 2 + c / 2) || seek(base[0], base[1], dir, open / 2) || seek(base[0], base[1], dir, open / 2 - c); if (!p) { S.notes.push('网络端点：' + name + ' 沿门洞轴线 ' + NET.termReach + ' m 内找不到净宽 ≥' + open.toFixed(1) + ' m 的地面'); return null; }
+      const q = vid(p[0], p[1]), t = { id: S.terms.length, kind, x: p[0], y: p[1], open, name, comp: q >= 0 ? WG.comp[q] : -1, road: roadZone(p[0], p[1]), base, dir }; S.terms.push(t); return t;
+    };
+    const approach = (a, b, need, name) => { if (b) S.roads.push({ kind: 'approach', name, pts: [a.slice(), [b.x, b.y]], need, ends: [null, b.id] }); };
+    for (const gate of S.gates) {
+      const vdir = gate.nin || [-Math.sin(gate.ang), Math.cos(gate.ang)], gc = [gate.x, gate.y], o = gate.open;
+      if (gate.nin) {
+        const face = [gate.x - vdir[0] * gate.d / 2, gate.y - vdir[1] * gate.d / 2], tin = addTerm('gate', [gate.x + vdir[0] * gate.d / 2, gate.y + vdir[1] * gate.d / 2], vdir, o, gate.name + '·内');
+        approach(face, tin, o, gate.name + ' 穿门段');
+        if (gate.ramp && gate.ramp.p1) { const out = [-vdir[0], -vdir[1]], tout = addTerm('gate', gate.ramp.p1, out, o, gate.name + '·外'); approach(gate.ramp.p1, tout, o, gate.name + ' 坡道端'); }
+        const ig = gate.masugata && gate.masugata.innerGate;
+        if (ig) { const part = ig.part, pq = (part.passages || []).find(q => q.len) || null, depth = pq ? pq.len : part.d, a = [ig.c[0] - ig.dir[0] * depth / 2, ig.c[1] - ig.dir[1] * depth / 2], b = [ig.c[0] + ig.dir[0] * depth / 2, ig.c[1] + ig.dir[1] * depth / 2];
+          const tc = addTerm('gate', a, [-ig.dir[0], -ig.dir[1]], o, part.name + '·枡形侧'), tf = addTerm('gate', b, ig.dir, o, part.name + '·内');
+          if (tc && tf) S.roads.push({ kind: 'approach', name: part.name + ' 穿门段', pts: [[tc.x, tc.y], [tf.x, tf.y]], need: o, ends: [tc.id, tf.id] }); }
+      } else {
+        const ta = addTerm('gate', [gate.x - vdir[0] * gate.d / 2, gate.y - vdir[1] * gate.d / 2], [-vdir[0], -vdir[1]], o, gate.name + '·甲'), tb = addTerm('gate', [gate.x + vdir[0] * gate.d / 2, gate.y + vdir[1] * gate.d / 2], vdir, o, gate.name + '·乙');
+        if (ta && tb) S.roads.push({ kind: 'approach', name: gate.name + ' 穿门段', pts: [[ta.x, ta.y], [tb.x, tb.y]], need: o, ends: [ta.id, tb.id] });
+      }
+    }
+    S.tm.grid = TM() - tq; tq = TM();
+    { const needC = new Map(); for (const t of S.terms) needC.set(t.comp, Math.max(needC.get(t.comp) || 0, t.open));
+      for (const t of S.terms) { const nd = needC.get(t.comp), q = vid(t.x, t.y); if (DT[q] >= nd / 2 + c / 2) continue; const p = seek(t.base[0], t.base[1], t.dir, nd / 2 + c / 2) || seek(t.base[0], t.base[1], t.dir, nd / 2); if (p && WG.comp[vid(p[0], p[1])] === t.comp) { t.x = p[0]; t.y = p[1]; } }
+      for (const r of S.roads) if (r.kind === 'approach') for (const k of [0, 1]) if (r.ends[k] !== null) { const t = S.terms[r.ends[k]]; r.pts[k === 0 ? 0 : r.pts.length - 1] = [t.x, t.y]; } }
+    // 目的地：天守、殿舍（hall）——外圈一圈净宽够的格点都算这个端点
+    for (const p of S.parts) {
+      if (!NET.dest.includes(p.fam) || !p.poly) continue; const b = bboxOf(p.poly), m = seekNeed + 3, cells = [], byC = new Map(); // seekNeed：全城最宽门洞的一半 + 半格
+      for (let j = Math.max(0, Math.floor((b[1] - m - gs.y0) / c)); j <= Math.min(NY - 1, Math.ceil((b[3] + m - gs.y0) / c)); j++) for (let i = Math.max(0, Math.floor((b[0] - m - gs.x0) / c)); i <= Math.min(NX - 1, Math.ceil((b[2] + m - gs.x0) / c)); i++) {
+        const q = j * NX + i; if (WG.blk[q] || DT[q] < c) continue; const d = polyDist(X(i), Y(j), p.poly); if (d <= 0 || d > m) continue; cells.push(q); byC.set(WG.comp[q], (byC.get(WG.comp[q]) || 0) + 1);
+      }
+      let comp = -1, bn = 0; for (const [k, n] of byC) if (S.terms.some(t => t.comp === k) && n > bn) { bn = n; comp = k; }
+      if (comp < 0) { S.notes.push('网络端点：' + p.name + ' 周围没有与门相连的净宽地面'); continue; }
+      const cc = cells.filter(q => WG.comp[q] === comp), q0 = cc[0];
+      S.terms.push({ id: S.terms.length, kind: 'dest', x: X(q0 % NX), y: Y((q0 - q0 % NX) / NX), open: 0, name: p.name, comp, road: roadZone(X(q0 % NX), Y((q0 - q0 % NX) / NX)), cells: cc, part: p });
+    }
+    // 每块连通地面（只在本丸/二之丸）：端点之间的 Steiner 树
+    {
+      const dist = new Float64Array(N2).fill(Infinity), src = new Int32Array(N2).fill(-1), par = new Int32Array(N2).fill(-1), touched = [];
+      const nb8 = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+      const groups = new Map(); for (const t of S.terms) if (t.road && t.comp >= 0) { let L = groups.get(t.comp); if (!L) groups.set(t.comp, L = []); L.push(t); }
+      for (const [comp, T] of groups) {
+        if (T.length < 2) continue;
+        const needC = Math.max(...T.map(t => t.open)) || maxOpen;
+        let done = false;
+        for (const req of [needC / 2 + c / 2, needC / 2]) {
+          for (const q of touched) { dist[q] = Infinity; src[q] = -1; par[q] = -1; } touched.length = 0;
+          // 3 m 格（隔一个格点）上的 Dijkstra：道路之后按 1.5 m 净宽场拉直，所以粗格足够
+          // 端点附近（12 m 内）放宽到“本门洞宽”：里门开在枡形后角时，路要贴着后墙转弯（净宽之后由 H16 按真实几何复核）
+          const relax = new Map(); for (const t of T) { if (t.kind !== 'gate') continue; const i0 = Math.round((t.x - gs.x0) / c), j0 = Math.round((t.y - gs.y0) / c), K = Math.ceil(12 / c);
+            for (let j = j0 - K; j <= j0 + K; j++) for (let i = i0 - K; i <= i0 + K; i++) { if (i < 0 || j < 0 || i >= NX || j >= NY) continue; const q = j * NX + i; if (Math.hypot(X(i) - t.x, Y(j) - t.y) <= 12 && DT[q] >= t.open / 2 - c) relax.set(q, 1); } }
+          const Hq = fheap(), okq = q => q >= 0 && q < N2 && WG.comp[q] === comp && (DT[q] >= req || relax.has(q)), DI = [2, -2, 2 * NX, -2 * NX, 2 * NX + 2, 2 * NX - 2, -2 * NX + 2, -2 * NX - 2], DL = [2 * c, 2 * c, 2 * c, 2 * c, 2 * c * Math.SQRT2, 2 * c * Math.SQRT2, 2 * c * Math.SQRT2, 2 * c * Math.SQRT2], DX = [2, -2, 0, 0, 2, -2, 2, -2];
+          const even = q => (q % NX) % 2 === 0 && Math.floor(q / NX) % 2 === 0, snapE = (x, y) => { let best = -1, bd = 1e9; const i0 = Math.round((x - gs.x0) / c), j0 = Math.round((y - gs.y0) / c); for (let j = j0 - 3; j <= j0 + 3; j++) for (let i = i0 - 3; i <= i0 + 3; i++) { if (i % 2 || j % 2 || i < 0 || j < 0 || i >= NX || j >= NY) continue; const q = j * NX + i, d = Math.hypot(X(i) - x, Y(j) - y); if (okq(q) && d < bd) { bd = d; best = q; } } return best; };
+          T.forEach((t, ti) => { const qs = t.cells ? t.cells.filter(q => even(q) && DT[q] >= req) : [snapE(t.x, t.y)]; for (const q of qs) { if (q < 0 || dist[q] === 0) continue; dist[q] = 0; src[q] = ti; touched.push(q); Hq.push(0, q); } });
+          while (Hq.size()) { const dq = Hq.topKey(), q = Hq.pop(); if (dq > dist[q]) continue; const i = q % NX;
+            for (let m = 0; m < 8; m++) { const ii = i + DX[m]; if (ii < 0 || ii >= NX) continue; const k = q + DI[m]; if (!okq(k)) continue; const w = 1 + 1.5 * Math.min(1, Math.max(0, (req + 4 - DT[k]) / 4)) + (DT[k] < req ? 2 : 0), nd = dq + DL[m] * w; if (nd < dist[k]) { if (dist[k] === Infinity) touched.push(k); dist[k] = nd; src[k] = src[q]; par[k] = q; Hq.push(nd, k); } } }
+          (S.tm.dij || (S.tm.dij = [])).push([comp, T.length, touched.length, +req.toFixed(2), Math.round(TM() - tq)]);
+          const best = new Map();
+          for (const q of touched) { const i = q % NX; for (let m = 0; m < 8; m++) { const ii = i + DX[m], k = q + DI[m], L2 = DL[m] / c / 2; if (ii < 0 || ii >= NX || k < 0 || k >= N2) continue; if (src[k] < 0 || src[k] === src[q] || dist[k] === Infinity) continue; const a = Math.min(src[q], src[k]), b2 = Math.max(src[q], src[k]), key = a * 1000 + b2, d = dist[q] + dist[k] + L2 * 2 * c; const e = best.get(key); if (!e || d < e.d) best.set(key, { d, q, k, a, b: b2 }); } }
+          const uf = T.map((_, i) => i), find = i => uf[i] === i ? i : (uf[i] = find(uf[i])); const mst = [];
+          for (const e of [...best.values()].sort((x, y) => x.d - y.d)) { const ra = find(e.a), rb = find(e.b); if (ra === rb) continue; uf[ra] = rb; mst.push(e); }
+          if (mst.length < T.length - 1 && req > needC / 2) continue; // 有端点连不上：去掉余量再试一次
+          const trace = q => { const out = []; for (let k = q; k >= 0; k = par[k]) out.push([X(k % NX), Y((k - k % NX) / NX)]); return out; };
+          const los = (a, b) => { const L2 = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L2 / 0.5)); for (let s = 0; s <= n; s++) { const q = vid(a[0] + (b[0] - a[0]) * s / n, a[1] + (b[1] - a[1]) * s / n); if (q < 0 || WG.comp[q] !== comp || (DT[q] < req - 0.75 && !relax.has(q))) return false; } return true; };
+          for (const e of mst) {
+            const A = T[src[e.q]], Bt = T[src[e.k]], pa = trace(e.q).reverse(), pb = trace(e.k);
+            const raw = (A.kind === 'gate' ? [[A.x, A.y]] : []).concat(pa, pb, Bt.kind === 'gate' ? [[Bt.x, Bt.y]] : []);
+            const pts = [raw[0]]; let i = 0; while (i < raw.length - 1) { let j = i + 1; while (j + 1 < raw.length && los(raw[i], raw[j + 1])) j++; pts.push(raw[j]); i = j; } // 贪心拉直（逐点延伸到视线不通为止）
+            S.roads.push({ kind: 'road', name: A.name + '—' + Bt.name, pts, need: Math.max(A.open, Bt.open) || needC, comp, ends: [A.id, Bt.id], req });
+          }
+          done = true; break;
+        }
+        if (!done) S.notes.push('道路网：连通地面 ' + comp + ' 的端点连不成树');
+      }
+    }
+
+    S.tm.roads = TM() - tq; tq = TM();
     // ---- 树：噪声成簇，西之丸庭园留开阔草坪 ----
     const TS = SPEC.trees, rnd = rng32((opt.seed * 2654435761) >>> 0);
     const lawnPts = TS.lawn.hull.map(n => { const b = byName(n); if (b) return [b.cx, b.cy]; const l = D.lost_yagura.find(q => q.name === n); return l ? [l.x, l.y] : null; }).filter(Boolean);
@@ -635,6 +789,14 @@
     const solid = S.parts.filter(p => p.poly).map(p => ({ poly: p.poly, bb: bboxOf(p.poly) }));
     const rampPolys = S.ramps.filter(r => r.poly).map(r => segPoly(r.p0[0], r.p0[1], r.p1[0], r.p1[1], r.width + 6, 3));
     const passPolys = S.gates.map(g => g.passage).concat(S.gates.filter(g => g.masugata).map(g => g.masugata.court), ...S.parts.filter(p => p.passages).map(p => p.passages.map(q => q.poly)));
+    // r5：步行网络走廊（道路/穿门段/坡道/桥）：树干离走廊边 ≥1 m；树冠伸进走廊上空时，冠底要高于净空（人高+余量）
+    const CORR = [], CB = new Map(), HEAD = SPEC.clear.person + SPEC.clear.margin;
+    for (const r of S.roads) for (let k = 1; k < r.pts.length; k++) CORR.push({ a: r.pts[k - 1], b: r.pts[k], hw: r.need / 2 });
+    for (const r of S.ramps) if (r.p1) CORR.push({ a: r.p0, b: r.p1, hw: r.width / 2 });
+    CORR.forEach((e, n) => { const bb = bboxOf([e.a, e.b]), m = e.hw + 8; for (let a = Math.floor((bb[0] - m) / 10); a <= Math.floor((bb[2] + m) / 10); a++) for (let b = Math.floor((bb[1] - m) / 10); b <= Math.floor((bb[3] + m) / 10); b++) { const k = a * 100003 + b; let L = CB.get(k); if (!L) CB.set(k, L = []); L.push(n); } });
+    const corrNear = (x, y) => CB.get(Math.floor(x / 10) * 100003 + Math.floor(y / 10)) || [];
+    const treeClear = tr => { const G = treeGeom(tr); for (const n of corrNear(tr.x, tr.y)) { const e = CORR[n]; if (segDist(tr.x, tr.y, e.a[0], e.a[1], e.b[0], e.b[1]) < e.hw + 1 + G.trunk.r) return false;
+        for (const cr of G.crowns) { const d = segDist(cr.x, cr.y, e.a[0], e.a[1], e.b[0], e.b[1]) - e.hw; if (d < cr.r && cr.z - cr.rz * Math.sqrt(Math.max(0, 1 - (Math.max(0, d) / cr.r) ** 2)) < tr.z + HEAD) return false; } } return true; };
     const TG = new Map(), tk = (x, y) => Math.floor(x / 8) + ',' + Math.floor(y / 8);
     const nearTree = (x, y, r) => { const gx = Math.floor(x / 8), gy = Math.floor(y / 8); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const A = TG.get((gx + a) + ',' + (gy + b)); if (A) for (const t of A) if (Math.hypot(t.x - x, t.y - y) < r) return true; } return false; };
     S.trees = [];
@@ -654,15 +816,17 @@
         if (rampPolys.some(p => inPoly(x, y, p)) || passPolys.some(p => polyDist(x, y, p) < 4)) continue;
         if (nearTree(x, y, TS.minSpacing)) continue;
         const s = 0.8 + rnd() * 0.5, tr = { fam: 'tree', x, y, s, r: 2.2 * s, z: surfaceAt(x, y), region: g.i, kind: rnd() < 0.7 ? 'pine' : 'broad' };
+        if (!treeClear(tr)) continue;
         if (tr.z < WZ + 0.3 || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => Math.abs(surfaceAt(x + dx * tr.r * 0.5, y + dy * tr.r * 0.5) - tr.z) > SPEC.walk.slope * tr.r * 0.5)) continue; // 树根要在平地上
         S.trees.push(tr); const k = tk(x, y); let A = TG.get(k); if (!A) TG.set(k, A = []); A.push(tr); placed++;
       }
     }
 
+    S.tm.trees = TM() - tq;
     // ---- 标注 ----
     for (const p of S.parts) if (p.name && p.fam !== 'dobei' && p.fam !== 'mwall' && !p.ramp) S.labels.push({ text: p.name, x: p.x, y: p.y, z: p.z + ({ tenshu: 62, yagura3: 22, yagura2: 17, yaguramon: 15, gate: 10, tamon: 14 }[p.fam] || 10), lost: !!p.lost, fam: p.fam });
 
-    Object.assign(S, { NX, NY, cell: c, H, BASE, CLS, LOCK, TAG, heightAt, surfaceAt, deckAt, crestDist, inReg, levelAt, X, Y, WZ, BED });
+    Object.assign(S, { NX, NY, cell: c, H, BASE, CLS, LOCK, TAG, heightAt, surfaceAt, deckAt, crestDist, inReg, levelAt, X, Y, WZ, BED, treeGeom, baseAt });
     S.ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
     S.audit = () => audit(S); S.signature = () => signature(S);
     return S;
@@ -684,6 +848,10 @@
     { id: 'H12', name: '闭合：防御线连续，墙端都顶到墙/门/建筑（≤0.2 m），无碎墙(<1間)' },
     { id: 'H13', name: '石垣边：边上建筑外墙面与顶线齐平(≤0.3 m)或退后有土塀，不外挑' },
     { id: 'H14', name: '通行：门内外都有≥门洞宽、坡度≤30% 的路，坡道轴线穿门洞中心' },
+    { id: 'H15', name: '网络连通：门/曲轮地面/城下互通，无断头路，端点都接上道路' },
+    { id: 'H16', name: '道路/坡道/桥：纵坡≤30%、横坡≤5%、净宽≥门洞' },
+    { id: 'H17', name: '桥：两端搭桥台≥1 m、墩落地、跨度≤3 間、端头接平；土桥侧坡稳定且落到堀底' },
+    { id: 'H18', name: '净空：步行面以上≥2.1 m（门楣/桥底/树冠），木桥下水面净空≥2 m' },
   ];
   function audit(S) {
     const cnt = {}, items = []; RULES.forEach(r => cnt[r.id] = 0);
@@ -753,11 +921,11 @@
     const rr = rng32(99);
     for (const g of S.regions) {
       let n = 0, tries = 0, badN = 0;
-      while (n < 60 && tries < 4000) { tries++; const x = g.bb[0] + rr() * (g.bb[2] - g.bb[0]), y = g.bb[1] + rr() * (g.bb[3] - g.bb[1]); if (x < S.X(0) || x > S.X(S.NX - 1) || y < S.Y(0) || y > S.Y(S.NY - 1)) continue; if (!S.inReg(g, x, y) || S.crestDist(g, x, y) < 3 * S.cell) continue; if (S.ramps.some(r => r.poly && polyDist(x, y, r.poly) < (Math.max(r.z0, r.z1) - S.BED) * SPEC.ramp.sideSlope + 2 * S.cell)) continue; if (P.some(p => p.poly && polyDist(x, y, p.poly) < 3)) continue; n++; if (Math.abs(heightAt(x, y) - SPEC.levels[g.name]) > 0.01) badN++; }
+      while (n < 60 && tries < 4000) { tries++; const x = g.bb[0] + rr() * (g.bb[2] - g.bb[0]), y = g.bb[1] + rr() * (g.bb[3] - g.bb[1]); if (x < S.X(0) || x > S.X(S.NX - 1) || y < S.Y(0) || y > S.Y(S.NY - 1)) continue; if (!S.inReg(g, x, y) || S.crestDist(g, x, y) < 3 * S.cell) continue; if (S.ramps.some(r => r.poly && polyDist(x, y, r.poly) < Math.max((Math.max(r.z0, r.z1) - S.BED) * SPEC.ramp.sideSlope, (Math.max(r.z0, r.z1) - SPEC.levels.city) * SPEC.ramp.earthSlope) + 2 * S.cell)) continue; if (P.some(p => p.poly && polyDist(x, y, p.poly) < 3)) continue; n++; if (Math.abs(heightAt(x, y) - SPEC.levels[g.name]) > 0.01) badN++; }
       if (badN) bad('H7', { name: g.name, x: (g.bb[0] + g.bb[2]) / 2, y: (g.bb[1] + g.bb[3]) / 2 }, g.name + ' 有 ' + badN + '/' + n + ' 个采样高程≠' + SPEC.levels[g.name]);
     }
     // H9 水面格
-    let wchg = 0; for (let q = 0; q < S.H.length; q++) if (S.CLS[q] < 0 && Math.abs(S.H[q] - S.BED) > 1e-4 && S.TAG[q] !== 2 && S.TAG[q] !== 3) wchg++;
+    let wchg = 0; for (let q = 0; q < S.H.length; q++) if (S.CLS[q] < 0 && Math.abs(S.H[q] - S.BED) > 1e-4 && S.TAG[q] !== 2 && S.TAG[q] !== 3 && S.TAG[q] !== 5) wchg++;
     if (wchg) bad('H9', null, wchg + ' 个水面格被非土桥操作改动');
     // H10 引用
     for (const n of S.notes) bad('H10', null, n);
@@ -820,6 +988,7 @@
     }
     // H14 通行
     for (const gate of S.gates) walkCheck(S, gate, bad);
+    S.net = netAudit(S, bad);
   }
   function floodLeak(S, court) {
     const cs = 0.5, b0 = bboxOf(court), M = 14, x0 = b0[0] - M, y0 = b0[1] - M, nx = Math.ceil((b0[2] - b0[0] + 2 * M) / cs) + 1, ny = Math.ceil((b0[3] - b0[1] + 2 * M) / cs) + 1, N = nx * ny;
@@ -875,6 +1044,142 @@
     if (!gate.nin && !backOK) bad('H14', part, '内门另一侧走不通');
   }
 
+  // ---------------- r5：网络/桥/净空的公共函数 ----------------
+  function fheap() { let K = new Float64Array(1024), V = new Int32Array(1024), n = 0; return { push(key, val) { if (n === K.length) { const K2 = new Float64Array(n * 2), V2 = new Int32Array(n * 2); K2.set(K); V2.set(V); K = K2; V = V2; } let i = n++; while (i > 0) { const p = (i - 1) >> 1; if (K[p] <= key) break; K[i] = K[p]; V[i] = V[p]; i = p; } K[i] = key; V[i] = val; },
+    topKey() { return K[0]; }, pop() { const r = V[0]; n--; if (n > 0) { const key = K[n], val = V[n]; let i = 0; for (;;) { const l = 2 * i + 1; if (l >= n) break; const rr = l + 1, m = rr < n && K[rr] < K[l] ? rr : l; if (K[m] >= key) break; K[i] = K[m]; V[i] = V[m]; i = m; } K[i] = key; V[i] = val; } return r; }, size() { return n; } }; }
+  function heapQ() { const k = [], v = []; return { push(key, val) { k.push(key); v.push(val); let i = k.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (k[p] <= k[i]) break; [k[p], k[i]] = [k[i], k[p]]; [v[p], v[i]] = [v[i], v[p]]; i = p; } },
+    pop() { const rk = k[0], rv = v[0], lk = k.pop(), lv = v.pop(); if (k.length) { k[0] = lk; v[0] = lv; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < k.length && k[l] < k[m]) m = l; if (r < k.length && k[r] < k[m]) m = r; if (m === i) break; [k[m], k[i]] = [k[i], k[m]]; [v[m], v[i]] = [v[i], v[m]]; i = m; } } return [rk, rv]; }, get size() { return k.length; } }; }
+  function chamfer(seed, nx, ny) { // 到最近种子格的距离（格数，8 邻域倒角）
+    const N = nx * ny, D = new Float32Array(N), s2 = Math.SQRT2; for (let q = 0; q < N; q++) D[q] = seed[q] ? 0 : 1e9;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const q = j * nx + i; let v = D[q]; if (i > 0) v = Math.min(v, D[q - 1] + 1); if (j > 0) { v = Math.min(v, D[q - nx] + 1); if (i > 0) v = Math.min(v, D[q - nx - 1] + s2); if (i < nx - 1) v = Math.min(v, D[q - nx + 1] + s2); } D[q] = v; }
+    for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) { const q = j * nx + i; let v = D[q]; if (i < nx - 1) v = Math.min(v, D[q + 1] + 1); if (j < ny - 1) { v = Math.min(v, D[q + nx] + 1); if (i < nx - 1) v = Math.min(v, D[q + nx + 1] + s2); if (i > 0) v = Math.min(v, D[q + nx - 1] + s2); } D[q] = v; }
+    return D;
+  }
+  // 全城步行栅格（与高度网格同格点）：表面 = 地面/桥面取高者；水、实体（门洞除外）是障碍；相邻格坡度 >slope 不连通
+  function walkGrid(S, o) {
+    o = o || {}; const NX = S.NX, NY = S.NY, c = S.cell, N = NX * NY, x0 = S.X(0), y0 = S.Y(0), hs = new Float32Array(N), blk = new Uint8Array(N), h = c / 2;
+    hs.set(S.H);
+    for (const B of S.bridges || []) { const bb = bboxOf([B.P(B.s0, -B.hw), B.P(B.s0, B.hw), B.P(B.s1, -B.hw), B.P(B.s1, B.hw)]);
+      for (let j = Math.max(0, Math.floor((bb[1] - y0) / c)); j <= Math.min(NY - 1, Math.ceil((bb[3] - y0) / c)); j++) for (let i = Math.max(0, Math.floor((bb[0] - x0) / c)); i <= Math.min(NX - 1, Math.ceil((bb[2] - x0) / c)); i++) { const q = j * NX + i, z = S.deckAt(S.X(i), S.Y(j)); if (z !== null && z > hs[q]) hs[q] = z; } }
+    for (let q = 0; q < N; q++) if (hs[q] < S.WZ + 0.3) blk[q] = 1;
+    for (const p of S.parts) { if (!p.poly || p.ramp) continue; const b = bboxOf(p.poly);
+      for (let j = Math.max(0, Math.floor((b[1] - h - y0) / c)); j <= Math.min(NY - 1, Math.ceil((b[3] + h - y0) / c)); j++) for (let i = Math.max(0, Math.floor((b[0] - h - x0) / c)); i <= Math.min(NX - 1, Math.ceil((b[2] + h - x0) / c)); i++) {
+        const x = S.X(i), y = S.Y(j); if (polyDist(x, y, p.poly) >= h) continue; if (!o.closeGates && p.passages && p.passages.some(pp => polyDist(x, y, pp.poly) < h)) continue; blk[j * NX + i] = 1; } }
+    if (o.trees) for (const t of S.trees) { const i = Math.round((t.x - x0) / c), j = Math.round((t.y - y0) / c); if (i >= 0 && j >= 0 && i < NX && j < NY) blk[j * NX + i] = 1; }
+    const lim = SPEC.net.slope * c + 0.02, pass = (q, k) => !blk[q] && !blk[k] && Math.abs(hs[q] - hs[k]) <= lim;
+    const comp = new Int32Array(N).fill(-1), sizes = [], st = new Int32Array(N); let nc = 0;
+    for (let q0 = 0; q0 < N; q0++) { if (blk[q0] || comp[q0] >= 0) continue; let sp = 0, n = 0; st[sp++] = q0; comp[q0] = nc;
+      while (sp) { const q = st[--sp], i = q % NX; n++; if (i + 1 < NX && comp[q + 1] < 0 && pass(q, q + 1)) { comp[q + 1] = nc; st[sp++] = q + 1; } if (i > 0 && comp[q - 1] < 0 && pass(q, q - 1)) { comp[q - 1] = nc; st[sp++] = q - 1; } if (q + NX < N && comp[q + NX] < 0 && pass(q, q + NX)) { comp[q + NX] = nc; st[sp++] = q + NX; } if (q - NX >= 0 && comp[q - NX] < 0 && pass(q, q - NX)) { comp[q - NX] = nc; st[sp++] = q - NX; } }
+      sizes.push(n); nc++; }
+    return { hs, blk, pass, comp, sizes, nc };
+  }
+  // 树的几何（渲染与净空审计共用）：树干圆柱 + 两个椭球树冠
+  function treeGeom(t) { const pine = t.kind === 'pine', h = (pine ? 6 : 5) * t.s, crowns = []; for (let k = 0; k < 2; k++) { const r = (pine ? 2.6 - k * 0.8 : 3.2 - k * 0.9) * t.s; crowns.push({ x: t.x + (k ? 0.6 : -0.4) * t.s, y: t.y + (k ? -0.5 : 0.3) * t.s, z: t.z + h * (0.75 + k * 0.22), r, rz: r * (pine ? 0.45 : 0.85) }); } return { h, trunk: { r: 0.38 * t.s, z0: t.z, z1: t.z + h * 0.8 }, crowns }; }
+  // 网络的边（道路/穿门段/坡道/桥）：统一成 {kind,name,pts,need,w}
+  function netEdges(S) {
+    const E = []; for (const r of S.roads || []) E.push({ kind: r.kind, name: r.name, pts: r.pts, need: r.need, w: r.need, road: r });
+    for (const r of S.ramps) if (r.p1) E.push({ kind: r.via, name: r.gate.name + (r.via === 'bridge' ? '（桥）' : '（土桥）'), pts: [r.p0, r.p1], need: r.gate.open, w: r.width, ramp: r, part: r.part });
+    return E;
+  }
+  function polySamples(pts, step, skipEnds) { const out = []; let acc = 0; for (let k = 1; k < pts.length; k++) { const a = pts[k - 1], b = pts[k], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) continue; const tx = (b[0] - a[0]) / L, ty = (b[1] - a[1]) / L, n = Math.max(1, Math.ceil(L / step)); for (let i = (k === 1 ? 0 : 1); i <= n; i++) out.push({ x: a[0] + tx * L * i / n, y: a[1] + ty * L * i / n, tx, ty, s: acc + L * i / n }); acc += L; }
+    return skipEnds ? out.filter(p => p.s >= skipEnds && p.s <= acc - skipEnds) : out; }
+
+  // ---------------- r5：H15–H18 ----------------
+  function netAudit(S, bad) {
+    const NET = SPEC.net, BRG = SPEC.bridge, DB = SPEC.dobashi, CL = SPEC.clear, HEAD = CL.person + CL.margin, c = S.cell, NX = S.NX, NY = S.NY, N = NX * NY, x0 = S.X(0), y0 = S.Y(0);
+    const WG = walkGrid(S, { trees: true });
+    // ---- H15 连通 ----
+    const cityCnt = new Map(); for (let q = 0; q < N; q++) { const k = WG.comp[q]; if (k < 0) continue; const cl = S.CLS[q]; if (cl === S.BAND.i || (cl >= 0 && cl < S.regions.length && S.regions[cl].name === 'city')) cityCnt.set(k, (cityCnt.get(k) || 0) + 1); }
+    let main = -1, mb = 0; for (const [k, n] of cityCnt) if (n > mb) { mb = n; main = k; }
+    const nearMain = (x, y, r) => { const i0 = Math.round((x - x0) / c), j0 = Math.round((y - y0) / c), K = Math.ceil(r / c); for (let j = j0 - K; j <= j0 + K; j++) for (let i = i0 - K; i <= i0 + K; i++) { if (i < 0 || j < 0 || i >= NX || j >= NY) continue; if (Math.hypot(S.X(i) - x, S.Y(j) - y) <= r + 1e-6 && WG.comp[j * NX + i] === main) return true; } return false; };
+    for (const g of S.gates) {
+      const vd = g.nin || [-Math.sin(g.ang), Math.cos(g.ang)], pts = [[g.x, g.y], [g.x + vd[0] * (g.d / 2 + 2), g.y + vd[1] * (g.d / 2 + 2)], [g.x - vd[0] * (g.d / 2 + 2), g.y - vd[1] * (g.d / 2 + 2)]];
+      const ig = g.masugata && g.masugata.innerGate; if (ig) { const pq = (ig.part.passages || []).find(q => q.len), dp = pq ? pq.len : ig.part.d; pts.push(ig.c, [ig.c[0] + ig.dir[0] * (dp / 2 + 2), ig.c[1] + ig.dir[1] * (dp / 2 + 2)], [ig.c[0] - ig.dir[0] * (dp / 2 + 2), ig.c[1] - ig.dir[1] * (dp / 2 + 2)]); }
+      if (pts.some(p => !nearMain(p[0], p[1], 1.5))) bad('H15', g.part, '门洞/门两侧不在全城连通的步行网上（与城下不连通）');
+    }
+    for (const r of S.ramps) if (r.p1 && (!nearMain(r.p0[0], r.p0[1], 1.5) || !nearMain(r.p1[0], r.p1[1], 1.5))) bad('H15', r.part, '坡道/桥的一端不在连通步行网上');
+    // 曲轮地面：不在主连通块里的地面块（≥ pocket m²）= 走不到的地面（护城河底等按规格 noAccess 例外：防御空间，本来就不让人走）
+    // 有防御线的曲轮：地面 = 土塀轴线以内（轴线外侧那条窄窄的犬走り在墙外，本来就不进人）
+    const pk = new Map(), axisOf = g => { const lp = (S.loops || []).find(l => l.g === g); return lp ? lp.axis.v : null; };
+    for (let q = 0; q < N; q++) { if (WG.blk[q] || WG.comp[q] === main) continue; const cl = S.CLS[q]; if (cl < 0 || cl >= S.regions.length) continue; const g = S.regions[cl]; if (!NET.roadRegions.includes(g.name) || NET.noAccess.includes(g.name) || Math.abs(S.H[q] - g.z) > 0.01) continue;
+      const ax = axisOf(g), x = S.X(q % NX), y = S.Y((q - q % NX) / NX); if (ax && !inRing(x, y, ax)) continue; const k = WG.comp[q]; let e = pk.get(k); if (!e) pk.set(k, e = { n: 0, q, g }); e.n++; }
+    for (const [, e] of pk) if (e.n * c * c >= NET.pocket) bad('H15', { name: e.g.name + '地面', x: S.X(e.q % NX), y: S.Y((e.q - e.q % NX) / NX) }, '一块 ' + (e.n * c * c).toFixed(0) + ' m² 的' + e.g.name + '地面与全城步行网不连通');
+    for (const p of S.parts) if (NET.dest.includes(p.fam) && p.poly) { const b = bboxOf(p.poly); let ok = false;
+      for (let j = Math.max(0, Math.floor((b[1] - 4 - y0) / c)); j <= Math.min(NY - 1, Math.ceil((b[3] + 4 - y0) / c)) && !ok; j++) for (let i = Math.max(0, Math.floor((b[0] - 4 - x0) / c)); i <= Math.min(NX - 1, Math.ceil((b[2] + 4 - x0) / c)) && !ok; i++) { const d = polyDist(S.X(i), S.Y(j), p.poly); if (d > 0 && d <= 4 && WG.comp[j * NX + i] === main) ok = true; }
+      if (!ok) bad('H15', p, '目的地建筑周围没有连通的步行面'); }
+    // 道路：端点必须落在端点/另一条路/坡道上（无断头路）；同一块地面上有 ≥2 个端点时，每个端点都要被一条道路接上；道路沿线在主连通块上
+    const T = S.terms || [], roads = S.roads || [], E = netEdges(S);
+    const onOther = (r, p) => E.some(e => e.road !== r && e.pts.some((a, k) => k && segDist(p[0], p[1], e.pts[k - 1][0], e.pts[k - 1][1], a[0], a[1]) <= NET.endSnap));
+    const atTerm = p => T.some(t => Math.hypot(t.x - p[0], t.y - p[1]) <= NET.endSnap || (t.part && polyDist(p[0], p[1], t.part.poly) <= NET.endSnap + 10 && t.cells && t.cells.some(q => Math.hypot(S.X(q % NX) - p[0], S.Y((q - q % NX) / NX) - p[1]) <= NET.endSnap)));
+    for (const r of roads) { for (const p of [r.pts[0], r.pts[r.pts.length - 1]]) if (!atTerm(p) && !onOther(r, p)) { bad('H15', { name: r.name, x: p[0], y: p[1] }, '断头路（端点不在门/目的地/其他道路上）'); break; }
+      if (polySamples(r.pts, 2).some(p => !nearMain(p.x, p.y, 1.5))) bad('H15', { name: r.name, x: r.pts[0][0], y: r.pts[0][1] }, '道路经过不连通/不可走的地面'); }
+    const cnt = new Map(); for (const t of T) if (t.road) cnt.set(t.comp, (cnt.get(t.comp) || 0) + 1);
+    for (const t of T) { if (!t.road || cnt.get(t.comp) < 2) continue; const served = roads.some(r => r.kind === 'road' && [r.pts[0], r.pts[r.pts.length - 1]].some(p => Math.hypot(p[0] - t.x, p[1] - t.y) <= NET.endSnap || (t.cells && t.cells.some(q => Math.hypot(S.X(q % NX) - p[0], S.Y((q - q % NX) / NX) - p[1]) <= NET.endSnap)))); if (!served) bad('H15', { name: t.name, x: t.x, y: t.y }, '端点没有接到曲轮道路网'); }
+    // ---- H16 坡度 / 横坡 / 净宽 ----
+    const PB = new Map(); S.parts.forEach((p, n) => { if (!p.poly || p.ramp) return; const b = bboxOf(p.poly); for (let a = Math.floor(b[0] / 8); a <= Math.floor(b[2] / 8); a++) for (let bq = Math.floor(b[1] / 8); bq <= Math.floor(b[3] / 8); bq++) { const k = a * 100003 + bq; let L = PB.get(k); if (!L) PB.set(k, L = []); L.push(p); } });
+    const TB = new Map(); for (const t of S.trees) { const k = Math.floor(t.x / 8) * 100003 + Math.floor(t.y / 8); let L = TB.get(k); if (!L) TB.set(k, L = []); L.push(t); }
+    const solidAt = (x, y) => { for (const p of PB.get(Math.floor(x / 8) * 100003 + Math.floor(y / 8)) || []) if (polyDist(x, y, p.poly) < -0.02 && !(p.passages && p.passages.some(pp => polyDist(x, y, pp.poly) < 0.02))) return true;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const t of TB.get((Math.floor(x / 8) + a) * 100003 + Math.floor(y / 8) + b) || []) if (Math.hypot(t.x - x, t.y - y) < treeGeom(t).trunk.r) return true; return false; };
+    const freeW = (x, y, nx, ny, half) => { let tot = 0; for (const sd of [-1, 1]) { let pz = S.surfaceAt(x, y), a = 0; while (a < half + 0.5) { const a2 = a + 0.25, px = x + nx * sd * a2, py = y + ny * sd * a2, z = S.surfaceAt(px, py); if (z < S.WZ + 0.3 || Math.abs(z - pz) > NET.slope * 0.25 + 0.02 || solidAt(px, py)) break; a = a2; pz = z; } tot += a; } return tot; };
+    for (const e of E) {
+      const o = e.part || { name: e.name, x: e.pts[0][0], y: e.pts[0][1] };
+      if (e.w < e.need - 1e-6) bad('H16', o, '宽 ' + e.w.toFixed(1) + ' m < 门洞 ' + e.need.toFixed(1) + ' m');
+      const sm = polySamples(e.pts, 1.0, 0.5); let g = 0, cr = 0, wmin = 1e9, prev = null; const off = Math.max(0.5, Math.min(e.need, e.w) / 2 - 0.5);
+      for (const p of sm) { const z = S.surfaceAt(p.x, p.y); if (prev && p.s - prev.s > 0.2) g = Math.max(g, Math.abs(z - prev.z) / (p.s - prev.s)); prev = { z, s: p.s };
+        cr = Math.max(cr, Math.abs(S.surfaceAt(p.x - p.ty * off, p.y + p.tx * off) - S.surfaceAt(p.x + p.ty * off, p.y - p.tx * off)) / (2 * off));
+        wmin = Math.min(wmin, freeW(p.x, p.y, -p.ty, p.tx, e.need / 2)); }
+      if (g > NET.slope + 0.02) bad('H16', o, '纵坡 ' + (g * 100).toFixed(0) + '% > ' + NET.slope * 100 + '%');
+      if (cr > NET.cross + 0.005) bad('H16', o, '横坡 ' + (cr * 100).toFixed(1) + '% > ' + NET.cross * 100 + '%');
+      if (wmin < e.need - NET.tol) bad('H16', o, '净宽 ' + wmin.toFixed(2) + ' m < 门洞 ' + e.need.toFixed(1) + ' m');
+    }
+    // ---- H17 木桥支撑/跨度/接续 + 土桥侧坡 ----
+    for (const B of S.bridges || []) {
+      const o = B.ramp.part || { name: B.name, x: B.p0[0], y: B.p0[1] }, gz = s => [-B.hw, 0, B.hw].map(of => S.heightAt(...B.P(s, of)));
+      const bearOK = s => gz(s).every(z => z >= B.topAt(s) - B.t - BRG.level && z <= B.topAt(s) + BRG.level);
+      let a = B.s0; while (a + 0.25 <= B.s1 && bearOK(a + 0.25)) a += 0.25; let b = B.s1; while (b - 0.25 >= a && bearOK(b - 0.25)) b -= 0.25;
+      if (!bearOK(B.s0) || a - B.s0 < BRG.bear - 1e-6) bad('H17', o, '桥面起端搭在桥台上的长度 ' + (bearOK(B.s0) ? a - B.s0 : 0).toFixed(2) + ' m < ' + BRG.bear + ' m');
+      if (!bearOK(B.s1) || B.s1 - b < BRG.bear - 1e-6) bad('H17', o, '桥面末端搭在桥台上的长度 ' + (bearOK(B.s1) ? B.s1 - b : 0).toFixed(2) + ' m < ' + BRG.bear + ' m');
+      // 支座段之外：整幅都不碰地（桥面底在地面之上）；允许一个格宽（√2·格）的支座边缘过渡
+      let buried = 0, cut = 0; for (let s = B.s0; s <= B.s1 + 1e-9; s += 0.25) { const zz = gz(s), m = Math.max(...zz); if (m > B.topAt(s) + BRG.level) buried++; else if (s > a + c * Math.SQRT2 && s < b - c * Math.SQRT2 && m > B.topAt(s) - B.t - BRG.level) cut++; }
+      if (buried) bad('H17', o, '桥面埋进地面（' + buried + ' 处）'); if (cut) bad('H17', o, '桥面中段碰到石垣/地面（' + cut + ' 处，支座外）');
+      for (const [s, sd] of [[B.s0, -1], [B.s1, 1]]) { const p = B.P(s + sd * 0.5, 0), d = Math.abs(S.heightAt(p[0], p[1]) - B.topAt(s)); if (d > BRG.cont) bad('H17', o, '桥面端头与路面高差 ' + d.toFixed(2) + ' m > ' + BRG.cont + ' m'); }
+      const pw = BRG.pierW / 2, sup = [a];
+      for (const pr of B.piers) { let lo = 1e9, hi = -1e9; for (const rw of pr.rows) for (const [dx, dy] of [[0, 0], [-pw, -pw], [pw, -pw], [pw, pw], [-pw, pw]]) { const z = S.heightAt(rw[0] + dx, rw[1] + dy); lo = Math.min(lo, z); hi = Math.max(hi, z); }
+        if (hi - lo > BRG.level + 1e-6 || pr.zb > hi + BRG.level || pr.zb < lo - BRG.level) bad('H17', o, '桥墩（s=' + pr.s.toFixed(1) + '）脚下不平或没落在地面上（地面 ' + lo.toFixed(2) + '…' + hi.toFixed(2) + '，墩底 ' + pr.zb.toFixed(2) + '）');
+        if (Math.abs(pr.zt - (B.topAt(pr.s) - B.t)) > 0.1) bad('H17', o, '桥墩顶没顶到桥面底'); sup.push(pr.s); }
+      sup.push(b); sup.sort((p, q) => p - q); let ms = 0; for (let i = 1; i < sup.length; i++) ms = Math.max(ms, sup[i] - sup[i - 1]); if (ms > BRG.maxSpan + 1e-6) bad('H17', o, '最大跨度 ' + ms.toFixed(1) + ' m > ' + BRG.maxSpan + ' m（木梁）');
+      for (let s = a; s <= b; s += 1) { if (S.heightAt(...B.P(s, 0)) < S.WZ && B.topAt(s) - B.t - S.WZ < CL.boat) { bad('H18', o, '桥下水面净空 ' + (B.topAt(s) - B.t - S.WZ).toFixed(2) + ' m < ' + CL.boat + ' m'); break; } }
+    }
+    for (const r of S.ramps) {
+      if (!r.p1 || r.via !== 'dobashi') continue; const u = [(r.p1[0] - r.p0[0]) / r.len, (r.p1[1] - r.p0[1]) / r.len], v = [-u[1], u[0]], hw = r.width / 2; let worst = null;
+      for (let s = 3; s <= r.len - 3; s += 3) for (const sd of [-1, 1]) {
+        // 只量“填方”部分：表面高于原地面（BASE）的那一段侧坡；坡脚 = 填方与原地面相交处
+        const P = o2 => [r.p0[0] + u[0] * s + v[0] * sd * o2, r.p0[1] + u[1] * s + v[1] * sd * o2], prof = [];
+        for (let o2 = hw; o2 <= hw + 45; o2 += 0.25) { const pp = P(o2), z = S.heightAt(pp[0], pp[1]), bz = S.baseAt(pp[0], pp[1]); prof.push([o2, z, bz]); if (z <= bz + 0.02) break; }
+        const z0 = prof[0][1], toe = prof[prof.length - 1], drop = z0 - toe[1], k = prof.length; if (drop < 2.5 || toe[1] > toe[2] + 0.02) continue;
+        // 侧坡“够不够缓”：按材料累加所需水平距离（石垣面 TAG 1/3：batMin·dz；土坡：earth·dz），实际水平距离 + 一格容差 ≥ 所需
+        const stoneAt = (xx, yy) => { const fi = Math.floor((xx - x0) / c), fj = Math.floor((yy - y0) / c); for (const [a, b2] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const q = (fj + b2) * NX + fi + a; if (q >= 0 && q < N && (S.TAG[q] === 1 || S.TAG[q] === 3)) return true; } return false; }; // 所在三角形任一顶点是石垣面 → 按石垣面
+        let need2 = 0, run2 = 0, zs = 0; const base = toe[2];
+        for (let i = 1; i < k; i++) { const dz = prof[i - 1][1] - prof[i][1]; if (dz <= 0) continue; const stn = stoneAt(...P(prof[i - 1][0])) || stoneAt(...P(prof[i][0])); need2 += dz * (stn ? DB.batMin : DB.earth); zs += stn ? dz : 0; }
+        run2 = toe[0] - prof[0][0]; const bat = run2 / drop, faced = zs > drop / 2, stable = run2 + c >= need2 * 0.95, toeOK = true; // 坡脚按定义落在原地面上（高度场上不会悬空）
+        if (!stable || !toeOK) { worst = worst || { s, sd, bat, toe: toe[1], base, faced }; }
+      }
+      if (worst) bad('H17', r.part, '土桥侧坡不稳定（s=' + worst.s + (worst.sd > 0 ? ' 左' : ' 右') + '，勾配 ' + worst.bat.toFixed(2) + (worst.faced ? ' 石垣面' : ' 土坡') + '，坡脚 ' + worst.toe.toFixed(1) + ' m / 原地面 ' + worst.base.toFixed(1) + ' m）');
+    }
+    // ---- H18 净空：步行面以上 ≥ 人高+余量（门洞门楣、桥面底、树冠）----
+    for (const e of E) {
+      const o = e.part || { name: e.name, x: e.pts[0][0], y: e.pts[0][1] }, off = Math.max(0, e.need / 2 - 0.3); let hmin = 1e9, where = '';
+      for (const p of polySamples(e.pts, 1.0)) for (const of of [-off, 0, off]) {
+        const x = p.x - p.ty * of, y = p.y + p.tx * of, z = S.surfaceAt(x, y);
+        for (const q of PB.get(Math.floor(x / 8) * 100003 + Math.floor(y / 8)) || []) if (q.passages && polyDist(x, y, q.poly) < 0) for (const pp of q.passages) if (pp.clearH && polyDist(x, y, pp.poly) < 0) { const hh = q.z + pp.clearH - z; if (hh < hmin) { hmin = hh; where = q.name + ' 门洞'; } }
+        for (const B of S.bridges || []) { const dx = x - B.p0[0], dy = y - B.p0[1], s = dx * B.u[0] + dy * B.u[1], oo = dx * B.v[0] + dy * B.v[1]; if (s < B.s0 || s > B.s1 || Math.abs(oo) > B.hw) continue; const bt = B.topAt(s) - B.t; if (bt > z + 0.05 && bt - z < hmin) { hmin = bt - z; where = B.name + ' 桥面下'; } }
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const t of TB.get((Math.floor(x / 8) + a) * 100003 + Math.floor(y / 8) + b) || []) for (const cr of treeGeom(t).crowns) { const d = Math.hypot(cr.x - x, cr.y - y); if (d >= cr.r) continue; const hh = cr.z - cr.rz * Math.sqrt(1 - (d / cr.r) ** 2) - z; if (hh < hmin) { hmin = hh; where = '树冠'; } }
+      }
+      if (hmin < HEAD) bad('H18', o, '净空 ' + hmin.toFixed(2) + ' m < ' + HEAD.toFixed(1) + ' m（' + where + '）');
+    }
+    return { main, comps: WG.nc };
+  }
+
   function signature(S) {
     let h = 2166136261; const mix = v => { h ^= Math.round(v * 100) | 0; h = Math.imul(h, 16777619) >>> 0; };
     for (const p of S.parts) { mix(p.x !== undefined ? p.x : p.x0); mix(p.y !== undefined ? p.y : p.y0); mix(p.z !== undefined ? p.z : p.z0); }
@@ -883,5 +1188,5 @@
     return h.toString(16) + '-' + S.parts.length + '-' + S.trees.length;
   }
 
-  G.CASTLE_SITE = { SPEC, RULES, build, audit, rectPoly, segPoly, inPoly, polyDist, _physics: physics };
+  G.CASTLE_SITE = { SPEC, RULES, build, audit, rectPoly, segPoly, inPoly, polyDist, treeGeom, walkGrid, netAudit, _physics: physics };
 })(typeof window !== 'undefined' ? window : globalThis);
