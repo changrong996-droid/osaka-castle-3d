@@ -1,15 +1,15 @@
 {
  "errors": [],
  "audit_ready_s": [
-  3.61,
-  2.67,
-  4.29,
-  3.8,
-  5.14,
-  8.11,
-  3.82
+  10.24,
+  7.67,
+  8.87,
+  7.16,
+  8.87,
+  8.39,
+  14.19
  ],
- "load_s": 1.57,
+ "load_s": 1.85,
  "audit": 0,
  "audit_cnt": {
   "H1": 0,
@@ -35,15 +35,15 @@
   "H21": 0
  },
  "audit_items": [],
- "sig1": "79bc17ca-244-1039",
+ "sig1": "2862a389-245-1037",
  "stats": {
-  "verts": 1336058,
-  "tris": 1481772,
-  "buildMs": 232,
-  "sceneMs": 523,
-  "parts": 244,
-  "trees": 1039,
-  "dobei": 192,
+  "verts": 1354516,
+  "tris": 1512852,
+  "buildMs": 220,
+  "sceneMs": 580,
+  "parts": 245,
+  "trees": 1037,
+  "dobei": 193,
   "lostPlaced": 17,
   "lostSkipped": [
    "菱櫓跡（不在本丸/二之丸）",
@@ -53,23 +53,23 @@
    "艮櫓跡（离石垣 33 m，不吸附）"
   ],
   "conform": {
-   "cells": 25711,
-   "split": 14506,
-   "passive": 1436,
-   "dropped": 405,
-   "fans": 15
+   "cells": 25894,
+   "split": 15635,
+   "passive": 1403,
+   "dropped": 449,
+   "fans": 1
   },
-  "camMs": 213,
-  "auditMs": 1394
+  "camMs": 204,
+  "auditMs": 3038
  },
- "app_load_ms": 1314,
+ "app_load_ms": 1216,
  "pack": {
   "used": true,
   "file": "bake/s1-l1.bin.gz",
-  "bytes": 999582,
-  "fetchMs": 113,
-  "unzipMs": 61,
-  "restoreMs": 232
+  "bytes": 938162,
+  "fetchMs": 54,
+  "unzipMs": 79,
+  "restoreMs": 220
  },
  "cam_audit": 0,
  "cam_cnt": {
@@ -219,11 +219,11 @@
   }
  ],
  "cam_terrain": {
-  "n": 5662,
+  "n": 9453,
   "over": 0,
-  "gridOff": 4212,
+  "gridOff": 7220,
   "worst": 0.3,
-  "tris": 1016079
+  "tris": 1047479
  },
  "cam_walk": {
   "frames": 2044,
@@ -819,12 +819,12 @@
  },
  "cam_input": 0,
  "c8_fault": 1,
- "sig1_again": "79bc17ca-244-1039",
- "sig1_live": "79bc17ca-244-1039",
+ "sig1_again": "2862a389-245-1037",
+ "sig1_live": "2862a389-245-1037",
  "pack_off": null,
  "audit_live": 0,
- "load_live_s": 5.14,
- "sig2": "99c055a3-244-998",
+ "load_live_s": 8.87,
+ "sig2": "d242bb51-245-996",
  "audit_seed2": 0,
  "audit_now": 0,
  "audit_now_items": [],
@@ -843,17 +843,21 @@
   "OK   H18 门楣降到 1.8 m → H18=3  净空 1.80 m < 2.1 m（鉄門 门洞）",
   "OK   H18 路上种一棵阔叶树 → H18=1  净空 1.26 m < 2.1 m（树冠）",
   "OK   H18 木桥压低到水面上 1 m → H18=1  桥下水面净空 1.00 m < 2 m",
-  "OK   H19 本丸一段石垣顶线退回 1.5 m 网格（台阶） → H19=2  12 处顶线不齐：水平偏差最大 1.02 m、高差 0.92 m（> 0.1 m，台阶状）",
+  "OK   H19 本丸一段石垣顶线退回 1.5 m 网格（台阶） → H19=3  入隅顶线转角不齐：沿隅线开始下降的位置偏差 0.32 m、转角高差 0.87 m（> 0.1 m）",
   "OK   H19 切分格里的顶线顶点下沉 0.3 m（顶线塌边） → H19=1  11 处顶线不齐：水平偏差最大 1.02 m、高差 0.30 m（> 0.1 m，台阶状）",
   "OK   H20 本丸地面上挖一个 0.3 m 深的坑 → H20=5  地面格坡度（相对台地面）20% > 2%（台地边缘塌成斜面）",
   "OK   H20 二之丸地面一角翘起 0.15 m（坡度 10%） → H20=4  地面格坡度（相对台地面）10% > 2%（台地边缘塌成斜面）",
-  "OK   H21 石垣脚线处地面被抬高（勾配面没落到下层） → H21=2  12 处勾配不符：实测 0.52 / 设计 0.40",
-  "OK   H21 石垣面陡成近乎垂直（勾配被拉直） → H21=1  2 处勾配不符：实测 0.48 / 设计 0.40",
+  "OK   H21 石垣脚线处地面被抬高（勾配面没落到下层） → H21=15  入隅交汇处：渲染面与组合规则的解析面高差最大 0.63 m（> 0.1 m，圆角/错位）",
+  "OK   H21 石垣面陡成近乎垂直（勾配被拉直） → H21=14  入隅交汇处：渲染面与组合规则的解析面高差最大 10.37 m（> 0.1 m，圆角/错位）",
+  "OK   H21 入隅改成圆角（锥面） → H21=4  入隅交汇处：渲染面与组合规则的解析面高差最大 13.06 m（> 0.1 m，圆角/错位）",
   "FAULTS_OK"
  ],
  "pack_node": 0,
  "pack_log": [
-  "bake/s1-l1.bin.gz gz 999582 live 1701 ms pack 151 ms sig 79bc17ca-244-1039 79bc17ca-244-1039 diffs 0",
+  "bake/s1-l1.bin.gz gz 938162 live 4760 ms pack 134 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
+  "  audit total 0 0 same post-audit diffs 0",
+  "  tamper check caught",
+  "bake/s1-l0.bin.gz gz 933987 live 4338 ms pack 181 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
   "PACK_OK"
