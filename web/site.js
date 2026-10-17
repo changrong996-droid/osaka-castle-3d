@@ -133,17 +133,44 @@
     // r7b：石垣边 = 墙脚线（多边形边）+ 扇勾配；下层高 zl 沿边线性（下层是平面或常数），坡率 s（竖/横）每条边一个常数（按边中点落差定，与 r6 同式），
     // 退距 B 随位置变：B(p) = (台地面(p) − zl(垂足)) / s；顶线 = {p : 到边距离 = B(p)}，每条边仍是一条直线（只是不再与边平行）。
     function mkEdge(e, top, drop) { e.drop = drop; e.zl = e.zlAt((e.ax + e.bx) / 2, (e.ay + e.by) / 2); e.zlA = e.zlAt(e.ax, e.ay); e.zlB = e.zlAt(e.bx, e.by); e.top = top;
-      e.s = Math.max(1 / IG.ratio, drop / IG.maxRun); e.B = drop >= IG.minDrop ? drop / e.s : 0;
+      e.s = Math.max(1 / (e.ratio || IG.ratio), drop / IG.maxRun); /* r8：e.ratio = 局部缩扇后的勾配（见“操作 1c”）*/ e.B = drop >= IG.minDrop ? drop / e.s : 0;
       const kin = -(top.gx * e.nx + top.gy * e.ny); e.kin = kin; // 台地面沿内法线的坡度
       e.offA = e.B ? Math.max(0, (top.at(e.ax, e.ay) - e.zlA) / (e.s - kin)) : 0; e.offB = e.B ? Math.max(0, (top.at(e.bx, e.by) - e.zlB) / (e.s - kin)) : 0; // 两端的顶线退距（沿内法线精确解）
       e.Bf = e.B ? Math.max(0, top.at(e.ax, e.ay) - e.zlA, top.at(e.bx, e.by) - e.zlB) / e.s : 0; e.kg = top.grad / e.s; e.Bmax = e.B ? Math.max(e.offA, e.offB) + 0.05 : 0;
       return e; }
     // 点 p 相对边 e 的退距（台地面 sf）：B(p) = (sf(p) − zl(垂足)) / s；没有石垣的边 = 0
     // 坡率 s 按“边 × 台地面”定（与 r6 同：外圈格点用外圈自己的落差）；落差 < minDrop 的面不做石垣 → 0
-    const sOf = (e, sf) => { if (sf === e.top) return e.B ? e.s : 0; let m = e._sf || (e._sf = new Map()), v = m.get(sf); if (v === undefined) { const dr = sf.at((e.ax + e.bx) / 2, (e.ay + e.by) / 2) - e.zl; v = dr >= IG.minDrop ? Math.max(1 / IG.ratio, dr / IG.maxRun) : 0; m.set(sf, v); } return v; };
+    const sOf = (e, sf) => { if (sf === e.top) return e.B ? e.s : 0; let m = e._sf || (e._sf = new Map()), v = m.get(sf); if (v === undefined) { const dr = sf.at((e.ax + e.bx) / 2, (e.ay + e.by) / 2) - e.zl; v = dr >= IG.minDrop ? Math.max(1 / (e.ratio || IG.ratio), dr / IG.maxRun) : 0; m.set(sf, v); } return v; };
     const Bat = (e, sf, x, y) => { const s = sOf(e, sf); if (!s) return 0; const dx = e.bx - e.ax, dy = e.by - e.ay, l = dx * dx + dy * dy; let t = l ? ((x - e.ax) * dx + (y - e.ay) * dy) / l : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; const b = (sf.at(x, y) - (e.zlA + (e.zlB - e.zlA) * t)) / s; return b > 0 ? b : 0; };
     // 边 e 的扇勾配面在点 p 的高度（台地面 sf）；p 不在勾配面范围内（已到台地顶）→ Infinity
-    const edgeZ = (e, sf, x, y) => { const s = sOf(e, sf); if (!s) return Infinity; const dx = e.bx - e.ax, dy = e.by - e.ay, l = dx * dx + dy * dy; let t = l ? ((x - e.ax) * dx + (y - e.ay) * dy) / l : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; const zl = e.zlA + (e.zlB - e.zlA) * t, top = sf.at(x, y); if (top - zl <= 1e-9) return Infinity; const px = e.ax + dx * t, py = e.ay + dy * t, hz = zl + Math.sqrt((x - px) * (x - px) + (y - py) * (y - py)) * s; return hz < top ? hz : Infinity; };
+    // r8（S1）：锐利隅线（算木積的出隅/入隅）。每面石垣是一个平面 F_e(p) = zl_e(p) + s·d_e(p)（d_e = 到墙脚**直线**的有符号距离，内侧为正；zl 沿边线性）。
+    // 相邻两面在共同顶点 V 处交于隅线 {F_e = F_f}（全部石垣同一坡率 s、zl 在 V 处连续 → 隅线过 V）：凸角（出隅）取两面的低者（F_e ≤ F_f 的一侧归 e，
+    // 即 e 沿自身方向越过 V 延伸 ext(y) = (off_f(y) − off_e(y)·cosφ)/sinφ），凹角（入隅）取高者（e 在 V 前缩回）——不再是“到墙脚线段的距离”在入隅处给出的圆锥面（圆角）。
+    // 相邻边没有石垣（落差 < minDrop、或是外圈专属边/颈切线）的一端仍按到端点的距离（锥面收头），与 r7b 相同。
+    const capOf = (e, sf) => { let m = e._cap || (e._cap = new Map()), v = m.get(sf); if (v !== undefined) return v;
+      const ok = (f, ze, zf) => !!(f && f.B && sOf(f, sf) && !e.chord && !f.chord && Math.abs(ze - zf) < 0.01 && (sf === BAND.surf ? true : !(f.band || f.mixed || e.band || e.mixed))); // 对称：两面都同意才有隅线（否则一面按隅线收、另一面按锥面收，接缝处不连续） // 两面在顶点处的下层同高（同一块下层地面）才有隅线；不同下层在此相接（三类交汇）→ 锥面收头
+      v = { A: ok(e.prev, e.zlA, e.prev && e.prev.zlB), B: ok(e.next, e.zlB, e.next && e.next.zlA), cvxA: e.cvxA, cvxB: e.cvxB }; m.set(sf, v); return v; };
+    const planeZ = (f, sf, x, y) => { const dx = f.bx - f.ax, dy = f.by - f.ay, l = dx * dx + dy * dy, t = l ? ((x - f.ax) * dx + (y - f.ay) * dy) / l : 0; return f.zlA + (f.zlB - f.zlA) * t + sOf(f, sf) * ((x - f.ax) * -f.nx + (y - f.ay) * -f.ny); };
+    // 点 p 是否在面 e 的隅线范围内（hz = F_e(p)）：凸角端 F_e ≤ F_邻，凹角端 F_e ≥ F_邻
+    // 让位只在邻面“在场”时成立：邻面 f 自己在另一端也要不让位给它的邻面（递归 3 层）。短边在两端都让位时（直骨架里这条边已消失），
+    // 本面不再按它的平面判定——否则在 f 消失的地方，本面也被排除，包络在 f 的平面延长线上跳变（r8 S1 发现：凹凸相间的短边链 133 处跳变）
+    const yieldTo = (e, f, cvx, far, sf, x, y, hz, dp) => { const hf = planeZ(f, sf, x, y); if (cvx ? !(hz > hf) : !(hz < hf)) return false; if (dp <= 0) return true;
+      const cf = capOf(f, sf); return far === 'A' ? !(cf.A && yieldTo(f, f.prev, cf.cvxA, 'A', sf, x, y, hf, dp - 1)) : !(cf.B && yieldTo(f, f.next, cf.cvxB, 'B', sf, x, y, hf, dp - 1)); };
+    // 越过本面端点的延伸段（出隅外伸）只在与紧邻面的楔形内（不递归），否则延伸面会无限外伸
+    const inDom = (e, cp, sf, x, y, hz) => { const dx = e.bx - e.ax, dy = e.by - e.ay, t = ((x - e.ax) * dx + (y - e.ay) * dy) / (dx * dx + dy * dy || 1);
+      return !((cp.A && yieldTo(e, e.prev, cp.cvxA, 'A', sf, x, y, hz, t < 0 ? 0 : 3)) || (cp.B && yieldTo(e, e.next, cp.cvxB, 'B', sf, x, y, hz, t > 1 ? 0 : 3))); };
+    // 面 e 在 p 处的“顶线余量” d − B(p)（≥0 ⇔ 这一面在 p 处已到台地顶；不在本面范围内 → Infinity）。与 edgeZ 同一范围，所以符号与地形一致
+    const CMF = [0, 0, 0]; // crestMF 的副产物：最近点（段内 = 垂足；越过隅线端 = 直线上的垂足）与该点的退距 B(p)
+    const crestMF = (e, sf, x, y) => { const s = sOf(e, sf); if (!s) return Infinity; const dx = e.bx - e.ax, dy = e.by - e.ay, l = dx * dx + dy * dy; let t = l ? ((x - e.ax) * dx + (y - e.ay) * dy) / l : 0; const cp = capOf(e, sf), top = sf.at(x, y);
+      if ((t < 0 && !cp.A) || (t > 1 && !cp.B) || (t >= 0 && t <= 1)) { const tc = t < 0 ? 0 : t > 1 ? 1 : t, zl = e.zlA + (e.zlB - e.zlA) * tc, px = e.ax + tc * dx, py = e.ay + tc * dy, dd = Math.sqrt((x - px) * (x - px) + (y - py) * (y - py)), bq = (top - zl) / s, B = bq > 0 ? bq : 0;
+        if (tc === t && (cp.A || cp.B) && !inDom(e, cp, sf, x, y, zl + dd * s)) return Infinity; CMF[0] = px; CMF[1] = py; CMF[2] = B; return dd - B; }
+      const zl = e.zlA + (e.zlB - e.zlA) * t, d = (x - e.ax) * -e.nx + (y - e.ay) * -e.ny; if (d < 0) return Infinity; const hz = zl + d * s; if (!inDom(e, cp, sf, x, y, hz)) return Infinity; const bq = (top - zl) / s, B = bq > 0 ? bq : 0; CMF[0] = e.ax + t * dx; CMF[1] = e.ay + t * dy; CMF[2] = B; return d - B; };
+    const crestM = crestMF;
+    const edgeZ = (e, sf, x, y) => { const s = sOf(e, sf); if (!s) return Infinity; const dx = e.bx - e.ax, dy = e.by - e.ay, l = dx * dx + dy * dy; let t = l ? ((x - e.ax) * dx + (y - e.ay) * dy) / l : 0; const cp = capOf(e, sf);
+      if ((t < 0 && !cp.A) || (t > 1 && !cp.B) || (t >= 0 && t <= 1)) { const t0 = t; t = t < 0 ? 0 : t > 1 ? 1 : t; const zl = e.zlA + (e.zlB - e.zlA) * t, top = sf.at(x, y); if (top - zl <= 1e-9) return Infinity; const px = e.ax + dx * t, py = e.ay + dy * t, hz = zl + Math.sqrt((x - px) * (x - px) + (y - py) * (y - py)) * s;
+        if (t0 === t && (cp.A || cp.B) && !inDom(e, cp, sf, x, y, hz)) return Infinity; return hz < top ? hz : Infinity; } // 段内：与 r7b 同式（到垂足的距离 = 到直线的距离），只多一个隅线范围判定
+      // 越过有隅线的一端（出隅的延伸段）：到直线的距离、zl 线性外推
+      const zl = e.zlA + (e.zlB - e.zlA) * t, top = sf.at(x, y); if (top - zl <= 1e-9) return Infinity; const d = (x - e.ax) * -e.nx + (y - e.ay) * -e.ny; if (d < 0) return Infinity; const hz = zl + d * s; if (!inDom(e, cp, sf, x, y, hz)) return Infinity; return hz < top ? hz : Infinity; };
     // ---- 曲轮（区域）----
     const R = D.regions.map((r, i) => {
       const rings = [r.outer].concat(r.holes || []);
@@ -168,12 +195,17 @@
         g.edges.push(mkEdge({ g, ring: ri, i, ax, ay, bx, by, len, tx, ty, nx, ny, zlAt: lw.at, low: lw }, g.surf, drop));
       }
     });
+    // r8：环上相邻的边（同一环、首尾相接）与顶点凹凸；ext = 出隅一端越过顶点的最大延伸（只为分桶/剪枝的包围盒外扩：深 Bmax 处隅线离顶点沿边的距离 ≈ D·tan(φ/2)）
+    for (const g of R) { const byRing = new Map(); for (const e of g.edges) { if (e.ring < 0) continue; let L = byRing.get(e.ring); if (!L) byRing.set(e.ring, L = []); L.push(e); }
+      for (const L of byRing.values()) for (let k = 0; k < L.length; k++) { const e = L[k], f = L[(k + 1) % L.length]; if (L.length < 2 || Math.abs(f.ax - e.bx) > 1e-9 || Math.abs(f.ay - e.by) > 1e-9) continue; e.next = f; f.prev = e;
+        const turn = e.tx * f.ty - e.ty * f.tx, inward = -(e.tx * e.ny - e.ty * e.nx); e.cvxB = f.cvxA = turn * inward >= 0; const phi = Math.atan2(Math.abs(turn), e.tx * f.tx + e.ty * f.ty), D = Math.max(e.Bmax, f.Bmax) + 0.5, x = Math.abs(e.zlB - f.zlA) < 0.01 ? /* 出隅外伸、入隅处越过顶点到谷线（深 D 处同为 D·tan(φ/2)）*/ Math.min(1000, D * Math.tan(phi / 2) * 1.25 + 0.5) : 0; e.extB = x; f.extA = x; } }
+    for (const g of R) for (const e of g.edges) { e.ext = Math.max(e.extA || 0, e.extB || 0); e.BfX = e.Bf + (e.ext && e.len ? e.ext * Math.abs(e.zlB - e.zlA) / e.len / (e.s || 1) + 0.01 : 0); }
     const RN = n => R.filter(g => g.name === n);
     let bandAt = () => false;
     // 石垣顶线距离场（只为提速：边数组 + 包围盒下界剪枝 + 从上一次的最近边开始；结果与逐边计算完全相同）
     // r7b：另加 12 m 分桶（边按包围盒登记）——只为提速：先算上一次最近边得到上界 M，再只取下界 < M 的边（下界 = 包围盒距离·(1 − kg) − Bf，与逐边剪枝同一个式子），
     // 按原来的顺序（上次最近边 → 下标升序）逐个求值；被排除的边在逐边版里也一定被剪掉，所以结果（含并列时选哪条边）逐位相同
-    const EG = 12, edgeIdx = g => { if (g._ei && g._ei.n === g.edges.length) return g._ei; const E = g.edges, n = E.length, A = new Float64Array(n * 10); E.forEach((e, k) => { A.set([e.ax, e.ay, e.bx, e.by, e.Bf, Math.min(e.ax, e.bx), Math.min(e.ay, e.by), Math.max(e.ax, e.bx), Math.max(e.ay, e.by), e.B ? e.kg : 0], k * 10); });
+    const EG = 12, edgeIdx = g => { if (g._ei && g._ei.n === g.edges.length) return g._ei; const E = g.edges, n = E.length, A = new Float64Array(n * 10); E.forEach((e, k) => { const xe = e.ext || 0; A.set([e.ax, e.ay, e.bx, e.by, e.BfX === undefined ? e.Bf : e.BfX, Math.min(e.ax, e.bx) - xe, Math.min(e.ay, e.by) - xe, Math.max(e.ax, e.bx) + xe, Math.max(e.ay, e.by) + xe, e.B ? e.kg : 0], k * 10); });
       let kgM = 0, BfM = 0, gx0 = 1e9, gy0 = 1e9, gx1 = -1e9, gy1 = -1e9; const always = [];
       for (let k = 0; k < n; k++) { const o = k * 10; if (A[o + 9] >= 0.5) { always.push(k); continue; } kgM = Math.max(kgM, A[o + 9]); BfM = Math.max(BfM, A[o + 4]); gx0 = Math.min(gx0, A[o + 5]); gy0 = Math.min(gy0, A[o + 6]); gx1 = Math.max(gx1, A[o + 7]); gy1 = Math.max(gy1, A[o + 8]); }
       const gw = Math.max(1, Math.ceil((gx1 - gx0) / EG) + 1), gh = Math.max(1, Math.ceil((gy1 - gy0) / EG) + 1), cells = Array.from({ length: gw * gh }, () => []);
@@ -185,7 +217,8 @@
       const I = edgeIdx(g), A = I.A, E = g.edges, n = I.n, sf = g.surf; let m = 1e9, bi = -1, qx = 0, qy = 0, bB = 0, zt = null;
       const ev = k => { const e = E[k]; if (e.band || (e.mixed && bandAt(e, x, y))) return;
         const o = k * 10, ddx = Math.max(A[o + 5] - x, 0, x - A[o + 7]), ddy = Math.max(A[o + 6] - y, 0, y - A[o + 8]), lb = Math.sqrt(ddx * ddx + ddy * ddy) * (1 - A[o + 9]) - A[o + 4]; if (lb > m || (lb === m && !(k < bi && bi !== L0))) return;
-        const ax = A[o], ay = A[o + 1], dx = A[o + 2] - ax, dy = A[o + 3] - ay, l = dx * dx + dy * dy; let t = l ? ((x - ax) * dx + (y - ay) * dy) / l : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; const px = ax + t * dx, py = ay + t * dy, sE = sf === e.top ? (e.B ? e.s : 0) : sOf(e, sf), bq = sE ? ((zt === null ? (zt = sf.at(x, y)) : zt) - (e.zlA + (e.zlB - e.zlA) * t)) / sE : 0, Bp = bq > 0 ? bq : 0 /* = Bat(e, sf, x, y)，台地面高只求一次 */, d = Math.sqrt((x - px) * (x - px) + (y - py) * (y - py)) - Bp; if (d < m || (d === m && k < bi && bi !== L0)) { m = d; bi = k; qx = px; qy = py; bB = Bp; } }; // 并列：上次最近边优先，其余取下标小的（= 逐边版按顺序遍历的结果）
+        const d = sOf(e, sf) ? crestMF(e, sf, x, y) : (() => { const ax = A[o], ay = A[o + 1], dx = A[o + 2] - ax, dy = A[o + 3] - ay, l = dx * dx + dy * dy; let t = l ? ((x - ax) * dx + (y - ay) * dy) / l : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; CMF[0] = ax + t * dx; CMF[1] = ay + t * dy; CMF[2] = 0; return Math.sqrt((x - CMF[0]) * (x - CMF[0]) + (y - CMF[1]) * (y - CMF[1])); })(); // r8：= 面 e 的顶线余量（隅线范围外 → Infinity）；无石垣的边 = 到边的距离（与 r7b 同）
+        if (d === Infinity) return; void zt; if (d < m || (d === m && k < bi && bi !== L0)) { m = d; bi = k; qx = CMF[0]; qy = CMF[1]; bB = CMF[2]; } }; // 并列：上次最近边优先，其余取下标小的（= 逐边版按顺序遍历的结果）
       const L0 = I.last < n ? I.last : -1; if (L0 >= 0) ev(L0);
       const ci = Math.floor((x - I.gx0) / EG), cj = Math.floor((y - I.gy0) / EG), r = m < 1e8 ? Math.ceil((m + I.BfM + 1e-6) / ((1 - I.kgM) * EG)) : 1e9;
       if (L0 >= 0 && m < 1e8 && ci >= 0 && cj >= 0 && ci < I.gw && cj < I.gh && (2 * r + 1) * (2 * r + 1) < I.gw * I.gh) {
@@ -285,9 +318,23 @@
     // （一条长边可能一段围着内侧、一段围着外圈：标为 mixed，逐点按最近点所在一侧判断）
     bandAt = (e, x, y) => { const t = clamp(segT(x, y, e.ax, e.ay, e.bx, e.by), 0, 1), q = vid(e.ax + (e.bx - e.ax) * t - e.nx * (e.B + 1), e.ay + (e.by - e.ay) * t - e.ny * (e.B + 1)); return q >= 0 && CLS[q] === BAND.i; };
     if (!PK) { for (const e of NINO.edges) if (e.ring === 0 && e.B) { const n = Math.max(2, Math.ceil(e.len / 2)); let k = 0; for (let i = 0; i <= n; i++) { const f = i / n; if (bandAt(e, e.ax + (e.bx - e.ax) * f, e.ay + (e.by - e.ay) * f)) k++; } e.band = k === n + 1; e.mixed = k > 0 && k <= n; }
+    // 操作 1c（r8 S1）：局部缩扇——隅线让入隅处的石垣面比 r7b 的锥面更深地伸进台地（顶线在入隅处变成直角），
+    // 若因此压到位置固定的实测建筑（不吸附的现存建筑：多聞櫓、殿舍、蔵、天守…）的底面，就把控制那一点的石垣面的勾配局部减小（面更陡、顶线外移），
+    // 直到底面全部在台地顶上（余 2 cm）；勾配不低于实测下限 batRange[0]（p10）。只处理“隅线造成”的冲突（锥面模型下本来在顶上的点）。
+    S.batterCuts = []; if (!PK) { const need = new Map(), lo = SPEC.conform.batRange[0];
+      for (const b of BLD) { if (b.type === 'gate' || b.type === 'yagura2') continue; const g = zoneAt(b.cx, b.cy); if (!g || g === BAND) continue;
+        const poly = b.type === 'tenshu' ? rectPoly(b.cx, b.cy, 40, 36, b.ang) : (b.type === 'tamon' || b.type === 'hall' || b.type === 'kura' || b.type === 'pavilion') && b.fp && b.fp.length >= 3 ? b.fp : rectPoly(b.cx, b.cy, b.w, b.d, b.ang);
+        for (let k = 0; k < poly.length; k++) { const a = poly[k], c2 = poly[(k + 1) % poly.length], n = Math.max(1, Math.ceil(Math.hypot(c2[0] - a[0], c2[1] - a[1]) / 0.5));
+          for (let i2 = 0; i2 < n; i2++) { const x = a[0] + (c2[0] - a[0]) * i2 / n, y = a[1] + (c2[1] - a[1]) * i2 / n; if (zoneAt(x, y) !== g) continue; let m = Infinity, be = null;
+            for (const e of g.edges) { if (!e.B || e.band || (e.mixed && bandAt(e, x, y))) continue; const v = crestM(e, g.surf, x, y); if (v < m) { m = v; be = e; } }
+            if (!be || m >= -1e-3) continue; const cp = capOf(be, g.surf), concave = (cp.A && !cp.cvxA) || (cp.B && !cp.cvxB); if (!concave) continue;
+            const old = segDist(x, y, be.ax, be.ay, be.bx, be.by) - Bat(be, g.surf, x, y); if (old < -1e-3) continue; // 锥面模型下本来就不在顶上：不是隅线造成的
+            const Bn = be.B + m - 0.02; need.set(be, Math.min(need.has(be) ? need.get(be) : Infinity, Bn)); } } }
+      for (const [e, Bn] of need) { const r = Math.max(lo, IG.ratio * Bn / e.B); e.ratio = r; delete e._sf; delete e._cap; mkEdge(e, e.top, e.drop); e.g._ei = null; S.batterCuts.push({ region: e.g.name, edge: e.g.edges.indexOf(e), ratio: +r.toFixed(4), B: +e.B.toFixed(3) }); }
+      if (need.size) for (const g of R) { delete g._ei; for (const e of g.edges) { delete e._cap; if (e.next) { const f = e.next, D2 = Math.max(e.Bmax, f.Bmax) + 0.5; void D2; } } } }
     // 操作 2：石垣（多边形边=墙脚，向曲轮内侧按扇勾配升到台地顶；按格点所在台地的高度算）
     for (const g of R) for (const e of g.edges) {
-      if (!e.B) continue; const pad = e.Bmax + c + 1; // 外圈格点用外圈自己的坡率（与 r6 同；外圈比二之丸低，退距更小）
+      if (!e.B) continue; const pad = e.Bmax + c + 1 + (e.ext || 0); // 外圈格点用外圈自己的坡率（与 r6 同；外圈比二之丸低，退距更小）
       const i0 = Math.max(0, Math.floor((Math.min(e.ax, e.bx) - pad - gs.x0) / c)), i1 = Math.min(NX - 1, Math.ceil((Math.max(e.ax, e.bx) + pad - gs.x0) / c));
       const j0 = Math.max(0, Math.floor((Math.min(e.ay, e.by) - pad - gs.y0) / c)), j1 = Math.min(NY - 1, Math.ceil((Math.max(e.ay, e.by) + pad - gs.y0) / c));
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -314,7 +361,7 @@
     const clsSurf = k => k === BAND.i ? BAND.surf : R[k].surf, topAt = (k, x, y) => clsSurf(k).at(x, y);
     const OZB = new Map(); // 每类的边按 6 m 分桶（只为提速；分桶外扩 = 该边最大退距 + 1.6 m）
     const ozEdges = k => { if (OZB.has(k)) return OZB.get(k); const band = k === BAND.i, regs = band ? RN('ninomaru') : [R[k]], M = new Map();
-      for (const g of regs) for (const e of g.edges) { if (!e.B || (band && e.chord)) continue; const m = e.Bmax + 1.6, a0 = Math.floor((Math.min(e.ax, e.bx) - m) / 6), a1 = Math.floor((Math.max(e.ax, e.bx) + m) / 6), b0 = Math.floor((Math.min(e.ay, e.by) - m) / 6), b1 = Math.floor((Math.max(e.ay, e.by) + m) / 6); for (let a = a0; a <= a1; a++) for (let b = b0; b <= b1; b++) { const kk = a * 100003 + b; let L = M.get(kk); if (!L) M.set(kk, L = []); L.push(e); } }
+      for (const g of regs) for (const e of g.edges) { if (!e.B || (band && e.chord)) continue; const m = e.Bmax + 1.6 + (e.ext || 0), a0 = Math.floor((Math.min(e.ax, e.bx) - m) / 6), a1 = Math.floor((Math.max(e.ax, e.bx) + m) / 6), b0 = Math.floor((Math.min(e.ay, e.by) - m) / 6), b1 = Math.floor((Math.max(e.ay, e.by) + m) / 6); for (let a = a0; a <= a1; a++) for (let b = b0; b <= b1; b++) { const kk = a * 100003 + b; let L = M.get(kk); if (!L) M.set(kk, L = []); L.push(e); } }
       OZB.set(k, M); return M; };
     const opZ = (k, x, y) => { // 操作 2 在任意点的解析值（与格点上的写法逐项相同：edgeZ；只看附近的边）
       const band = k === BAND.i, sf = clsSurf(k); let z = sf.at(x, y);
@@ -322,7 +369,7 @@
       return z; };
     // 台地余量：min(到边的距离 − 该点的退距 B(p))；≥0 ⇔ 在台地上（opZ = 台地面）。B(p) 随面的坡度变（|∇B| ≤ kg < 0.05），所以余量是 (1+kg)-Lipschitz 的：
     // 余量 > 1.05×半段长时整段都在台地上（< −1.05×半段长时整段都不在）——只为提速，不改结果
-    const opM = (k, x, y) => { const band = k === BAND.i, sf = clsSurf(k); let m = Infinity; for (const e of ozEdges(k).get(Math.floor(x / 6) * 100003 + Math.floor(y / 6)) || []) { if (!band && e.band) continue; if (!band && e.mixed) return NaN; if (!sOf(e, sf)) continue; const v = segDist(x, y, e.ax, e.ay, e.bx, e.by) - Bat(e, sf, x, y); if (v < m) m = v; } return m; };
+    const opM = (k, x, y) => { const band = k === BAND.i, sf = clsSurf(k); let m = Infinity; for (const e of ozEdges(k).get(Math.floor(x / 6) * 100003 + Math.floor(y / 6)) || []) { if (!band && e.band) continue; if (!band && e.mixed) return NaN; if (!sOf(e, sf)) continue; const v = crestM(e, sf, x, y); if (v < m) m = v; } return m; }; // r8：余量按隅线范围（与 edgeZ 一致）
     const opZe = (k, x, y) => { const band = k === BAND.i, sf = clsSurf(k); let z = sf.at(x, y), be = null; for (const e of ozEdges(k).get(Math.floor(x / 6) * 100003 + Math.floor(y / 6)) || []) { if (!band && (e.band || (e.mixed && bandAt(e, x, y)))) continue; const hz = edgeZ(e, sf, x, y); if (hz < z) { z = hz; be = e; } } return be; };
     const toeSegs = []; for (const g of R) for (const e of g.edges) if (e.B > 0) { e.gi = g.i; toeSegs.push(e); } // 墙脚线（OSM 曲轮边 + 颈切线）
     const TADJ = new Map(); toeSegs.forEach((e, n) => { for (const [w, x, y] of [['a', e.ax, e.ay], ['b', e.bx, e.by]]) { const k = w + x.toFixed(6) + ',' + y.toFixed(6); let L = TADJ.get(k); if (!L) TADJ.set(k, L = []); L.push(n); } }); // 端点 → 以它为起点(a)/终点(b)的墙脚段
@@ -336,6 +383,14 @@
     const platZ = (k, x, y) => { const band = k === BAND.i, sf = clsSurf(k), lim = sf.at(x, y) - 1e-6;
       for (const e of ozEdges(k).get(Math.floor(x / 6) * 100003 + Math.floor(y / 6)) || []) { if (!band && (e.band || (e.mixed && bandAt(e, x, y)))) continue; if (edgeZ(e, sf, x, y) < lim) return false; }
       return true; };
+    // r8（S1）：墙脚点的高度 = 下层高程 zl；但三类交汇处这一面可能不起作用（本曲轮另一面在墙脚线上已经比 zl 低：例如本丸面向内堀的面伸到山里丸墙脚处），
+    // 这时取本曲轮在该点的解析值（≤ zl）——墙脚只属于起作用的面（否则格边上留一个 zl 高的尖）
+    const toeZ = (e, x, y) => { const zl = e.zlAt(x, y), kk = e.band || (e.mixed && bandAt(e, x, y)) ? BAND.i : e.gi; if (e.chord) return zl; const z2 = opZ(kk, x, y); return z2 < zl ? z2 : zl; };
+    // r8（S1）：格内/格边上新生成的点（顶线、隅线、折点、包络裁剪的内点）的自由坐标吸附到 1/1024 m 格（≤ 0.5 mm）：结果包里按整数存（逐位还原），
+    // 不再每个点存两个 Float64。墙脚点不吸附（墙脚线的配对按“点在墙脚线上”判，1e-7 m）。
+    const LAT = 1024, latX = x => { const i = Math.round((x - gs.x0) / c), b = X(i); return b + Math.round((x - b) * LAT) / LAT; }, latY = y => { const j = Math.round((y - gs.y0) / c), b = Y(j); return b + Math.round((y - b) * LAT) / LAT; };
+    // r8（S1）：切点/格内新点的高度——等于某个台地面函数值的保持精确（包里按函数还原；台地上的碎三角不能有假坡度，H20），其余取单精度可表示的值（≤ 2 µm）：包里按 Float32 存
+    const ZF = Object.keys(SURF).map(k => SURF[k].at), qz = (x, y, z) => { for (const f of ZF) if (f(x, y) === z) return z; return Math.fround(z); };
     const EP = new Map(); // key = q*2 + (0 横边 q→q+1 | 1 竖边 q→q+NX) → [{t, x, y, z, kind:'toe'|'crest', id}]
     function edgePts(q, dir) {
       const key = q * 2 + dir; if (EP.has(key)) return EP.get(key);
@@ -346,14 +401,24 @@
       const stp = ++TSTAMP, ex0 = Math.min(x0, x1) - 1e-6, ex1 = Math.max(x0, x1) + 1e-6, ey0 = Math.min(y0, y1) - 1e-6, ey1 = Math.max(y0, y1) + 1e-6;
       if (NA !== NB) for (const n of NA) TMARK[n] = stp;
       for (const L4 of NA === NB ? [NA] : [NA, NB]) for (const n of L4) { if (L4 === NB && NA !== NB && TMARK[n] === stp) continue; const e = toeSegs[n]; if (e._x1 < ex0 || e._x0 > ex1 || e._y1 < ey0 || e._y0 > ey1) continue; const sx = e.bx - e.ax, sy = e.by - e.ay, den = rx * sy - ry * sx; if (Math.abs(den) < 1e-12) continue; const qx = e.ax - x0, qy = e.ay - y0, r0 = (qx * sy - qy * sx) / den, r1 = (qx * ry - qy * rx) / den; // 格边 × 墙脚段（与 segX 同式）
-        if (r0 <= 1e-9 || r0 >= 1 - 1e-9 || r1 < -1e-9 || r1 > 1 + 1e-9) continue; tl.push({ t: r0, x: x0 + rx * r0, y: y0 + ry * r0, z: e.zlAt(x0 + rx * r0, y0 + ry * r0), kind: 'toe', id: 'T' + e.gi + ':' + e.ring, seg: n }); }
+        if (r0 <= 1e-9 || r0 >= 1 - 1e-9 || r1 < -1e-9 || r1 > 1 + 1e-9) continue; tl.push({ t: r0, x: x0 + rx * r0, y: y0 + ry * r0, z: qz(x0 + rx * r0, y0 + ry * r0, toeZ(e, x0 + rx * r0, y0 + ry * r0)), kind: 'toe', id: 'T' + e.gi + ':' + e.ring, seg: n }); }
       tl.sort((a, b) => a.t - b.t || a.z - b.z || (a.id < b.id ? -1 : 1)); for (const p of tl) { const L3 = out[out.length - 1]; if (L3 && Math.abs(L3.t - p.t) < 1e-7) continue; out.push(p); } // 两个曲轮的墙脚线重合：只留一条（低的那条）
-      if (CLS[q] === CLS[q2] && CLS[q] < 0) { EP.set(key, out); return out; } // 两端都是水：没有顶线（墙脚线照样算：堀底的墙脚线可以穿过两端都是水的格边）
+      if (CLS[q] === CLS[q2] && CLS[q] < 0 && out.length < 2) { EP.set(key, out); return out; } /* r8：两端是水但中间有一段陆地（两个墙脚点之间的石垣舌）→ 照样找顶线/隅线 */ // 两端都是水：没有顶线（墙脚线照样算：堀底的墙脚线可以穿过两端都是水的格边）
       // 顶线交点：在相邻两个墙脚交点之间的每一小段上，段内属同一类（曲轮/外圈），端点“在台地上”与否不同 → 二分
       const ts = [0].concat(tl.map(p => p.t), [1]);
       for (let k0 = 0; k0 + 1 < ts.length; k0++) { const TA = ts[k0] + (k0 ? 1e-6 : 0), TBn = ts[k0 + 1] - (k0 + 1 < ts.length - 1 ? 1e-6 : 0), tm = (TA + TBn) / 2, cl = tl.length ? clsAt(x0 + (x1 - x0) * tm, y0 + (y1 - y0) * tm) : CLS[q]; if (cl < 0) continue;
         const sf = clsSurf(cl), plat = t => platZ(cl, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
-        { const mg = opM(cl, x0 + (x1 - x0) * tm, y0 + (y1 - y0) * tm), hl = ((TBn - TA) * c / 2 + 1e-4) * 1.05; if (mg > hl || mg < -hl) continue; } // 整段在台地上 / 整段不在：没有顶线
+        { const mg = opM(cl, x0 + (x1 - x0) * tm, y0 + (y1 - y0) * tm), hl = ((TBn - TA) * c / 2 + 1e-4) * 1.05; if (mg > hl) continue; // 整段在台地上：没有顶线、没有隅线
+          // r8（S1）：隅线切点——段内起作用的石垣面换了（两面相等的直线 = 出隅/入隅的隅线穿过格边）。同一条边的平面段与锥面收头之间是光滑过渡（不是折线），不算。
+          { const NA2 = 8, lb = []; for (let k = 0; k <= NA2; k++) { const t2 = TA + (TBn - TA) * k / NA2; lb.push([t2, envLab(cl, x0 + (x1 - x0) * t2, y0 + (y1 - y0) * t2)]); }
+            for (let k = 0; k < NA2; k++) { const [ta, La] = lb[k], [tb, Lb] = lb[k + 1]; if (!La.e || !Lb.e || La.e === Lb.e) continue; let t2;
+              if (!La.end && !Lb.end) { const fa = labZ(La, x0 + (x1 - x0) * ta, y0 + (y1 - y0) * ta) - labZ(Lb, x0 + (x1 - x0) * ta, y0 + (y1 - y0) * ta), fb = labZ(La, x0 + (x1 - x0) * tb, y0 + (y1 - y0) * tb) - labZ(Lb, x0 + (x1 - x0) * tb, y0 + (y1 - y0) * tb); t2 = Math.abs(fa - fb) > 1e-12 ? ta + (tb - ta) * fa / (fa - fb) : (ta + tb) / 2; if (!(t2 > ta && t2 < tb)) t2 = null; }
+              if (t2 == null) { let lo = ta, hi = tb; for (let it = 0; it < 40; it++) { const m = (lo + hi) / 2; if (envLab(cl, x0 + (x1 - x0) * m, y0 + (y1 - y0) * m).key === La.key) lo = m; else hi = m; } t2 = (lo + hi) / 2; }
+              const px = dir ? x0 : latX(x0 + (x1 - x0) * t2), py = dir ? latY(y0 + (y1 - y0) * t2) : y0; t2 = dir ? (py - y0) / (y1 - y0) : (px - x0) / (x1 - x0); out.push({ t: t2, x: px, y: py, z: qz(px, py, Math.min(labZ(La, px, py), labZ(Lb, px, py))), kind: 'arris', id: 'A' + cl, cl, jump: Math.abs(labZ(La, px, py) - labZ(Lb, px, py)) > 1e-6 }); }
+            // 锥面收头（没有隅线的一端）沿格边是曲线：按中点偏差（> 2 cm）递归加“折点”，邻格共用，两侧都按它切
+            if (lb.some(([, L]) => L.end)) { const zt2 = t2 => opZ(cl, x0 + (x1 - x0) * t2, y0 + (y1 - y0) * t2), bend = (ta, tb, za, zb, dp) => { const tm = (ta + tb) / 2, zm = zt2(tm); if (dp >= 5 || Math.abs(zm - (za + zb) / 2) <= 0.02) return; bend(ta, tm, za, zm, dp + 1); { const px = dir ? x0 : latX(x0 + (x1 - x0) * tm), py = dir ? latY(y0 + (y1 - y0) * tm) : y0, t3 = dir ? (py - y0) / (y1 - y0) : (px - x0) / (x1 - x0); out.push({ t: t3, x: px, y: py, z: qz(px, py, opZ(cl, px, py)), kind: 'bend', id: 'B' + cl, cl }); } bend(tm, tb, zm, zb, dp + 1); };
+              const ss = [TA].concat(out.filter(p => p.t > TA && p.t < TBn).map(p => p.t).sort((a, b) => a - b), [TBn]); for (let k = 0; k + 1 < ss.length; k++) bend(ss[k], ss[k + 1], zt2(ss[k]), zt2(ss[k + 1]), 0); } }
+          if (mg < -hl) continue; } // 整段不在台地上：没有顶线
         // 段内取 7 个点：一条格边上顶线可能进出两次（凹角的圆弧）
         const NS = 6, tt = []; for (let k = 0; k <= NS; k++) tt.push(TA + (TBn - TA) * k / NS); const st2 = tt.map(plat);
         for (let k = 0; k < NS; k++) { if (st2[k] === st2[k + 1]) continue; const ta = tt[k], tb = tt[k + 1], pa = st2[k];
@@ -363,7 +428,7 @@
             Bl = t2 => { const X2 = px0(t2), Y2 = py0(t2), pr2 = ((X2 - e.ax) * ex + (Y2 - e.ay) * ey) / el; return (sf.at(X2, Y2) - (e.zlA + (e.zlB - e.zlA) * pr2)) / s2; }, dl = tt => ((x0 + (x1 - x0) * tt - e.ax) * e.nx + (y0 + (y1 - y0) * tt - e.ay) * e.ny), d0 = dl(0), d1 = dl(1), b0 = Bl(0), b1 = Bl(1);
           { for (const sg of [1, -1]) { const den = (sg * (d1 - d0) - (b1 - b0)); if (Math.abs(den) < 1e-12) continue; const ts = (b0 - sg * d0) / den; if (ts > ta && ts < tb) { const px = x0 + (x1 - x0) * ts, py = y0 + (y1 - y0) * ts, pr = segT(px, py, e.ax, e.ay, e.bx, e.by); if (pr < 0 || pr > 1) continue; const ep = 1e-5; if (plat(pa ? ts - ep : ts + ep) === pa && plat(pa ? ts + ep : ts - ep) !== pa) { t = ts; break; } } } } } }
         if (t === null) { let lo = ta, hi = tb; for (let it = 0; it < 22; it++) { const m = (lo + hi) / 2; if (plat(m) === pa) lo = m; else hi = m; } t = pa ? lo : hi; }
-        const px = x0 + (x1 - x0) * t, py = y0 + (y1 - y0) * t; out.push({ t, x: px, y: py, z: sf.at(px, py), kind: 'crest', id: 'C' + sf.id, cl }); } } // r7b：顶线按台地面（类）归类，不按高程值：共用一个面的两个类（城下曲轮与城下外圈）的顶线在类边界上连成一条
+        { const ux = x0 + (x1 - x0) * t, uy = y0 + (y1 - y0) * t, px = dir ? x0 : latX(ux), py = dir ? latY(uy) : y0; t = dir ? (py - y0) / (y1 - y0) : (px - x0) / (x1 - x0); out.push({ t, x: px, y: py, z: sf.at(px, py), kind: 'crest', id: 'C' + sf.id, cl }); } } } // r7b：顶线按台地面（类）归类，不按高程值：共用一个面的两个类（城下曲轮与城下外圈）的顶线在类边界上连成一条
       out.sort((a, b) => a.t - b.t); EP.set(key, out); return out;
     }
     const cellPoly = q => { // 逆时针：a → 下边 → b → 右边 → d → 上边（反向）→ cc → 左边（反向）
@@ -372,9 +437,10 @@
     const triArea = (A, B, C) => ((B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y)) / 2;
     function fanTris(poly, apex) { const out = []; if (apex) { for (let i = 0; i < poly.length; i++) { const A = poly[i], B = poly[(i + 1) % poly.length]; if (A === apex || B === apex) continue; if (Math.abs(triArea(apex, A, B)) > 1e-9) out.push(apex, A, B); } } else for (let i = 1; i + 1 < poly.length; i++) if (Math.abs(triArea(poly[0], poly[i], poly[i + 1])) > 1e-9) out.push(poly[0], poly[i], poly[i + 1]); return out; }
     const pack = L => { const T2 = new Float64Array(L.length * 3); L.forEach((p, i) => { T2[i * 3] = p.x; T2[i * 3 + 1] = p.y; T2[i * 3 + 2] = p.z; }); return T2; };
-    let FRq = -1; const FR = (w, ...ex) => { S.conform.why = S.conform.why || {}; S.conform.why[w] = (S.conform.why[w] || 0) + 1; S.conform.fans.push([FRq, w].concat(ex)); }; // fans：没能按线切开的格（[格号, 原因]）
+    let FRq = -1; const FR = (w, ...ex) => { if (S.conform.fans.some(f => f[0] === FRq && f[1] === w)) return; /* r8：同一格重切（revalidate/整平后）只记一次 */ S.conform.why = S.conform.why || {}; S.conform.why[w] = (S.conform.why[w] || 0) + 1; S.conform.fans.push([FRq, w].concat(ex)); }; // fans：没能按线切开的格（[格号, 原因]）
     function splitCell(q) { FRq = q; // 主动切分：返回三角形列表（点对象），或 null（复杂情形 → 由被动切分保证水密）
-      const poly = cellPoly(q); if (poly.length === 4) return null;
+      const poly = cellPoly(q); if (poly.length === 4) return null; if (poly.some(p => p.kind === 'arris' || p.kind === 'bend')) return null; // r8：有隅线切点/锥面折点的格交给平面包络裁剪
+      { const x0c = X(q % NX), y0c = Y((q - q % NX) / NX); for (const n of toeNear(x0c + c / 2, y0c + c / 2)) { const e = toeSegs[n]; for (const [vx, vy] of [[e.ax, e.ay], [e.bx, e.by]]) if (vx > x0c && vx < x0c + c && vy > y0c && vy < y0c + c) return null; } } // 墙脚线的顶点在格内（隅线从这里起）：同样交给平面包络裁剪
       const byId = new Map(); for (const p of poly) if (p.id) { const k = p.kind === 'toe' ? 'T' : p.id; let L = byId.get(k); if (!L) byId.set(k, L = []); L.push(p); } // 墙脚线不分曲轮：沿线的连通性决定配对
       const chords = [], dangles = [], cx0 = X(q % NX), cy0 = Y((q - q % NX) / NX), inCell = V => V.x > cx0 - 1e-9 && V.x < cx0 + c + 1e-9 && V.y > cy0 - 1e-9 && V.y < cy0 + c + 1e-9;
       const onSeg = (P, n) => { const e = toeSegs[n]; return segDist(P.x, P.y, e.ax, e.ay, e.bx, e.by) < 1e-7; };
@@ -458,27 +524,135 @@
         if (!cut) return null; }
       if (P.length === 3) { if (triArea(P[0], P[1], P[2]) > 1e-10) out.push(P[0], P[1], P[2]); else if (triArea(P[0], P[1], P[2]) < -1e-10) return null; }
       return out; }
+    // ---- r8（S1）：平面包络裁剪（兜底格）----
+    // 格内地形 = 每类一组平面（台地面、各石垣面；隅线 = 两面相等的直线）的包络 + 类归属（墙脚线/曲轮边）。做法：
+    // ① 在格内采样得到出现的“标签”（类 + 起作用的面）；② 割线 = 同类两两平面相等的直线 + 穿过本格的曲轮边（墙脚线）所在直线；
+    // ③ 从 cellPoly（边上的切点与邻格共用）出发，用每条割线依次切开全部凸块（同一条块边上的新点按“边 + 割线”缓存 → 格内无 T 形点）；
+    // 割线经过格边上已有切点 3 mm 内 → 吸附到该点（与邻格共用的点，水密）；新落在格边上的点高度按格边线性插值（与邻格那条边共线）；
+    // ④ 每块按块内一点的标签取面，格内新顶点的高度 = 该面在顶点处的精确值；⑤ 复核：块内采样点的插值高度与解析地形差 ≤ tol，否则放弃（仍走被动扇形）。
+    const EUID = new Map(); let EUN = 0; const euid = e => { let v = EUID.get(e); if (v === undefined) EUID.set(e, v = EUN++); return v; };
+    const envLab = (k, x, y) => { if (k < 0) { const bz = bedAt(x, y); return { key: 'w' + bz, k, bz }; } const band = k === BAND.i, sf = clsSurf(k); let z = sf.at(x, y), be = null;
+      for (const e of ozEdges(k).get(Math.floor(x / 6) * 100003 + Math.floor(y / 6)) || []) { if (!band && (e.band || (e.mixed && bandAt(e, x, y)))) continue; const hz = edgeZ(e, sf, x, y); if (hz < z) { z = hz; be = e; } }
+      if (!be) return { key: 's' + k, k, sf };
+      const dx = be.bx - be.ax, dy = be.by - be.ay, l = dx * dx + dy * dy, t = l ? ((x - be.ax) * dx + (y - be.ay) * dy) / l : 0, cp = capOf(be, sf);
+      if (t < 0 && !cp.A) return { key: k + ':' + euid(be) + 'cA', k, sf, e: be, end: [be.ax, be.ay, be.zlA] };
+      if (t > 1 && !cp.B) return { key: k + ':' + euid(be) + 'cB', k, sf, e: be, end: [be.bx, be.by, be.zlB] };
+      if ((x - be.ax) * -be.nx + (y - be.ay) * -be.ny < 0) return { key: k + ':' + euid(be) + 'm', k, sf, e: be, mir: true }; // 墙脚线外侧（类多边形略越过墙脚线）：edgeZ 按到垂足的距离 → 镜像平面
+      return { key: k + ':' + euid(be) + 'p', k, sf, e: be }; };
+    const labZ = (L, x, y) => L.k < 0 ? L.bz : !L.e ? L.sf.at(x, y) : L.end ? L.end[2] + sOf(L.e, L.sf) * Math.hypot(x - L.end[0], y - L.end[1]) : L.mir ? (() => { const f = L.e, dx = f.bx - f.ax, dy = f.by - f.ay, l = dx * dx + dy * dy, t = l ? ((x - f.ax) * dx + (y - f.ay) * dy) / l : 0; return f.zlA + (f.zlB - f.zlA) * t - sOf(f, L.sf) * ((x - f.ax) * -f.nx + (y - f.ay) * -f.ny); })() : planeZ(L.e, L.sf, x, y);
+    S.conform.env = 0; S.conform.envErr = 0;
+    function envCell(q) {
+      const poly = cellPoly(q); if (poly.length === 4) return null;
+      const cs = [q, q + 1, q + NX, q + NX + 1]; if (cs.some(p => (TAG[p] !== 0 && TAG[p] !== 1) || Math.abs(H[p] - BASE[p]) > 0.02)) return null; // 只在解析地形（操作 1+2）上（排水整平在入隅谷线上的几毫米填方仍算：角点保持实际高度，格内按解析面）
+      const i0 = q % NX, x0 = X(i0), y0 = Y((q - i0) / NX), x1 = x0 + c, y1 = y0 + c, labP = (x, y) => envLab(clsAt(x, y), x, y);
+      // ① 标签
+      const labs = new Map(), NS = 12; for (let a = 0; a <= NS; a++) for (let b = 0; b <= NS; b++) { const x = x0 + c * (0.002 + 0.996 * a / NS), y = y0 + c * (0.002 + 0.996 * b / NS), L = labP(x, y); if (!labs.has(L.key)) labs.set(L.key, L); }
+      // ② 割线 {a, bx, by}：s(p) = a + bx·(x − x0) + by·(y − y0)，(bx, by) 单位向量 → s 是有符号距离
+      const lines = [], addLine = (a, bx, by) => { const n = Math.hypot(bx, by); if (n < 1e-9) return false; a /= n; bx /= n; by /= n; if (Math.abs(a) > c * 1.5) return false; // 不经过本格
+        if (lines.some(L => Math.abs(L.bx * by - L.by * bx) < 1e-9 && Math.abs(L.a - (L.bx * bx + L.by * by) * a) < 1e-7)) return false; lines.push({ a, bx, by }); return true; };
+      const affLine = f => { const f0 = f(x0, y0); return addLine(f0, f(x0 + 1, y0) - f0, f(x0, y0 + 1) - f0); }, ptLine = (ax, ay, bx, by) => addLine(-(by - ay) * (x0 - ax) + (bx - ax) * (y0 - ay), -(by - ay), bx - ax);
+      // 同类两两平面相等的直线（隅线、顶线）
+      const byK = new Map(); for (const L of labs.values()) { if (L.k < 0 || L.end) continue; let A = byK.get(L.k); if (!A) byK.set(L.k, A = []); A.push(L); }
+      for (const A of byK.values()) for (let u = 0; u < A.length; u++) for (let v = u + 1; v < A.length; v++) affLine((x, y) => labZ(A[u], x, y) - labZ(A[v], x, y));
+      // 每个面的定义域边界：有隅线的一端 = 与相邻面相等的直线；锥面收头 = 过端点、垂直于边的直线（平面段与锥面在此相切，不是折线，但两侧不是同一个函数）
+      for (const L of labs.values()) { if (!L.e) continue; const e = L.e, cp = capOf(e, L.sf); if (cp.A && e.prev) affLine((x, y) => planeZ(e, L.sf, x, y) - planeZ(e.prev, L.sf, x, y)); if (cp.B && e.next) affLine((x, y) => planeZ(e, L.sf, x, y) - planeZ(e.next, L.sf, x, y));
+        if (!cp.A) ptLine(e.ax, e.ay, e.ax - e.nx, e.ay - e.ny); if (!cp.B) ptLine(e.bx, e.by, e.bx - e.nx, e.by - e.ny); }
+      const TOE4 = [], REG4 = []; for (const g of R) for (const e of g.edges) { if (Math.max(e.ax, e.bx) < x0 - 1e-6 || Math.min(e.ax, e.bx) > x1 + 1e-6 || Math.max(e.ay, e.by) < y0 - 1e-6 || Math.min(e.ay, e.by) > y1 + 1e-6) continue;
+        REG4.push(e); if (e.B > 0) TOE4.push(e); ptLine(e.ax, e.ay, e.bx, e.by); } // 曲轮边（墙脚线、类边界）
+      // 外圈（BAND）与二之丸的分界按格点归属（zoneAt：最近格点的 CLS），是格的两条中线 → 也是割线
+      // 水体的堀底也按格点归属（每个格点取最近水体）：一格里有两个水体 → 同样加两条中线
+      if ([...labs.values()].some(L => L.k === BAND.i) || [...labs.values()].filter(L => L.k < 0).length > 1) { addLine(-c / 2, 1, 0); addLine(-c / 2, 0, 1); }
+      // 锥面：过锥顶与格边上的折点各加一条射线（锥面沿射线是直线）
+      for (const L of labs.values()) if (L.end) for (const v of poly) if (v.kind === 'bend' && v.cl === L.k && Math.hypot(v.x - L.end[0], v.y - L.end[1]) > 1e-6) ptLine(L.end[0], L.end[1], v.x, v.y);
+      for (let v = 0; v < poly.length; v++) { poly[v]._e = v; poly[v]._b = true; }
+      const arrange = () => { // ③ 逐线切开（同一条块边上的新点按“边 + 割线”缓存 → 格内无 T 形点）
+        let vid2 = poly.length; const cache = new Map(); let pieces = [poly.slice()];
+        lines.forEach((Ln, li) => { const sv = v => Ln.a + Ln.bx * (v.x - x0) + Ln.by * (v.y - y0), sd = v => { const s = sv(v); return s > 1e-9 ? 1 : s < -1e-9 ? -1 : 0; }, ps = (L, v) => { if (L[L.length - 1] !== v && L[0] !== v) L.push(v); };
+          const out = []; for (const P of pieces) { const S2 = P.map(sd); if (!S2.includes(1) || !S2.includes(-1)) { out.push(P); continue; } const A = [], B = [];
+            for (let k = 0; k < P.length; k++) { const u = P[k], w = P[(k + 1) % P.length], su = S2[k], sw = S2[(k + 1) % P.length]; if (su >= 0) ps(A, u); if (su <= 0) ps(B, u);
+              if (su * sw < 0) { const [p, r] = u._e < w._e ? [u, w] : [w, u], key = p._e + ',' + r._e + ',' + li; let m = cache.get(key);
+                if (!m) { const t = sv(p) / (sv(p) - sv(r)), side = (p.x === x0 && r.x === x0) || (p.x === x1 && r.x === x1) || (p.y === y0 && r.y === y0) || (p.y === y1 && r.y === y1);
+                  const L2 = Math.hypot(r.x - p.x, r.y - p.y); // 格边上：离已有切点（与邻格共用）3 mm 内 → 吸附到那一点
+                  m = side && t * L2 < 3e-3 ? p : side && (1 - t) * L2 < 3e-3 ? r : { x: side && p.x === r.x ? p.x : p.x + (r.x - p.x) * t, y: side && p.y === r.y ? p.y : p.y + (r.y - p.y) * t, z: side ? p.z + (r.z - p.z) * t : null, inner: !side, _e: vid2++, _b: side, _ins: side }; cache.set(key, m); }
+                ps(A, m); ps(B, m); } }
+            if (A.length >= 3) out.push(A); if (B.length >= 3) out.push(B); }
+          pieces = out; });
+        { // 近乎共点的几条割线（隅线、定义域边界、顶线在三面交点处）各自求出的交点相差 < 0.1 mm → 合并为一个点（格边上的点优先当代表、不移动），去掉退化块
+          const rep = [], mp = new Map(), all = []; for (const P of pieces) for (const v of P) if (!mp.has(v)) { mp.set(v, null); all.push(v); } all.sort((a, b) => (b._b ? 1 : 0) - (a._b ? 1 : 0));
+          for (const v of all) { const r = rep.find(w => Math.abs(w.x - v.x) < 1e-4 && Math.abs(w.y - v.y) < 1e-4); if (r && !(r._b && v._b && r !== v && (r.corner !== undefined || v.corner !== undefined || r.kind || v.kind) && Math.hypot(r.x - v.x, r.y - v.y) > 1e-9)) mp.set(v, r); else { rep.push(v); mp.set(v, v); } }
+          pieces = pieces.map(P => { const Q = []; for (const v of P) { const r = mp.get(v); if (Q[Q.length - 1] !== r) Q.push(r); } while (Q.length > 1 && Q[0] === Q[Q.length - 1]) Q.pop(); return Q; }).filter(Q => Q.length >= 3); }
+        for (const Q of pieces) for (const v of Q) if (!v._b && !v._lat) { v._lat = true; if (!REG4.some(e => segDist(v.x, v.y, e.ax, e.ay, e.bx, e.by) < 1e-6)) { v.x = Math.fround(v.x); v.y = Math.fround(v.y); } } // 格内新点（不在曲轮边上的）取单精度可表示的值（移动 ≤ 3e-5 m）：结果包按 Float32 存
+        // ④ 每块取面；格内新顶点取精确值（几块在此相接而面值不同 = 类边界上的不连续：墙脚线上取下层高程（与格边墙脚切点同一约定），其余取低者）
+        const PL = pieces.map(P => { let cx = 0, cy = 0; for (const v of P) { cx += v.x; cy += v.y; } return labP(cx / P.length, cy / P.length); });
+        pieces.forEach((P, n) => { for (const v of P) if (!v._b) { (v._zs || (v._zs = [])).push(labZ(PL[n], v.x, v.y)); if (!PL[n].e && PL[n].k >= 0) v._zt = labZ(PL[n], v.x, v.y); } });
+        for (const P of pieces) for (const v of P) if (!v._b && v.z === null) { let zt = Infinity; for (const e of TOE4) if (segDist(v.x, v.y, e.ax, e.ay, e.bx, e.by) < 1e-6) zt = Math.min(zt, toeZ(e, v.x, v.y));
+          const lo = Math.min(...v._zs), sp2 = Math.max(...v._zs) - lo; v.z = zt < Infinity ? zt : sp2 < 0.02 && v._zt !== undefined ? v._zt : lo; v._jump = zt < Infinity || sp2 > 1e-6; if (v._lat) v.z = qz(v.x, v.y, v.z); } // 相差 < 2 cm（近乎共点的割线、数值误差）且有台地面 → 取台地面（顶线上的点 = 台地顶）
+        // ⑤ 复核：块内各点的标签必须相同；块内采样（用块自己的面在顶点处的值插值 → 量“块是不是一个平面”，不量类边界上的台阶）；
+        // 不在台阶上、也不是新插在格边上的顶点（那里的高度跟邻格那条格边走）必须 = 块的面值
+        let area = 0, err = 0, WST = null; const tris = [], fix = [];
+        pieces.forEach((P, n) => { const L = PL[n], zf = v => labZ(L, v.x, v.y); let cx = 0, cy = 0, coneF = false, mixD = 0; for (const v of P) { cx += v.x; cy += v.y; } cx /= P.length; cy /= P.length;
+          const IN = P.map(v => ({ x: v.x + (cx - v.x) * 0.1, y: v.y + (cy - v.y) * 0.1 })), LK = IN.map(p => { const L2 = labP(p.x, p.y), dz = L2.key === L.key || L2.k !== L.k ? 0 : Math.abs(labZ(L2, p.x, p.y) - labZ(L, p.x, p.y)); mixD = Math.max(mixD, dz); return dz < 0.02 ? L.key : L2.key; }); // 类不同（曲轮多边形之间 < 数值精度的碎缝；类边界本身已是割线）不算混合 // 两个面在这一点几乎等高（隅线/顶线的数值容差内）→ 不算混合
+          let pa = 0, le = 0; for (let k = 1; k + 1 < P.length; k++) pa += triArea(P[0], P[k], P[k + 1]); for (let k = 0; k < P.length; k++) le = Math.max(le, Math.hypot(P[k].x - P[(k + 1) % P.length].x, P[k].y - P[(k + 1) % P.length].y));
+          if (2 * pa / (le || 1) > 0.02 && LK.some(k => k !== L.key)) { // 宽 < 2 cm 的碎块（近乎平行的两条边线之间，例如两个曲轮多边形之间 1 cm 的缝）低于模型分辨率，不判混合 // 混合块：在块边界（内缩 1%）上二分出标签变化的点，过两点加一条割线
+            const sw = []; for (let k = 0; k < IN.length && sw.length < 2; k++) { const A = IN[k], B = IN[(k + 1) % IN.length]; if (LK[k] === LK[(k + 1) % IN.length]) continue; let lo = 0, hi = 1; for (let it = 0; it < 40; it++) { const m = (lo + hi) / 2; if (labP(A.x + (B.x - A.x) * m, A.y + (B.y - A.y) * m).key === LK[k]) lo = m; else hi = m; } sw.push([A.x + (B.x - A.x) * hi, A.y + (B.y - A.y) * hi]); }
+            if (sw.length === 2) fix.push(['mix', sw]); if (mixD > err) { err = mixD; WST = ['mix', cx, cy, L.key, LK.join(',')]; } } // 混合块的误差 = 块内点按别的面算的高差（曲线顶线用弦逼近，弦与弧之间的碎块高差很小）
+          for (const v of P) if (!v._jump && !v.jump && !(v.cl !== undefined && v.cl !== L.k) && !(v.corner !== undefined && ((CLS[v.corner] < 0 ? -1 : CLS[v.corner]) !== L.k || labP(v.x, v.y).key !== L.key)) && !(v._b && v.corner === undefined && (v._ins || REG4.some(e => segDist(v.x, v.y, e.ax, e.ay, e.bx, e.by) < 1e-6)))) { const e2 = Math.abs(v.z - zf(v)); if (e2 > err) { err = e2; WST = ['v', v.x, v.y, v.z, zf(v), L.key, !!v._b]; } }
+          let T3 = fanTris(P, null); for (let k = 0; k < T3.length; k += 3) if (triArea(T3[k], T3[k + 1], T3[k + 2]) < 1e-8) { T3 = earClip(P) || T3; break; } // 合并后的块可能有 1e-4 级的凹点：扇形出负面积时改用耳切
+          { const T4 = []; for (let k = 0; k < T3.length; k += 3) { const a2 = triArea(T3[k], T3[k + 1], T3[k + 2]); if (a2 < -1e-6) { err = Infinity; WST = ['neg', a2]; return; } if (a2 > 1e-8) T4.push(T3[k], T3[k + 1], T3[k + 2]); else area += a2; } T3 = T4; }
+          for (let k = 0; k < T3.length; k += 3) { const A = T3[k], B = T3[k + 1], C = T3[k + 2], a2 = triArea(A, B, C); area += a2;
+            const za = zf(A), zb = zf(B), zc = zf(C); for (const [u, w] of [[1 / 3, 1 / 3], [0.6, 0.2], [0.2, 0.6], [0.2, 0.2]]) { const x = A.x + (B.x - A.x) * u + (C.x - A.x) * w, y = A.y + (B.y - A.y) * u + (C.y - A.y) * w, e2 = Math.abs(za + (zb - za) * u + (zc - za) * w - labZ(L, x, y));
+              if (e2 > err) { err = e2; WST = ['s', x, y, L.key]; } if (e2 > CF.tol * 0.5 && L.end && !coneF) { coneF = true; fix.push(['cone', L.end, [cx, cy]]); } } }
+          tris.push(...T3); });
+        for (const P of pieces) for (const v of P) { delete v._zs; delete v._jump; delete v._zt; delete v._lat; }
+        if (Math.abs(area - c * c) > 1e-6) { err = Math.max(err, 1e4); WST = ['area', area]; }
+        return { tris, err, WST, fix, pieces, PL }; };
+      let r = null; for (let round = 0; round < 12; round++) { r = arrange(); if (r.err <= CF.tol * 0.5) break; let add = 0; // ⑥ 细分：混合块过两个标签变化点加割线；锥面块按过锥顶的射线切开（锥面沿射线是直线）
+        for (const f of r.fix) if (f[0] === 'mix' ? ptLine(f[1][0][0], f[1][0][1], f[1][1][0], f[1][1][1]) : ptLine(f[1][0], f[1][1], f[2][0], f[2][1])) add++; if (!add) break; }
+      if (r.err > CF.tol) { // ⑦ 兜底：曲线顶线/锥面与类边界挤在一起收敛不了 → 再加 1/8 格的细分线（仍是同一个裁剪），按真实误差（网格面 vs 解析地形，类边界 2 cm 内不量）验收
+        for (let k = 1; k < 8; k++) { addLine(-c * k / 8, 1, 0); addLine(-c * k / 8, 0, 1); } const r2 = arrange(); let e2 = 0;
+        if (r2.err < 1e3) { const T = r2.tris; for (let k = 0; k < T.length; k += 3) { const A = T[k], B = T[k + 1], C = T[k + 2]; for (const [u, w] of [[1 / 3, 1 / 3], [0.6, 0.2], [0.2, 0.6]]) { const x = A.x + (B.x - A.x) * u + (C.x - A.x) * w, y = A.y + (B.y - A.y) * u + (C.y - A.y) * w;
+            if (REG4.some(h => { const dd = segDist(x, y, h.ax, h.ay, h.bx, h.by); if (dd < 0.02) return true; if (dd > 0.3) return false; // 类边界上的台阶（两侧解析值差 > 0.3 m）附近 0.3 m：格边只能线性过渡，不量
+              const t3 = clamp(segT(x, y, h.ax, h.ay, h.bx, h.by), 0, 1), fx = h.ax + (h.bx - h.ax) * t3, fy = h.ay + (h.by - h.ay) * t3, zz = [1, -1].map(sg => { const px = fx + h.nx * 0.01 * sg, py = fy + h.ny * 0.01 * sg, kk = clsAt(px, py); return kk < 0 ? bedAt(px, py) : opZ(kk, px, py); }); return Math.abs(zz[0] - zz[1]) > 0.3; })) continue; const k2 = clsAt(x, y), zt = k2 < 0 ? bedAt(x, y) : opZ(k2, x, y);
+            if (k2 >= 0 && [[0.05, 0], [-0.05, 0], [0, 0.05], [0, -0.05], [0.1, 0], [-0.1, 0], [0, 0.1], [0, -0.1]].some(([a2, b2]) => clsAt(x + a2, y + b2) === k2 && Math.abs(opZ(k2, x + a2, y + b2) - zt) > 4 * Math.hypot(a2, b2) + 0.05)) continue; /* 解析面在 10 cm 内有台阶（无石垣的类边界、组合规则的跳变）：三角网表示不了竖直面，不量 */ { const d3 = Math.abs(A.z + (B.z - A.z) * u + (C.z - A.z) * w - zt); if (d3 > e2) { e2 = d3 } } } } }
+          else e2 = Infinity;
+        if (e2 <= CF.tol) { S.conform.envFine = (S.conform.envFine || 0) + 1; S.conform.envErr = Math.max(S.conform.envErr, e2); return r2.tris; } }
+      if (r.err > CF.tol) { FR('env', +r.err.toFixed(3)); return null; }
+      S.conform.envErr = Math.max(S.conform.envErr, r.err); return r.tris; }
+    const cutCell = q => { const n0 = S.conform.fans.length, T = splitCell(q); if (T) return T; const T2 = envCell(q); if (!T2) return null;
+      for (const f of S.conform.fans.splice(n0)) S.conform.why[f[1]]--; S.conform.env++; return T2; };
     function passiveCell(q) { const poly = cellPoly(q); if (poly.length === 4) return null; const a = q, d = q + NX + 1, ctr = { x: X(q % NX) + c / 2, y: Y((q - q % NX) / NX) + c / 2, z: (H[a] + H[d]) / 2, inner: true }; return fanTris(poly, ctr); }
     const setSplit = (q, tris, kind) => { const T2 = pack(tris); if (SPL[q] >= 0) SPT[SPL[q]] = { q, tris: T2, kind, H: [H[q], H[q + 1], H[q + NX], H[q + NX + 1]] }; else { SPL[q] = SPT.length; SPT.push({ q, tris: T2, kind, H: [H[q], H[q + 1], H[q + NX], H[q + NX + 1]] }); } };
     if (G.__dbg) console.log('STAGE 1', Date.now() - t0);
     if (!PK) { if (opt.conform !== false) {
       const cand = new Uint8Array(NX * NY);
       candScan(H, TAG, cand, NX, NY, WZC);
-      for (let q = 0; q < NX * NY; q++) { if (!cand[q]) continue; S.conform.cells++; const T3 = splitCell(q); if (T3) { setSplit(q, T3, 'split'); S.conform.split++; } }
+      for (let q = 0; q < NX * NY; q++) { if (!cand[q]) continue; S.conform.cells++; const T3 = cutCell(q); if (T3) { setSplit(q, T3, 'split'); S.conform.split++; } }
     } } // PK: 读包时跳过（结果由包恢复）
     // 角点被后来的操作改过的格：退回网格；然后给“边上有切点但自己没切”的格做被动切分（水密）
-    function revalidate() { for (const sp of SPT.slice()) { if (sp.kind === 'dead') continue; const q = sp.q, cs = [q, q + 1, q + NX, q + NX + 1]; if (sp.kind === 'split' && cs.every(p => TAG[p] === 0 || TAG[p] === 1) && cs.some((p, k) => Math.abs(H[p] - sp.H[k]) > 1e-6)) { const T3 = splitCell(q); if (T3) { setSplit(q, T3, 'split'); continue; } } if (cs.some((p, k) => Math.abs(H[p] - sp.H[k]) > 1e-6 || (TAG[p] !== 0 && TAG[p] !== 1))) { sp.kind = 'dead'; SPL[q] = -1; S.conform.dropped++; if (typeof KILLED !== 'undefined') KILLED.push(q); } } }
+    function revalidate() { for (const sp of SPT.slice()) { if (sp.kind === 'dead') continue; const q = sp.q, cs = [q, q + 1, q + NX, q + NX + 1]; if (sp.kind === 'split' && cs.every(p => TAG[p] === 0 || TAG[p] === 1) && cs.some((p, k) => Math.abs(H[p] - sp.H[k]) > 1e-6)) { const T3 = cutCell(q); if (T3) { setSplit(q, T3, 'split'); continue; } } if (cs.some((p, k) => Math.abs(H[p] - sp.H[k]) > 1e-6 || (TAG[p] !== 0 && TAG[p] !== 1))) { sp.kind = 'dead'; sp.tris = new Float64Array(0); SPL[q] = -1; S.conform.dropped++; if (typeof KILLED !== 'undefined') KILLED.push(q); } } }
     function passivePass() {
       if (opt.conform === false) return; revalidate();
       const live = SPT.filter(sp => sp.kind === 'split'), keep = new Set(live.map(sp => sp.q));
       // 一条格边上的切点“生效” ⇔ 它旁边至少有一个活的主动切分格；没切的格（含退回网格的格）把生效边上的点加进来做中心扇形
       const need = new Set(); for (const sp of live) { const q = sp.q; for (const n of [q - 1, q + 1, q - NX, q + NX]) if (n >= 0 && n < NX * NY && !keep.has(n)) need.add(n); }
-      for (const n of need) { if ((n % NX) >= NX - 1 || n >= (NY - 1) * NX) continue;
+      // r8（S1）：约束线（顶线/隅线）从活格穿进一个从没切过的格（候选扫描没选上：四角都在台地上，但出隅的尖角伸进来）→ 这一格也按线切（平面包络裁剪），
+      // 再看它的邻格，直到没有新的（只在四角都是解析地形、没有锁的格上做）
+      { const work = [...need]; S.conform.promoted = 0;
+        while (work.length) { const n = work.pop(); if (keep.has(n) || SPL[n] >= 0 || (n % NX) >= NX - 1 || n >= (NY - 1) * NX) continue; const cs = [n, n + 1, n + NX, n + NX + 1];
+          if (!cs.every(p => (TAG[p] === 0 || TAG[p] === 1) && Math.abs(H[p] - BASE[p]) < 1e-9) || KILLED.includes(n)) continue;
+          const sides = [[n, 0, n - NX], [n + 1, 1, n + 1], [n + NX, 0, n + NX], [n, 1, n - 1]]; if (!sides.some(([q2, dir, nb]) => keep.has(nb) && edgePts(q2, dir).some(p => p.kind !== 'toe'))) continue;
+          const T3 = cutCell(n); if (!T3) continue; setSplit(n, T3, 'split'); keep.add(n); need.delete(n); S.conform.promoted++;
+          for (const m of [n - 1, n + 1, n - NX, n + NX]) if (m >= 0 && m < NX * NY && !keep.has(m)) { need.add(m); work.push(m); } } }
+      for (const n of need) { if (keep.has(n)) continue; if ((n % NX) >= NX - 1 || n >= (NY - 1) * NX) continue;
         // 被动格只取与活格共享的边上的点
         const a = n, b = n + 1, cc = n + NX, d = cc + 1, V = p => ({ x: X(p % NX), y: Y((p - p % NX) / NX), z: H[p], corner: p }), sh = (q2, dir, nb) => keep.has(nb) ? edgePts(q2, dir) : [];
         const poly = [V(a)].concat(sh(a, 0, n - NX), [V(b)], sh(b, 1, n + 1), [V(d)], sh(cc, 0, n + NX).slice().reverse(), [V(cc)], sh(a, 1, n - 1).slice().reverse());
         if (poly.length === 4) continue; const cx = X(n % NX) + c / 2, cy = Y((n - n % NX) / NX) + c / 2, k = clsAt(cx, cy), ana = k >= 0 && [a, b, cc, d].every(p => (TAG[p] === 0 || TAG[p] === 1) && Math.abs(H[p] - BASE[p]) < 1e-9); // r7b：没被别的操作改过的格，扇心取解析地形（操作 1+2 在格心的值），否则取对角平均（r6）
-        const ctr = { x: cx, y: cy, z: ana ? opZ(k, cx, cy) : (H[a] + H[d]) / 2, inner: true }; setSplit(n, fanTris(poly, ctr), 'passive'); S.conform.passive++; }
+        const ctr = { x: cx, y: cy, z: qz(cx, cy, ana ? opZ(k, cx, cy) : (H[a] + H[d]) / 2), inner: true }; let T3 = fanTris(poly, ctr);
+        // r8：被别的操作改过角点的格（不是解析地形），格边上又有顶线切点：扇心高度是对角平均，扇形会把台地边上的一角拉成斜面——
+        // 另取只用边界点的耳切三角化，取最大坡度较小的那一种（数据相关三角化的最简形式）
+        if (!ana && poly.some(p => p.kind === 'crest')) { const E2 = earClip(poly), mx = L => { let m = 0; for (let k2 = 0; k2 < L.length; k2 += 3) { const A = L[k2], B = L[k2 + 1], C = L[k2 + 2], ux = B.x - A.x, uy = B.y - A.y, uz = B.z - A.z, vx = C.x - A.x, vy = C.y - A.y, vz = C.z - A.z, nz = ux * vy - uy * vx; if (Math.abs(nz) > 1e-9) m = Math.max(m, Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz) / Math.abs(nz)); } return m; }; if (E2 && mx(E2) < mx(T3)) T3 = E2; }
+        setSplit(n, T3, 'passive'); S.conform.passive++; }
     }
 
     // 操作：整平（settle）——与多边形有重叠的每个三角形，三个顶点都设为 z；已被坡道锁定或原本是水面的格点不动（审计会报出来）
@@ -493,7 +667,7 @@
       const pcx = P.reduce((s3, v) => s3 + v[0], 0) / P.length, pcy = P.reduce((s3, v) => s3 + v[1], 0) / P.length, PIN = P.map(v => { const dx = pcx - v[0], dy = pcy - v[1], L3 = Math.hypot(dx, dy) || 1; return [v[0] + dx / L3 * 0.1, v[1] + dy / L3 * 0.1]; });
       const deepHit = Tk => { if (!triOverlapPoly(Tk, P, bb)) return false; const [A, B2, C2] = Tk; for (const [u, v] of [[0, 0], [1, 0], [0, 1], [0.5, 0], [0, 0.5], [0.5, 0.5], [1 / 3, 1 / 3], [0.15, 0.15], [0.7, 0.15], [0.15, 0.7]]) { const x = A[0] + (B2[0] - A[0]) * u + (C2[0] - A[0]) * v, y = A[1] + (B2[1] - A[1]) * u + (C2[1] - A[1]) * v; if (polyDist(x, y, P) < -0.05) return true; } return PIN.some(v => inPoly(v[0], v[1], Tk)); };
       const splitNeeds = a => { const T2 = SPT[SPL[a]].tris; for (let k = 0; k < T2.length; k += 9) { if (!(Math.abs(T2[k + 2] - zf(T2[k], T2[k + 1])) > 1e-4 || Math.abs(T2[k + 5] - zf(T2[k + 3], T2[k + 4])) > 1e-4 || Math.abs(T2[k + 8] - zf(T2[k + 6], T2[k + 7])) > 1e-4)) continue; const Tk = [[T2[k], T2[k + 1]], [T2[k + 3], T2[k + 4]], [T2[k + 6], T2[k + 7]]]; if (deepHit(Tk)) return true; } return false; };
-      const kill = (a, why) => { SPT[SPL[a]].kind = 'dead'; SPL[a] = -1; S.conform.dropped++; KILLED.push(a); };
+      const kill = (a, why) => { SPT[SPL[a]].kind = 'dead'; SPT[SPL[a]].tris = new Float64Array(0); /* r8：退回网格的格不再用它的三角形（渲染/审计都跳过）——不留在结果包里 */ SPL[a] = -1; S.conform.dropped++; KILLED.push(a); };
       if (!settle.replay) SETTLED.push([P, z, tag]);
       const far = (i, j) => polyDist(X(i) + c / 2, Y(j) + c / 2, P) > c * 0.7072; // 格心离多边形超过半对角线 → 这一格与多边形不相交（快速排除）
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const a = j * NX + i; if (SPL[a] < 0 || far(i, j)) continue; if (splitNeeds(a)) kill(a, 'needs'); else if (SPT[SPL[a]].tris.length && (() => { const T2 = SPT[SPL[a]].tris; for (let k = 0; k < T2.length; k += 9) if (triOverlapPoly([[T2[k], T2[k + 1]], [T2[k + 3], T2[k + 4]], [T2[k + 6], T2[k + 7]]], P, bb)) return true; return false; })()) for (const q of [a, a + 1, a + NX, a + NX + 1]) if (!LOCK[q]) LOCK[q] = 4; } // 压在地基下的切开格：角点上“保护锁”（坡道不许改；整平可改）
@@ -507,7 +681,7 @@
           }
         }
         // 被改到角点的切开格：按新的角点高度重新切（顶线/墙脚线不变，只是那一个角点所在的面块跟着变）；切不了、或新的切块压在多边形下 → 退回网格
-        let k2 = 0; for (const q of touched) for (const a of [q, q - 1, q - NX, q - NX - 1]) if (a >= 0 && SPL[a] >= 0) { const T3 = splitCell(a); if (T3) { setSplit(a, T3, 'split'); if (!splitNeeds(a)) continue; } kill(a, 'corner'); k2++; }
+        let k2 = 0; for (const q of touched) for (const a of [q, q - 1, q - NX, q - NX - 1]) if (a >= 0 && SPL[a] >= 0) { const T3 = cutCell(a); if (T3) { setSplit(a, T3, 'split'); if (!splitNeeds(a)) continue; } kill(a, 'corner'); k2++; }
         if (!k2) break; refused = 0;
       }
       settleLog.push(refused); return refused;
@@ -1024,7 +1198,7 @@
     { const hs = WG.hs, bk = WG.blk, lim = NET.slope * c + 0.02, crs = NET.cross * c + 0.01, gate = (q, k) => !bk[k] && Math.abs(hs[q] - hs[k]) > crs; // 种子 = 障碍格本身 + 坡折两侧的格（DT ≈ 到障碍/坡折的净距） // 道路要在平地上：坡度 > 横坡上限的格也算“边”（路面两侧不能落在斜坡上）
       void lim; for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const q = j * NX + i; if (bk[q] || (i + 1 < NX && gate(q, q + 1)) || (i > 0 && gate(q, q - 1)) || (j + 1 < NY && gate(q, q + NX)) || (j > 0 && gate(q, q - NX))) edgeSeed[q] = 1; } }
     S.tm.seed = TM() - tq; const DT = chamfer(edgeSeed, NX, NY); for (let q = 0; q < N2; q++) DT[q] *= c; S.tm.dt = TM() - tq;
-    S.netDT = DT;
+    // r8：步行净距场 DT 只在本段（端点/道路）里用，不挂到结果上（原 S.netDT 没有任何读者，却占结果包 174 KB）
     const maxOpen = Math.max(...S.gates.map(g => g.open)), seekNeed = maxOpen / 2 + c / 2;
     const roadZone = (x, y) => { const z = zoneAt(x, y); return !!z && !z.band && NET.roadRegions.includes(z.name); };
     const seek = (x, y, dir, need) => { for (let a = 0; a <= NET.termReach; a += 0.5) { const px = x + dir[0] * a, py = y + dir[1] * a, q = vid(px, py); if (q >= 0 && !WG.blk[q] && DT[q] >= need) return [px, py]; } return null; };
@@ -1157,12 +1331,13 @@
       const fns = {}; for (const k of Object.keys(SURF)) fns['surf:' + k] = SURF[k].at; WB.forEach((b, k) => { fns['bed:' + k] = b.bedFn; });
       // 预测（只为压缩率，逐位异或）：水位/堀底 = 所属水体的值；台地填充后的高度 = 所属类的台地面（与操作 1 同一表达式）、水格 = 堀底；最终高度 ≈ BASE
       const pred = { WZC: get => { const W = get('WBI'), o = new Float64Array(W.length); for (let q = 0; q < W.length; q++) o[q] = LVk[W[q]]; return o; }, BEDC: get => { const W = get('WBI'), o = new Float64Array(W.length); for (let q = 0; q < W.length; q++) o[q] = BDk[W[q]]; return o; },
-        BASE: get => { const K = get('CLS'), Bd = get('BEDC'), o = new Float64Array(K.length); for (let j = 0; j < NY; j++) { const y = Y(j); for (let i = 0; i < NX; i++) { const q = j * NX + i, k = K[q]; o[q] = k < 0 ? Bd[q] : clsSurf(k).at(X(i), y); } } return o; }, H: get => get('BASE') };
-      const custom = { SPT: { codec: 'gridTris', X, Y, x0: gs.x0, y0: gs.y0, c, NX, NY, zf: Object.keys(SURF).map(k => SURF[k].at), H, Hname: 'H' } };
+        BASE: get => { const K = get('CLS'), Bd = get('BEDC'), o = new Float64Array(K.length); for (let j = 0; j < NY; j++) { const y = Y(j); for (let i = 0; i < NX; i++) { const q = j * NX + i, k = K[q]; o[q] = k < 0 ? Bd[q] : clsSurf(k).at(X(i), y); } } return o; }, H: get => get('BASE'), SPL: () => new Int32Array(NX * NY).fill(-1) /* r8：切分格索引大多是 −1 */ };
+      const custom = { SPT: { codec: 'gridTris', X, Y, x0: gs.x0, y0: gs.y0, c, NX, NY, zf: Object.keys(SURF).map(k => SURF[k].at), toe: toeSegs.map(e => [e.ax, e.ay, e.bx, e.by]), H, Hname: 'H' } };
       return { merge, fns, pred, custom, consts: { SPEC, D }, extra: { WBI } }; };
     if (PK) { const T1 = TM(); G.CASTLE_PACK.restore(PK, anchors()); for (const B of S.bridges) brFns(B); S.tm = { pack: TM() - T1 }; S.fromPack = true; }
+    if (!PK) for (const g of R) for (const e of g.edges) { delete e._cap; delete e._sf; } // r8：隅线/坡率的惰性缓存（Map，键是台地面对象）不进结果包——用到时现场重建（值由边与台地面确定）
     S._anchors = anchors;
-    S._dbg = PK ? null : { splitCell, cellPoly, edgePts, opZ, opM, clsSurf, clsAt, ozEdges, edgeZ, bandAt: (e, x, y) => bandAt(e, x, y) }; // 只供调试/测试脚本用（读包时没有：切分器的内部表没有建）
+    S._dbg = PK ? null : { envLab, labZ, splitCell, cellPoly, edgePts, opZ, opM, clsSurf, clsAt, ozEdges, edgeZ, bandAt: (e, x, y) => bandAt(e, x, y) }; // 只供调试/测试脚本用（读包时没有：切分器的内部表没有建）
     S.ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
     S.audit = () => audit(S); S.signature = () => signature(S);
     return S;
@@ -1563,6 +1738,72 @@
         if (Math.abs(bat - des) > CF.batTol || des < CF.batRange[0] - 1e-9 || des > CF.batRange[1] + 1e-9 || toeDz > CF.tol) { const w = E21.get(e) || { e, g, n: 0, bat, des, toe: 0, x: tx, y: ty }; w.n++; if (Math.abs(bat - des) > Math.abs(w.bat - des)) w.bat = bat; w.toe = Math.max(w.toe, toeDz); E21.set(e, w); }
       }
     }
+    // r8（S1）：隅线（出隅/入隅）与顶线转角——不再跳过。参考值只用规格（M07 的锐角隅线）：两面石垣各是平面 F(p) = zl(t) + s·d(p)，
+    // 隅线 = {F_e = F_f}，从墙脚顶点 V 升到顶线转角 C（两条顶线 {F = 台地面} 的交点）；出隅处地面 = 两面的低者，入隅处 = 高者。
+    // 量：① C 处高度 = 台地顶，沿隅线从 C 往下“开始下降 5 cm”的位置与解析值偏差 ≤ tol（H19）；② 隅线上 1/4、1/2、3/4 处高度 = F（±tol），
+    // 隅线两侧 0.3 m 处高度 = 两面的低者/高者（锐角，不是圆角）（H21）。
+    // 只量规则说“这里是一条隅线”的转角：同一环上首尾相接、两边都有石垣、顶点处下层同高（不同下层在此相接 = 两种台地交汇，没有隅线）；
+    // 不量：颈切线/外圈带/内环（与边断面同一范围）、坡道/土桥/桥台改过的地方（边线由那些规则定义）、隅线没到顶（C 离 V 远于两边各自的最大退距 ×3，
+    // 即两条顶线几乎平行）、隅线 V→C 被别的曲轮边穿过、或被第三面石垣截断（隅线中点处有第三面比这两面更起作用——短边在直骨架里消失，
+    // 那里的形状由三面共同决定，量第三面所在的边断面）。
+    // 交汇处的解析参考（审计自己的实现，不调用生成器）：RULES §2“锐角隅线”的组合规则——
+    // 每面石垣是平面 F_e；段内按到墙脚的距离；有隅线的一端越过端点后是平面延伸（只在与紧邻面的楔形内）；没有隅线的一端 = 锥面收头；
+    // 端点处“让位”：出隅 F_e > F_邻、入隅 F_e < F_邻 时让给邻面，但邻面自己在另一端也不让位时才算（递归 3 层）；地面 = min(台地面, 各面)。
+    const ADJ = new Map(); for (const g of S.regions) { const E = g.edges; for (let k = 0; k < E.length; k++) for (let m = 0; m < E.length; m++) { const e = E[k], f = E[m]; if (e !== f && e.ring >= 0 && e.ring === f.ring && Math.abs(e.bx - f.ax) < 1e-9 && Math.abs(e.by - f.ay) < 1e-9 && E.length > 1) { const turn = e.tx * f.ty - e.ty * f.tx; ADJ.set(e, Object.assign(ADJ.get(e) || {}, { n: f, cvxB: turn * -(e.tx * e.ny - e.ty * e.nx) >= 0 })); ADJ.set(f, Object.assign(ADJ.get(f) || {}, { p: e, cvxA: turn * -(e.tx * e.ny - e.ty * e.nx) >= 0 })); break; } } }
+    const capR = (e, f, ze, zf) => !!(f && f.B && !e.chord && !f.chord && Math.abs(ze - zf) < 0.01 && !(f.band || f.mixed || e.band || e.mixed));
+    const pln = (e, x, y) => { const dx = e.bx - e.ax, dy = e.by - e.ay, t = ((x - e.ax) * dx + (y - e.ay) * dy) / (dx * dx + dy * dy); return e.zlA + (e.zlB - e.zlA) * t + e.s * ((x - e.ax) * -e.nx + (y - e.ay) * -e.ny); };
+    const yld = (f, end, x, y, hz, dp) => { const a = ADJ.get(f) || {}, nb = end === 'A' ? a.p : a.n; if (!nb || !capR(f, nb, end === 'A' ? f.zlA : f.zlB, end === 'A' ? nb.zlB : nb.zlA)) return false; const cvx = end === 'A' ? a.cvxA : a.cvxB, hn = pln(nb, x, y);
+      if (cvx ? !(hz > hn) : !(hz < hn)) return false; return dp <= 0 ? true : !yld(nb, end, x, y, hn, dp - 1); };
+    const refZ = (g, x, y, EL) => { const sf = g.surf, top = sf.at(x, y); let z = top;
+      for (const e of EL || g.edges) { if (!e.B || e.band) continue; const dx = e.bx - e.ax, dy = e.by - e.ay, l = dx * dx + dy * dy, t = ((x - e.ax) * dx + (y - e.ay) * dy) / l, a = ADJ.get(e) || {}, cA = capR(e, a.p, e.zlA, a.p && a.p.zlB), cB = capR(e, a.n, e.zlB, a.n && a.n.zlA);
+        let hz; if (t >= 0 && t <= 1 || (t < 0 && !cA) || (t > 1 && !cB)) { const tc = Math.min(1, Math.max(0, t)); hz = e.zlA + (e.zlB - e.zlA) * tc + e.s * Math.hypot(x - e.ax - dx * tc, y - e.ay - dy * tc); if (tc !== t) { if (hz < z) z = hz; continue; } }
+        else { if ((x - e.ax) * -e.nx + (y - e.ay) * -e.ny < 0) continue; hz = pln(e, x, y); }
+        if (hz >= z) continue; if ((cA && yld(e, 'A', x, y, hz, t < 0 ? 0 : 3)) || (cB && yld(e, 'B', x, y, hz, t > 1 ? 0 : 3))) continue; z = hz; }
+      return z; };
+    const CLM = new Map(); const cliffNear = (x, y) => { for (const h of EB.get(Math.floor(x / 8) * 100003 + Math.floor(y / 8)) || []) { if (segDist(x, y, h.ax, h.ay, h.bx, h.by) > c) continue; const t3 = Math.min(1, Math.max(0, segT(x, y, h.ax, h.ay, h.bx, h.by))), mk = h.len ? Math.round(t3 * h.len / 0.25) : 0; let mm = CLM.get(h); if (!mm) CLM.set(h, mm = new Map()); let cl2 = mm.get(mk); // 只为提速：沿边每 0.25 m 记一次
+        if (cl2 === undefined) { const t4 = h.len ? Math.min(1, mk * 0.25 / h.len) : 0, fx = h.ax + (h.bx - h.ax) * t4, fy = h.ay + (h.by - h.ay) * t4; const zz = [1, -1].map(sg => { const px = fx + h.nx * 0.01 * sg, py = fy + h.ny * 0.01 * sg, z2 = S.zoneAt(px, py); return !z2 ? S.bedAt(px, py) : z2 === S.BAND ? NaN : refZ(z2, px, py); }); cl2 = !(Math.abs(zz[0] - zz[1]) <= 0.3); mm.set(mk, cl2); }
+        if (cl2) return true; } return false; };
+    const C19 = [], C21 = [], CSEC = []; let nC = 0, nCskip = 0, nJ = 0, nJc = 0; const CSK = {}, sk = w => { nCskip++; CSK[w] = (CSK[w] || 0) + 1; };
+    const plF = (e, x, y) => { const dx = e.bx - e.ax, dy = e.by - e.ay, l = dx * dx + dy * dy, t = ((x - e.ax) * dx + (y - e.ay) * dy) / l; return e.zlA + (e.zlB - e.zlA) * t + e.s * ((x - e.ax) * -e.nx + (y - e.ay) * -e.ny); };
+    for (const g of S.regions) { const sf = g.surf, E = g.edges.filter(e => e.ring >= 0);
+      for (let k = 0; k < E.length; k++) { const e = E[k], f = E[(k + 1) % E.length]; if (e.ring !== f.ring || Math.abs(e.bx - f.ax) > 1e-9 || Math.abs(e.by - f.ay) > 1e-9) continue;
+        if (!e.B || !f.B || e.chord || f.chord || e.band || f.band || e.mixed || f.mixed || Math.abs(e.zlB - f.zlA) > 0.01) continue;
+        const turn = e.tx * f.ty - e.ty * f.tx; if (Math.abs(turn) < 0.05) continue; // 近乎共线：没有隅线（两面直接拼接）
+        const cvx = turn * -(e.tx * e.ny - e.ty * e.nx) >= 0, vx = e.bx, vy = e.by;
+        // ⓪ 交汇处（不跳过第三面/别的曲轮边）：顶点周围（半径 = 两面最大退距 + 0.5 m，≤ 6 m）极坐标采样，渲染面 = 组合规则的解析值（refZ）
+        if (!exempt(vx, vy) && !g.edges.some(h => h.mixed && segDist(vx, vy, h.ax, h.ay, h.bx, h.by) < h.Bmax + 6)) { const Rj = Math.min(6, Math.max(e.Bmax, f.Bmax) + 0.5), EL = g.edges.filter(h => segDist(vx, vy, h.ax, h.ay, h.bx, h.by) < Rj + 3 * h.Bmax + 1); let wj = 0, wx = 0, wy = 0, nj = 0; // 只为提速：够不着的边不参与（一面的影响范围 ≤ 退距的 3 倍）
+          for (let r = 0.25; r <= Rj; r += 0.5) for (let a = 0; a < 24; a++) { const x = vx + Math.cos(a * Math.PI / 12) * r, y = vy + Math.sin(a * Math.PI / 12) * r, i2 = Math.round((x - x0) / c), j2 = Math.round((y - y0) / c);
+            if (i2 < 4 || j2 < 4 || i2 >= NX - 5 || j2 >= NY - 5 || S.zoneAt(x, y) !== g || S.CLS[j2 * NX + i2] !== g.i || exempt(x, y)) continue; const zr = refZ(g, x, y, EL); if (zr < S.wzAt(x, y) + 0.05) continue;
+            if (EL.some(h => segDist(x, y, h.ax, h.ay, h.bx, h.by) < 0.05)) continue; // 紧贴墙脚线不量
+            if (cliffNear(x, y)) continue; // 类边界两侧解析值差 > 0.3 m（台阶：高度场三角网没有竖直面，只能在一格内线性过渡）一格（1.5 m）内不量；墙脚高度由边断面的 H21 量
+            nj++; const d2 = Math.abs(hA(x, y) - zr); if (d2 > wj) { wj = d2; wx = x; wy = y; } }
+          nJ += nj; if (nj) nJc++; if (wj > CF.tol) C21.push({ g, x: wx, y: wy, worst: wj, cvx, junction: true }); }
+        // 顶线转角 C：F_e = 面、F_f = 面（各是平面 → 2×2 线性方程）
+        const lin = fn => { const a = fn(vx, vy); return [fn(vx + 1, vy) - a, fn(vx, vy + 1) - a, a]; }, A1 = lin((x, y) => plF(e, x, y) - sf.at(x, y)), A2 = lin((x, y) => plF(f, x, y) - sf.at(x, y)), det = A1[0] * A2[1] - A1[1] * A2[0];
+        if (Math.abs(det) < 1e-9) { sk('par'); continue; } const ux = (-A1[2] * A2[1] + A2[2] * A1[1]) / det, uy = (-A1[1] === 0 && 0) || (A1[2] * A2[0] - A2[2] * A1[0]) / det, cx = vx + ux, cy = vy + uy, L = Math.hypot(ux, uy);
+        if (L > 3 * Math.max(e.Bmax, f.Bmax) + 1 || L < 0.5) { sk('far'); continue; }
+        const top = sf.at(cx, cy), zV = (e.zlB + f.zlA) / 2, wz = S.wzAt(vx, vy);
+        if (top - Math.max(zV, wz) < 1 || exempt(cx, cy) || exempt(vx, vy) || exempt((cx + vx) / 2, (cy + vy) / 2)) { sk('low'); continue; }
+        { const vi = Math.round((cx - x0) / c), vj = Math.round((cy - y0) / c); if (vi < 4 || vj < 4 || vi >= NX - 5 || vj >= NY - 5) { sk('grid'); continue; } }
+        if ((() => { for (const h of EB.get(Math.floor(cx / 8) * 100003 + Math.floor(cy / 8)) || []) { if (h === e || h === f) continue; const r = segX([cx, cy], [vx + (cx - vx) * 0.05, vy + (cy - vy) * 0.05], [h.ax, h.ay], [h.bx, h.by]); if (r && r[0] >= 0 && r[0] <= 1 && r[1] >= 0 && r[1] <= 1) return true; } return false; })()) { sk('cross'); continue; }
+        // 与边断面同一条件：C 与隅线上的点都归本曲轮（二之丸外缘的外圈带按格点归属，是另一张台地面）
+        if ([0, 0.25, 0.5, 0.75].some(fr => { const x = cx + (vx - cx) * fr, y = cy + (vy - cy) * fr, q2 = Math.round((y - y0) / c) * NX + Math.round((x - x0) / c); return S.zoneAt(x, y) !== g || S.CLS[q2] !== g.i; })) { sk('zone'); continue; }
+        // 第三面截断：C 或隅线上的点处，另一面（本曲轮有石垣的边，点在它内侧、在它够得着的范围内）的平面比这两面更低 → 那里的形状由三面决定，不按两面隅线量
+        const third = (x, y, F) => E.some(h => h !== e && h !== f && h.B && !h.band && !h.chord && ((x - h.ax) * -h.nx + (y - h.ay) * -h.ny) > -1e-9 && segDist(x, y, h.ax, h.ay, h.bx, h.by) < h.Bmax * 1.5 + 1 && plF(h, x, y) < F - 0.02);
+        if ([0, 0.25, 0.5, 0.75].some(fr => { const x = cx + (vx - cx) * fr, y = cy + (vy - cy) * fr; return third(x, y, fr === 0 ? top : plF(e, x, y)); })) { sk('third'); continue; }
+        nC++; CSEC.push({ g: g.i, region: g.name, vx, vy, cx, cy, cvx, top, zV, s: e.s });
+        // ① H19：C 处 = 台地顶；从 C 沿隅线往 V 走，第一次低于 top − drop 的位置 = drop / (沿隅线的坡度)
+        const dx = (vx - cx) / L, dy = (vy - cy) / L, rate = (top - plF(e, cx + dx, cy + dy)) - (top - sf.at(cx + dx, cy + dy)) + (sf.at(cx + dx, cy + dy) - top); // 每米沿隅线面相对 C 的下降
+        const grade = (plF(e, cx, cy) - plF(e, cx + dx, cy + dy)), dExp = CF.drop / grade, dF = firstBelow(cx, cy, dx, dy, -0.3, Math.min(L, 2.0), top - CF.drop), dev = dF === null ? 9 : Math.abs(dF - dExp), dzc = Math.abs(hA(cx, cy) - top); void rate;
+        if (dev > CF.tol || dzc > CF.tol) C19.push({ g, x: cx, y: cy, dev, dz: dzc, cvx });
+        // ② H21：隅线上的高度、两侧 0.3 m 的锐角
+        let worst = 0; const px2 = -dy, py2 = dx;
+        for (const fr of [0.25, 0.5, 0.75]) { const x = cx + (vx - cx) * fr, y = cy + (vy - cy) * fr, F = plF(e, x, y); if (F < S.wzAt(x, y) + 0.05) continue; worst = Math.max(worst, Math.abs(hA(x, y) - F));
+          for (const sd of [-0.3, 0.3]) { const x2 = x + px2 * sd, y2 = y + py2 * sd, a = plF(e, x2, y2), b = plF(f, x2, y2), zr = cvx ? Math.min(a, b) : Math.max(a, b); if (zr < S.wzAt(x2, y2) + 0.05 || zr > sf.at(x2, y2)) continue; worst = Math.max(worst, Math.abs(hA(x2, y2) - zr)); } }
+        if (worst > CF.tol) C21.push({ g, x: (cx + vx) / 2, y: (cy + vy) / 2, worst, cvx });
+      } }
+    for (const w of C19) bad('H19', { name: w.g.name + '顶线转角', x: w.x, y: w.y }, (w.cvx ? '出隅' : '入隅') + '顶线转角不齐：沿隅线开始下降的位置偏差 ' + w.dev.toFixed(2) + ' m、转角高差 ' + w.dz.toFixed(2) + ' m（> ' + CF.tol + ' m）');
+    for (const w of C21) bad('H21', { name: w.g.name + (w.junction ? '石垣交汇处' : '石垣隅线'), x: w.x, y: w.y }, (w.cvx ? '出隅' : '入隅') + (w.junction ? '交汇处：渲染面与组合规则的解析面高差最大 ' : '隅线：与两平面相交的锐角隅线高差最大 ') + w.worst.toFixed(2) + ' m（> ' + CF.tol + ' m，圆角/错位）');
     for (const w of E19.values()) bad('H19', { name: w.g.name + '石垣顶线', x: w.x, y: w.y }, w.n + ' 处顶线不齐：水平偏差最大 ' + w.dev.toFixed(2) + ' m、高差 ' + w.dz.toFixed(2) + ' m（> ' + CF.tol + ' m，台阶状）');
     for (const w of E21.values()) bad('H21', { name: w.g.name + '石垣面', x: w.x, y: w.y }, w.n + ' 处勾配不符：实测 ' + w.bat.toFixed(2) + ' / 设计 ' + w.des.toFixed(2) + (w.toe > CF.tol ? '，墙脚高差 ' + w.toe.toFixed(2) + ' m' : ''));
     // H20：有防御线的曲轮地面——①地面三角形坡度 ≤ floorMax（坡道/土桥/桥台改过的格除外）；②没有积水坑（优先队列洪泛：从曲轮边界往里，水位 = 路径上的最高点，深 > pit 计坑）
@@ -1590,7 +1831,8 @@
       let pits = 0, px = 0, py = 0, dmax = 0; for (const q of IDX) if (inG(q) && spill[q] - S.H[q] > CF.pit) { pits++; if (spill[q] - S.H[q] > dmax) { dmax = spill[q] - S.H[q]; px = S.X(q % NX); py = S.Y((q - q % NX) / NX); } }
       if (pits) bad('H20', { name: g.name + '地面', x: px, y: py }, pits + ' 个格点积水（最深 ' + dmax.toFixed(2) + ' m，排不出去）');
     }
-    return { samples: n19, sections: SEC, secs: SECR };
+    S._refZ = refZ;
+    return { samples: n19, sections: SEC, secs: SECR, corners: nC, junctionPts: nJ, junctions: nJc, cornerSkip: nCskip, cornerSkipWhy: CSK, cornerSecs: CSEC };
   }
 
   function signature(S) {
