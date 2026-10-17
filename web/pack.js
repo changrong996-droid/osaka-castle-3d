@@ -11,7 +11,7 @@
 //   二进制块的编码只为压缩率（逐位还原）：Float64/Int32/Int16 按字节分面（byte shuffle）；高度场先与一个“预测”逐位异或（预测命中 = 0）。
 // 键 key = hash(site.js 源码) + hash(数据) + 选项；任一项不同 → 不用包、现场生成（行为与没有包时相同）。
 (function (G) {
-  const FMT = 1;
+  const FMT = 2; // r8：gridTris 分量按 格线/1024 格/单精度/Float64 四种存
   const fnv = (s, h) => { h = h === undefined ? 2166136261 : h; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; };
   const hex = h => ('00000000' + (h >>> 0).toString(16)).slice(-8);
   const TA = { Float64Array, Float32Array, Int32Array, Uint32Array, Int16Array, Uint16Array, Uint8Array, Int8Array };
@@ -34,38 +34,50 @@
 
   // ---------- 专用编码：格网上的切分三角网（SPT：[{q, tris, kind, H}]）----------
   // 顶点按位去重；新顶点记“类型”：x/y 是否正好是格线坐标（X(i)/Y(j)，用 build 的同一个函数求）、z 是否 = 格点最终高度 H、或 = 某个台地面在 (x,y) 的值；
-  // 只有猜不中的分量才存 Float64。每个切分格的 4 个角点高度与最终 H 逐位异或。全部逐位还原。
+  // r8（FMT 2）：x/y 另有“1/1024 m 格”（格边切点，存整数）与“单精度”（格内新点，存 Float32）两种；z 另有“单精度”。只有都不是的分量才存 Float64。每个切分格的 4 个角点高度与最终 H 逐位异或。全部逐位还原。
+  // 墙脚切点：格边（x0,y0)→(x1,y1) 与墙脚段 n 的交点，与 site.js edgePts 逐项同式（结果逐位相同）
+  const toeP = (TO, n, x0, y0, x1, y1) => { const e = TO[n], rx = x1 - x0, ry = y1 - y0, sx = e[2] - e[0], sy = e[3] - e[1], den = rx * sy - ry * sx, qx = e[0] - x0, qy = e[1] - y0, r0 = (qx * sy - qy * sx) / den; return [x0 + rx * r0, y0 + ry * r0]; };
   const GT = {
     enc(arr, P, put) {
       const n = arr.length, Q = new Int32Array(n), K = new Uint8Array(n), L = new Int32Array(n), HC = new Float64Array(4 * n), kinds = [];
-      const ref = vw(), nv = vw(), fl = []; const map = new Map(); let nU = 0, pi = 0, pj = 0; const f64 = new Float64Array(1), u32 = new Uint32Array(f64.buffer), H = P.H;
-      const bits = x => { f64[0] = x; return u32[0] + ':' + u32[1]; };
+      const ref = vw(), nv = vw(), fl = []; const map = new Map(); let nU = 0; const f64 = new Float64Array(1), u32 = new Uint32Array(f64.buffer), H = P.H;
+      const bits = x => { f64[0] = x; return u32[0] + ':' + u32[1]; }, f32 = [];
+      // 分量的存法：1 = 格线坐标 X(i)；2 = 1/1024 m 格（X(i) + k/1024，格边上的切点）；3 = 单精度可表示（格内新点）；0 = Float64
+      // 4 = 墙脚切点（另一分量在格线上；存墙脚段号 + 格边起点偏移，按 toeP 重算）
+      const TO = P.toe, TB = new Map(), TBS = P.c * 4; TO.forEach((e, n) => { for (let a = Math.floor(Math.min(e[0], e[2]) / TBS); a <= Math.floor(Math.max(e[0], e[2]) / TBS); a++) for (let b = Math.floor(Math.min(e[1], e[3]) / TBS); b <= Math.floor(Math.max(e[1], e[3]) / TBS); b++) { const k = a * 100003 + b; let L = TB.get(k); if (!L) TB.set(k, L = []); L.push(n); } });
+      let pn = 0; const lv = vw(), iv = vw(), tv = vw(); const toeFind = (x, y, i, j, alongX) => { for (const n of TB.get(Math.floor(x / TBS) * 100003 + Math.floor(y / TBS)) || []) for (let o = 0; o < 2; o++) { const p = alongX ? toeP(TO, n, P.X(i - o), P.Y(j), P.X(i - o + 1), P.Y(j)) : toeP(TO, n, P.X(i), P.Y(j - o), P.X(i), P.Y(j - o + 1)); if (p[0] === x && p[1] === y) return [n, o]; } return null; };
+      const cm = (v, b) => v === b ? 1 : b + Math.round((v - b) * 1024) / 1024 === v ? 2 : Math.fround(v) === v ? 3 : 0, put1 = (m, v, b) => { if (m === 2) lv.z(Math.round((v - b) * 1024)); else if (m === 3) f32.push(v); else if (!m) fl.push(v); };
       for (let e = 0; e < n; e++) { const t = arr[e]; if (Object.keys(t).join() !== 'q,tris,kind,H' || !(t.tris instanceof Float64Array) || !t.H || t.H.length !== 4 || t.tris.length % 3) throw new Error('pack: SPT shape');
         const q = t.q; Q[e] = q; let ki = kinds.indexOf(t.kind); if (ki < 0) { ki = kinds.length; kinds.push(t.kind); } K[e] = ki; L[e] = t.tris.length / 3;
         const cq = [q, q + 1, q + P.NX, q + P.NX + 1]; for (let k = 0; k < 4; k++) HC[4 * e + k] = t.H[k];
-        const T = t.tris;
+        const T = t.tris, qi = q % P.NX, qj = (q - qi) / P.NX, pt = [-1, -1, -1], ct = [-1, -1, -1]; // 引用：0 = 新点；1–3 = 上一个三角形的第 1–3 个点；其余 = 3 + 往回数第几个点
         for (let v = 0; v < T.length; v += 3) { const x = T[v], y = T[v + 1], z = T[v + 2], key = bits(x) + ',' + bits(y) + ',' + bits(z); const u = map.get(key);
-          if (u !== undefined) { ref.u(nU - u); continue; } map.set(key, nU++); ref.u(0);
-          const i = Math.round((x - P.x0) / P.c), j = Math.round((y - P.y0) / P.c), xg = P.X(i) === x, yg = P.Y(j) === y; let ty = (xg ? 1 : 0) | (yg ? 2 : 0), zk = 0;
-          if (xg && yg && i >= 0 && j >= 0 && i < P.NX && j < P.NY && H[j * P.NX + i] === z) ty |= 4; else for (let k = 0; k < P.zf.length; k++) if (P.zf[k](x, y) === z) { zk = k + 1; break; }
-          nv.u(ty | (zk << 3)); nv.z(i - pi); nv.z(j - pj); pi = i; pj = j; if (!xg) fl.push(x); if (!yg) fl.push(y); if (!(ty & 4) && !zk) fl.push(z); } }
+          const tv3 = (v / 3) % 3; if (tv3 === 0 && v) { pt[0] = ct[0]; pt[1] = ct[1]; pt[2] = ct[2]; }
+          if (u !== undefined) { ct[tv3] = u; ref.u(u === pt[0] ? 1 : u === pt[1] ? 2 : u === pt[2] ? 3 : 3 + nU - u); continue; } ct[tv3] = nU; map.set(key, nU++); ref.u(0);
+          const i = Math.round((x - P.x0) / P.c), j = Math.round((y - P.y0) / P.c), bx = P.X(i), by = P.Y(j), mx = cm(x, bx), my = cm(y, by); let mz = 0, zk = 0;
+          if (mx === 1 && my === 1 && i >= 0 && j >= 0 && i < P.NX && j < P.NY && H[j * P.NX + i] === z) mz = 1; else { for (let k = 0; k < P.zf.length; k++) if (P.zf[k](x, y) === z) { zk = k + 1; mz = 2; break; } if (!mz && Math.fround(z) === z) mz = 3; }
+          let tf = null; if (mx === 0 && my === 1) tf = toeFind(x, y, i, j, true); else if (mx === 1 && my === 0) tf = toeFind(x, y, i, j, false);
+          const hx = tf && !mx ? 4 : mx, hy = tf && !my ? 4 : my;
+          nv.u(hx + 5 * (hy + 5 * (mz + 4 * zk))); iv.z(i - qi); iv.z(j - qj); if (tf) { tv.z(tf[0] - pn); pn = tf[0]; tv.u(tf[1]); } if (hx !== 4) put1(mx, x, bx); if (hy !== 4) put1(my, y, by); if (mz === 3) f32.push(z); else if (!mz) fl.push(z); } }
       for (let e = 0; e < n; e++) { const q = Q[e], cq = [q, q + 1, q + P.NX, q + P.NX + 1]; f64[0] = 0; for (let k = 0; k < 4; k++) { const a = new Float64Array([HC[4 * e + k], H[cq[k]]]), w = new Uint32Array(a.buffer); w[0] ^= w[2]; w[1] ^= w[3]; HC[4 * e + k] = a[0]; } }
       for (let e = n - 1; e > 0; e--) Q[e] -= Q[e - 1];
-      return { n, kinds, b: { Q: put(Q), K: put(K), L: put(L), HC: put(HC), R: put(ref.out()), V: put(nv.out()), F: put(new Float64Array(fl)) } };
+      return { n, kinds, toe: TO, b: { Q: put(Q), K: put(K), L: put(L), HC: put(HC), R: put(ref.out()), V: put(nv.out()), VI: put(iv.out()), VT: put(tv.out()), VL: put(lv.out()), F: put(new Float64Array(fl)), F4: put(new Float32Array(f32)) } };
     },
     dec(j, P, get, target) {
-      const n = j.n, Q = get(j.b.Q).slice(), K = get(j.b.K), L = get(j.b.L), HC = get(j.b.HC), R = vr(get(j.b.R)), V = vr(get(j.b.V)), F = get(j.b.F), H = P.H;
+      const n = j.n, TO = j.toe, Q = get(j.b.Q).slice(), K = get(j.b.K), L = get(j.b.L), HC = get(j.b.HC), R = vr(get(j.b.R)), V = vr(get(j.b.V)), VI = vr(get(j.b.VI)), VT = vr(get(j.b.VT)), VL = vr(get(j.b.VL)), F = get(j.b.F), F4 = get(j.b.F4), H = P.H; let f4 = 0; const g1 = (m, b) => m === 1 ? b : m === 2 ? b + VL.z() / 1024 : m === 3 ? F4[f4++] : F[fp++];
       for (let e = 1; e < n; e++) Q[e] += Q[e - 1];
-      let tot = 0; for (let e = 0; e < n; e++) tot += L[e]; const ALL = new Float64Array(tot * 3); const U = []; let fp = 0, pi = 0, pj = 0, o = 0;
+      let tot = 0; for (let e = 0; e < n; e++) tot += L[e]; const ALL = new Float64Array(tot * 3); const U = []; let fp = 0, o = 0, pn = 0;
       const xr = new Float64Array(2), xw = new Uint32Array(xr.buffer);
       target.length = n;
       for (let e = 0; e < n; e++) { const q = Q[e], cq = [q, q + 1, q + P.NX, q + P.NX + 1], Hc = new Array(4);
         for (let k = 0; k < 4; k++) { xr[0] = HC[4 * e + k]; xr[1] = H[cq[k]]; xw[0] ^= xw[2]; xw[1] ^= xw[3]; Hc[k] = xr[0]; }
-        const o0 = o;
-        for (let v = 0; v < L[e]; v++) { const r = R.u(); let x, y, z;
-          if (r) { const u = U.length / 3 - r; x = U[3 * u]; y = U[3 * u + 1]; z = U[3 * u + 2]; }
-          else { const tz = V.u(), ty = tz & 7, zk = tz >> 3, i = pi + V.z(), jj = pj + V.z(); pi = i; pj = jj;
-            x = ty & 1 ? P.X(i) : F[fp++]; y = ty & 2 ? P.Y(jj) : F[fp++]; z = ty & 4 ? H[jj * P.NX + i] : zk ? P.zf[zk - 1](x, y) : F[fp++]; U.push(x, y, z); }
+        const o0 = o, qi = q % P.NX, qj = (q - qi) / P.NX;
+        const pt = [-1, -1, -1], ct = [-1, -1, -1];
+        for (let v = 0; v < L[e]; v++) { const r = R.u(), tv3 = v % 3; let x, y, z; if (tv3 === 0 && v) { pt[0] = ct[0]; pt[1] = ct[1]; pt[2] = ct[2]; }
+          if (r) { const u = r <= 3 ? pt[r - 1] : U.length / 3 - (r - 3); ct[tv3] = u; x = U[3 * u]; y = U[3 * u + 1]; z = U[3 * u + 2]; }
+          else { const tz = V.u(), mx = tz % 5, my = Math.floor(tz / 5) % 5, mz = Math.floor(tz / 25) % 4, zk = Math.floor(tz / 100), i = qi + VI.z(), jj = qj + VI.z();
+            if (mx === 4 || my === 4) { const nn = pn + VT.z(), oo = VT.u(); pn = nn; const p = mx === 4 ? toeP(TO, nn, P.X(i - oo), P.Y(jj), P.X(i - oo + 1), P.Y(jj)) : toeP(TO, nn, P.X(i), P.Y(jj - oo), P.X(i), P.Y(jj - oo + 1)); x = p[0]; y = p[1]; }
+            else { x = g1(mx, P.X(i)); y = g1(my, P.Y(jj)); } z = mz === 1 ? H[jj * P.NX + i] : mz === 2 ? P.zf[zk - 1](x, y) : mz === 3 ? F4[f4++] : F[fp++]; ct[tv3] = U.length / 3; U.push(x, y, z); }
           ALL[o++] = x; ALL[o++] = y; ALL[o++] = z; }
         target[e] = { q, tris: ALL.subarray(o0, o), kind: j.kinds[K[e]], H: Hc }; }
       return target;
