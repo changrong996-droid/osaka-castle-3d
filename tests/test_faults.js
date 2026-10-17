@@ -33,6 +33,11 @@ const F = [
   // 墙脚抬高：勾配面下部 1/3 被填成平台（面没有落到下层）
   ['H21', '石垣脚线处地面被抬高（勾配面没落到下层）', S => { const zf = SEC.zlow + (SEC.top - SEC.zlow) / 3; unsplit(S, SEC.cx, SEC.cy, R); near(S, SEC.cx, SEC.cy, R, q => { if (S.TAG[q] === 1 && S.H[q] < zf) S.H[q] = zf; }); }],
   ['H21', '石垣面陡成近乎垂直（勾配被拉直）', S => { const zm = (SEC.top + SEC.zl) / 2; unsplit(S, SEC.cx, SEC.cy, R); near(S, SEC.cx, SEC.cy, R, q => { if (S.TAG[q] === 1) { const x = S.X(q % S.NX), y = S.Y(Math.floor(q / S.NX)); S.H[q] = S.H[q] > zm ? S.regions[SEC.g].zAt(x, y) : SEC.zl; } }); }],
+  // r8（S1）：锐角隅线——把一个入隅改回 r7b 的圆角（到墙脚顶点的距离 → 锥面）。转角从基线审计实际量过的隅线里取（S.conf.cornerSecs：入隅、落差最大）
+  ['H21', '入隅改成圆角（锥面）', S => { const C = (S0.conf.cornerSecs || []).filter(c => !c.cvx).sort((a, b) => (b.top - b.zV) - (a.top - a.zV))[0]; if (!C) throw new Error('基线没有量过的入隅');
+    const L = Math.hypot(C.cx - C.vx, C.cy - C.vy) * 1.2, cone = (x, y) => Math.min(C.top, C.zV + C.s * Math.hypot(x - C.vx, y - C.vy));
+    for (const sp of S.splitTris) { const T = sp.tris; for (let t = 0; t < T.length; t += 3) if (Math.hypot(T[t] - C.vx, T[t + 1] - C.vy) < L && S.zoneAt(T[t], T[t + 1]) === S.regions[C.g]) T[t + 2] = Math.max(T[t + 2], cone(T[t], T[t + 1])); }
+    near(S, C.vx, C.vy, L, q => { const x = S.X(q % S.NX), y = S.Y(Math.floor(q / S.NX)); if (S.CLS[q] === C.g) S.H[q] = Math.max(S.H[q], cone(x, y)); }); }],
 ];
 // 辅助：在 (x, y) 周围 r m 内
 function near(S, x, y, r, f) { for (let j = 0; j < S.NY; j++) { const dy = S.Y(j) - y; if (Math.abs(dy) > r) continue; for (let i = 0; i < S.NX; i++) { const dx = S.X(i) - x; if (dx * dx + dy * dy <= r * r) f(j * S.NX + i); } } }
