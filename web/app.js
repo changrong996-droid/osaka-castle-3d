@@ -17,6 +17,24 @@
 
   // r8a：预构建结果包（web/bake/，tools/bake.js 生成）。键 = site.js 源码哈希 + 数据哈希 + 选项，与清单（bake/manifest.js）里的一致才下载；
   // 下载与 three.js 的加载并行；任何一步失败（file://、没有 DecompressionStream、键不符、解码出错）都退回现场生成，结果相同。
+  let PACK_RAW = null;
+  // r8（S1）：首次加载的 H 审计放进 Web Worker（不占主线程：审计 ~2.5 s 时页面照常可拖动/缩放）。Worker 用同一份 data.js/pack.js/site.js 源码
+  // （按页面上 <script src> 的地址取文本拼成 Blob，htmlpreview 下也可用）读同一个包、跑 audit()，回传签名 + 计数 + 条目（纯数据）。
+  // 签名与主线程不同、Worker 出错、或有违规（要在主线程标红部件）→ 退回主线程 site.audit()（结果相同，只是会卡一下）。
+  function auditInWorker(opt) {
+    if (!PACK_RAW || typeof Worker === 'undefined' || typeof Blob === 'undefined' || location.protocol === 'file:') return Promise.reject(new Error('no worker'));
+    const pick = n => { const el = [...document.querySelectorAll('script[src]')].find(e => new RegExp('(^|/)' + n + '\\.js(\\?|$)').test(e.getAttribute('src'))); return el ? el.src : new URL(n + '.js', document.baseURI).href; };
+    return Promise.all(['data', 'pack', 'site'].map(n => fetch(pick(n)).then(r => { if (!r.ok) throw new Error(n + ' ' + r.status); return r.text(); }))).then(src => new Promise((res, rej) => {
+      const body = src.join('\n;\n') + '\n;\n(' + function () {
+        self.onmessage = async e => { try { const t0 = Date.now(), PK = self.CASTLE_PACK, P = PK.parse(await PK.gunzip(e.data.raw)), S = self.CASTLE_SITE.build(Object.assign({}, e.data.opt, { pack: P })), A = S.audit();
+          const prim = o => { const r = {}; for (const k in o) { const v = o[k]; if (v === null || typeof v !== 'object' && typeof v !== 'function') r[k] = v; } return r; };
+          self.postMessage({ sig: S.signature(), total: A.total, cnt: A.cnt, rules: A.rules.map(prim), items: A.items.map(prim), ms: Date.now() - t0 }); } catch (err) { self.postMessage({ err: String(err && err.message || err) }); } };
+      }.toString() + ')();';
+      const url = URL.createObjectURL(new Blob([body], { type: 'text/javascript' })), w = new Worker(url);
+      w.onmessage = e => { w.terminate(); URL.revokeObjectURL(url); e.data.err ? rej(new Error(e.data.err)) : res(e.data); };
+      w.onerror = e => { w.terminate(); URL.revokeObjectURL(url); rej(new Error('worker: ' + (e.message || 'error'))); };
+      w.postMessage({ raw: PACK_RAW, opt: { seed: opt.seed, lost: opt.lost, cell: opt.cell } }); }));
+  }
   async function loadPack(o) {
     const PK = window.CASTLE_PACK, MAN = window.CASTLE_BAKE;
     if (!PK || !MAN || location.protocol === 'file:' || o.cell !== SITE.SPEC.grid.cell || !o.usePack) return null;
@@ -24,6 +42,7 @@
     const t0 = performance.now(), r = await fetch(ent.file + '?k=' + key.split('-')[1]); if (!r.ok) throw new Error('pack ' + r.status);
     const raw = new Uint8Array(await r.arrayBuffer()), t1 = performance.now(), u8 = await PK.gunzip(raw), P = PK.parse(u8);
     if (P.hdr.key !== key) { state.pack = { used: false, why: 'key mismatch' }; return null; }
+    PACK_RAW = raw; // r8：首帧后的 H 审计在 Worker 里读同一个包
     state.pack = { used: false, file: ent.file, bytes: raw.length, fetchMs: Math.round(t1 - t0), unzipMs: Math.round(performance.now() - t1) }; return P;
   }
   async function main() {
@@ -324,8 +343,11 @@
       buildField(); showStats();
       const s0 = site, doAudit = () => { if (site !== s0) return; const t1 = performance.now(), A2 = A || site.audit(); state.stats.auditMs = A ? null : Math.round(performance.now() - t1); state.auditResult = A2; showAudit(A2); showStats();
         if (!A && A2.total) { world.add(badMarks()); const tr = world.children.find(o => o.isGroup && o.userData.trees); if (tr && site.trees.some(t => t.bad)) { world.remove(tr); world.add(treesMesh(site)); } requestRender(); } };
-      state.camAudit = null; const doCam = () => setTimeout(() => { if (site === s0) { state.camAudit = cameraAudit(); showCamAudit(state.camAudit); } }, 50);
-      if (A) { doAudit(); doCam(); } else { $('audit').innerHTML = '<div class="ah">硬规则审计：运行中…</div>'; requestAnimationFrame(() => setTimeout(() => { doAudit(); doCam(); }, 0)); }
+      state.camAudit = null; const doCam = () => setTimeout(() => { if (site === s0) { state.camAudit = cameraAudit(); showCamAudit(state.camAudit); } }, 50), doCamA = () => setTimeout(() => { if (site === s0) cameraAuditAsync({}, R => { if (site !== s0) return; state.camAudit = R; showCamAudit(R); }); }, 50);
+      const doAuditW = () => { const t1 = performance.now(); auditInWorker(opt).then(R => { if (site !== s0) return; if (R.sig !== site.signature() || R.total) { state.auditVia = R.total ? 'main (violations)' : 'main (sig mismatch)'; doAudit(); return; }
+          state.auditVia = 'worker'; state.stats.auditMs = Math.round(performance.now() - t1); state.auditResult = { total: R.total, cnt: R.cnt, rules: R.rules, items: R.items, worker: true }; showAudit(state.auditResult); showStats(); },
+        e => { if (site !== s0) return; state.auditVia = 'main (' + (e && e.message || e) + ')'; doAudit(); }); };
+      if (A) { doAudit(); doCam(); } else { $('audit').innerHTML = '<div class="ah">硬规则审计：运行中…</div>'; requestAnimationFrame(() => setTimeout(() => { if (site.fromPack && PACK_RAW) { doAuditW(); doCamA(); } else { doAudit(); doCam(); } }, 0)); }
       requestRender();
     }
     function badMarks() {
@@ -525,24 +547,31 @@
     const C7_STARTS = ['otegate', 'otejoint', 'sakura', 'eastwall', 'tenshu'];
     function tunnelFuzz(mode, n, seed) { let tun = 0, bad = 0; const ex = []; C7_STARTS.forEach((v, i) => { const f = fuzz(n || 120, (seed || 101) + i, mode, 0, v); tun += f.tun; bad += f.bad; ex.push(...f.exT); }); return { tun, bad, ex: ex.slice(0, 3) }; }
     function gateAudit(old) { const out = []; for (const g of site.gates) { const r = old ? gateRoute(g, q => F.clearOld(q, 1e-3)) : route(g.spec.id); out.push({ gate: g.name, ok: !!r.ok, why: r.why, bad: r.bad, thr: r.thr && +r.thr.toFixed(2), n: r.pts && r.pts.length, eye: r.eyeMin !== undefined ? [+r.eyeMin.toFixed(2), +r.eyeMax.toFixed(2)] : null }); } return out; }
-    function cameraAudit(o) {
+    // r8（S1）：相机审计分步（生成器）：同步调用时一口气跑完（测试、重建）；首次加载时每步之间让出主线程（每步内部自己保存/恢复相机），
+    // 第一帧之后的审计不再一次占住主线程 ~1 s。各步耗时记在 state.camStages。
+    function cameraAudit(o) { const it = camAuditSteps(o); let r = it.next(); while (!r.done) r = it.next(); return r.value; }
+    function cameraAuditAsync(o, done) { const it = camAuditSteps(o); const st = () => { const r = it.next(); if (r.done) done(r.value); else setTimeout(st, 0); }; setTimeout(st, 0); }
+    function* camAuditSteps(o) { const TS = state.camStages = []; let tS = performance.now(); const lap = n => { const t = performance.now(); TS.push([n, Math.round(t - tS)]); tS = t; };
       o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
       const pre = {}; for (const k of names) pre[k] = legacy ? { cam: LEGACY[k][0], tgt: LEGACY[k][1] } : PRE[k];
-      for (const k of names) { const p = pre[k];
+      for (const k of names) { const p = pre[k]; if (k !== names[0]) yield;
         if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机球不合法 ' + p.cam.map(v => v.toFixed(1))); }
         if (o.geo && F.hasGeo() && F.geoCheck(p.cam)) geo.C1++;
         if (!F.los(p.cam, p.tgt, VIEWS[k].rf).ok) { cnt.C2++; items.push('C2 ' + k + ' 视线被挡'); } }
+      lap('C1C2'); yield;
       const lifts = [];
-      for (const a of names) for (const b of names) { if (a === b) continue; const pth = legacy ? F.linear(pre[a], pre[b]) : F.path(pre[a], pre[b]), nb = F.pathBad(pth); if (!legacy) lifts.push(pth.maxLift); if (nb) { cnt.C3++; if (items.length < 30) items.push('C3 ' + a + '→' + b + ' ' + nb + ' 个采样点不清空'); }
-        if (o.geo && F.hasGeo()) for (let k = 0; k <= 40; k++) if (F.geoCheck(pth.at(k / 40).cam)) { geo.C3++; break; } }
+      for (const a of names) { if (a !== names[0]) yield; for (const b of names) { if (a === b) continue; const pth = legacy ? F.linear(pre[a], pre[b]) : F.path(pre[a], pre[b]), nb = F.pathBad(pth); if (!legacy) lifts.push(pth.maxLift); if (nb) { cnt.C3++; if (items.length < 30) items.push('C3 ' + a + '→' + b + ' ' + nb + ' 个采样点不清空'); }
+        if (o.geo && F.hasGeo()) for (let k = 0; k <= 40; k++) if (F.geoCheck(pth.at(k / 40).cam)) { geo.C3++; break; } } }
+      lap('C3'); yield;
       const fz = fuzz(o.fuzz || 400, o.seed || 7, legacy ? 'none' : 'new', o.geo ? 5 : 0); cnt.C4 = fz.bad; geo.C4 = fz.badGeo; if (fz.bad) items.push('C4 模糊测试 ' + fz.bad + '/' + fz.n + ' 步相机不清空，例 ' + JSON.stringify(fz.ex[0]));
       const t = Math.tan(camera.fov * Math.PI / 360), corner = camera.near * Math.sqrt(1 + t * t * (1 + camera.aspect * camera.aspect)); if (!(corner < CAM_R)) { cnt.C5++; items.push('C5 近平面角距 ' + corner.toFixed(2)); }
+      lap('C4C5'); yield;
       let gates = null, tf = null, bu = null;
-      if (!legacy) { gates = gateAudit(!!o.old); cnt.C6 = gates.filter(g => !g.ok).length; for (const g of gates) if (!g.ok) items.push('C6 ' + g.gate + ' 步行穿门失败（' + (g.why || ('不清空 ' + g.bad + ' / 离门洞中心 ' + g.thr + ' m')) + '）');
+      if (!legacy) { if (!o.old) for (const g of site.gates) { route(g.spec.id); yield; } /* 步行路线按门缓存：先逐门算好（每门之间让出主线程） */ gates = gateAudit(!!o.old); lap('C6'); yield; cnt.C6 = gates.filter(g => !g.ok).length; for (const g of gates) if (!g.ok) items.push('C6 ' + g.gate + ' 步行穿门失败（' + (g.why || ('不清空 ' + g.bad + ' / 离门洞中心 ' + g.thr + ' m')) + '）');
         if (o.geo && F.hasGeo()) for (const g of site.gates) { const r = route(g.spec.id); if (r.pts) for (let k = 0; k < r.pts.length; k += 4) if (F.geoCheck(r.pts[k])) { geo.C6++; break; } }
-        tf = tunnelFuzz(o.old ? 'r3' : 'new', o.c7n, o.seed); cnt.C7 = tf.tun; if (tf.tun) items.push('C7 ' + tf.tun + ' 次两帧之间穿过几何，例 ' + JSON.stringify(tf.ex[0]));
+        tf = tunnelFuzz(o.old ? 'r3' : 'new', o.c7n, o.seed); lap('C7'); yield; cnt.C7 = tf.tun; if (tf.tun) items.push('C7 ' + tf.tun + ' 次两帧之间穿过几何，例 ' + JSON.stringify(tf.ex[0]));
         bu = bridgeUnder(); cnt.C8 = bu.filter(q => !q.ok).length; for (const q of bu) { if (!q.ok) items.push('C8 ' + q.bridge + ' 桥下横穿失败（' + q.why + '）'); geo.C8 += q.geo; } }
-      const total = Object.values(cnt).reduce((s, v) => s + v, 0);
+      lap('C8'); const total = Object.values(cnt).reduce((s, v) => s + v, 0);
       return { total, cnt, items, geo, gates, c7: tf, bridges: bu, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
     }
     function showCamAudit(A) {
