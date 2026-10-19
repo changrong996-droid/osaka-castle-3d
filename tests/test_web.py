@@ -15,7 +15,7 @@ import functools, http.server, json, os, socketserver, sys, threading, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB = os.path.join(ROOT, 'web')
 SHOTS = os.path.join(WEB, 'shots')
-VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura', 'otegate', 'bridge']
+VIEWS = ['aerial', 'top', 'otemon', 'tenshu', 'eastwall', 'otejoint', 'sakura', 'otegate', 'bridge', 'goten']
 VENDOR = {'build/three.module.js': 'three.module.js', 'examples/jsm/controls/OrbitControls.js': 'OrbitControls.js', 'examples/jsm/objects/Sky.js': 'Sky.js'}
 ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 
@@ -75,7 +75,13 @@ def run(shots=True):
         rep['cam_fuzz'] = [pg.evaluate(f'__castle.cameraAudit({{fuzz:1500, seed:{sd}}}).cnt.C4') for sd in (11, 23, 37)]
         rep['cam_legacy'] = pg.evaluate('__castle.cameraAudit({legacy:true}).cnt')
         rep['cam_old_r3'] = pg.evaluate('__castle.cameraAudit({old:true}).cnt')  # web-r3 逻辑（柱状场 + 抬升）下的 C6/C7
-        rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']
+        rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']; rep['cam_interiors'] = ca.get('interiors')
+        # B1：建筑语法——读包、按需建内部（不阻塞：单栋建内部的耗时）、进入室内（御殿 + 一座橹），室内相机球清空、拖动不出墙
+        rep['bldg'] = pg.evaluate("""() => { const C = __castle, W = C.bldg, out = { n: W.list.length, bpack: C.bpack, by: {}, enter: [] }; for (const b of W.list) { const k = b.type + '/' + b.tier; out.by[k] = (out.by[k] || 0) + 1; }
+            for (const b of [W.list.find(b => b.type === 'goten'), W.list.find(b => b.type === 'yagura' && b.F.length === 3), W.list.find(b => b.tier === 'measured')]) { if (!b) continue; const t0 = performance.now(), r = C.enterInterior(b.id), ms = performance.now() - t0; let bad = 0; const q0 = C.cur().cam;
+              for (let k = 0; k < 40; k++) { const d = [Math.cos(k) * 3, Math.sin(k * 1.7) * 3, Math.sin(k) * 1.5]; C.camera.position.set(q0[0] + d[0], q0[2] + d[2], -(q0[1] + d[1])); C.enforce(); const q = C.cur().cam; if (__castle.bldgClear(b.id, q) < 0.25 - 1e-3) bad++; }
+              out.enter.push({ name: b.name, room: r && r.name, what: r && r.what, ms: +ms.toFixed(1), bad, built: C.interiorsBuilt().includes(b.id) }); C.exitInterior(); }
+            return out; }""")
         # r6：相机碰撞用的是切分后的地形（与渲染同一张三角网）：在切开的格里、切分地面以上 0.3 m 的点，到地形的精确间隙 ≤0.3 m（若还用网格三角，顶线处会多出最多 ~1 m）
         rep['cam_terrain'] = pg.evaluate("""() => { const S = __castle.site, F = __castle.camField; let n = 0, over = 0, gridOff = 0, worst = 0;
             for (let k = 0; k < S.splitTris.length; k += 7) { const sp = S.splitTris[k]; if (sp.kind === 'dead') continue; const T = sp.tris; for (let t = 0; t < T.length; t += 9) { const x = (T[t] + T[t + 3] + T[t + 6]) / 3, y = (T[t + 1] + T[t + 4] + T[t + 7]) / 3, z = S.heightAt(x, y);
@@ -134,6 +140,8 @@ def run(shots=True):
     import subprocess  # 故障注入（H15–H18）：node tests/test_faults.js
     pr = subprocess.run(['node', os.path.join(ROOT, 'tests', 'test_faults.js')], capture_output=True, text=True)
     rep['faults_node'] = pr.returncode; rep['faults_log'] = pr.stdout.strip().splitlines()
+    pr = subprocess.run(['node', os.path.join(ROOT, 'tests', 'test_bldg.js')], capture_output=True, text=True)  # B1：建筑审计 H22–H27/C9–C10 基线 + 故障注入
+    rep['bldg_node'] = pr.returncode; rep['bldg_log'] = pr.stdout.strip().splitlines()
     pr = subprocess.run(['node', os.path.join(ROOT, 'tests', 'test_pack.js')], capture_output=True, text=True)  # r8a：包 = 现场生成（逐位）
     rep['pack_node'] = pr.returncode; rep['pack_log'] = pr.stdout.strip().splitlines()
     json.dump(rep, open(os.path.join(SHOTS, 'report.json'), 'w'), ensure_ascii=False, indent=1)
@@ -152,7 +160,11 @@ def check(rep):
     assert rep['faults_node'] == 0, rep['faults_log']
     ct = rep['cam_terrain']
     assert ct['n'] > 1000 and ct['over'] == 0 and ct['gridOff'] > 0, ct
-    assert all(rep['audit_cnt'][f'H{i}'] == 0 for i in range(1, 22)), rep['audit_cnt']
+    assert all(rep['audit_cnt'][f'H{i}'] == 0 for i in range(1, 28)), rep['audit_cnt']
+    assert rep['cam_cnt'].get('C9') == 0 and rep['cam_cnt'].get('C10') == 0 and rep['cam_interiors'] and rep['cam_interiors']['rooms'] > 100, (rep['cam_cnt'], rep['cam_interiors'])
+    bl = rep['bldg']
+    assert bl['n'] >= 20 and bl['bpack'] and bl['bpack'].get('used') and len(bl['enter']) == 3 and all(e['room'] and e['bad'] == 0 and e['built'] for e in bl['enter']), bl
+    assert rep['bldg_node'] == 0, rep['bldg_log']
     assert rep['c8_fault'] > 0, rep['c8_fault']
     assert all(b['ok'] for b in rep['cam_bridges']), rep['cam_bridges']
     w = rep['cam_walk']
