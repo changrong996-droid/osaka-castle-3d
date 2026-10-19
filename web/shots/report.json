@@ -1,15 +1,15 @@
 {
  "errors": [],
  "audit_ready_s": [
-  10.24,
-  7.67,
-  8.87,
-  7.16,
-  8.87,
-  8.39,
-  14.19
+  15.03,
+  9.78,
+  9.35,
+  8.41,
+  10.73,
+  11.07,
+  8.13
  ],
- "load_s": 1.85,
+ "load_s": 2.25,
  "audit": 0,
  "audit_cnt": {
   "H1": 0,
@@ -32,15 +32,21 @@
   "H18": 0,
   "H19": 0,
   "H20": 0,
-  "H21": 0
+  "H21": 0,
+  "H22": 0,
+  "H23": 0,
+  "H24": 0,
+  "H25": 0,
+  "H26": 0,
+  "H27": 0
  },
  "audit_items": [],
- "sig1": "2862a389-245-1037",
+ "sig1": "2862a389-245-1037|d3705824-26",
  "stats": {
-  "verts": 1354516,
-  "tris": 1512852,
-  "buildMs": 220,
-  "sceneMs": 580,
+  "verts": 1322754,
+  "tris": 1501934,
+  "buildMs": 247,
+  "sceneMs": 721,
   "parts": 245,
   "trees": 1037,
   "dobei": 193,
@@ -59,17 +65,17 @@
    "dropped": 449,
    "fans": 1
   },
-  "camMs": 204,
-  "auditMs": 3038
+  "camMs": 243,
+  "auditMs": 10649
  },
- "app_load_ms": 1216,
+ "app_load_ms": 1426,
  "pack": {
   "used": true,
   "file": "bake/s1-l1.bin.gz",
-  "bytes": 938162,
-  "fetchMs": 54,
-  "unzipMs": 79,
-  "restoreMs": 220
+  "bytes": 938155,
+  "fetchMs": 34,
+  "unzipMs": 80,
+  "restoreMs": 247
  },
  "cam_audit": 0,
  "cam_cnt": {
@@ -80,7 +86,9 @@
   "C5": 0,
   "C6": 0,
   "C7": 0,
-  "C8": 0
+  "C8": 0,
+  "C9": 0,
+  "C10": 0
  },
  "cam_items": [],
  "cam_near": 1.113,
@@ -97,7 +105,9 @@
   "C5": 0,
   "C6": 0,
   "C7": 0,
-  "C8": 0
+  "C8": 0,
+  "C9": 0,
+  "C10": 0
  },
  "cam_old_r3": {
   "C1": 0,
@@ -107,7 +117,9 @@
   "C5": 0,
   "C6": 8,
   "C7": 11,
-  "C8": 0
+  "C8": 0,
+  "C9": 0,
+  "C10": 0
  },
  "cam_gates": [
   {
@@ -218,6 +230,53 @@
    "geo": 0
   }
  ],
+ "cam_interiors": {
+  "rooms": 186,
+  "paths": 186
+ },
+ "bldg": {
+  "n": 26,
+  "bpack": {
+   "used": true,
+   "file": "bake/b-s1-l1.json.gz",
+   "bytes": 19180,
+   "ms": 372,
+   "key": "b1-3ddcd130-k1-620670ef-cddb72d2-s1-l1-c1.5-r"
+  },
+  "by": {
+   "yagura/measured": 4,
+   "yagura/est": 17,
+   "goten/est": 1,
+   "bansho/est": 2,
+   "kura/est": 2
+  },
+  "enter": [
+   {
+    "name": "本丸御殿",
+    "room": "遠侍·上段之間",
+    "what": "toko",
+    "ms": 35.2,
+    "bad": 0,
+    "built": true
+   },
+   {
+    "name": "伏見櫓",
+    "room": "伏見櫓·3階·内室1",
+    "what": "window",
+    "ms": 3.6,
+    "bad": 0,
+    "built": true
+   },
+   {
+    "name": "千貫櫓",
+    "room": "千貫櫓·2階·内室1",
+    "what": "center",
+    "ms": 3,
+    "bad": 0,
+    "built": true
+   }
+  ]
+ },
  "cam_terrain": {
   "n": 9453,
   "over": 0,
@@ -298,6 +357,14 @@
    "lift": 0
   },
   {
+   "a": "aerial",
+   "b": "goten",
+   "frames": 74,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
    "a": "top",
    "b": "aerial",
    "frames": 88,
@@ -356,6 +423,14 @@
   {
    "a": "top",
    "b": "bridge",
+   "frames": 88,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "top",
+   "b": "goten",
    "frames": 88,
    "bad": 0,
    "end": 0,
@@ -423,7 +498,15 @@
    "frames": 72,
    "bad": 0,
    "end": 0,
-   "lift": 1.5
+   "lift": 0
+  },
+  {
+   "a": "otemon",
+   "b": "goten",
+   "frames": 66,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
   },
   {
    "a": "tenshu",
@@ -490,6 +573,14 @@
    "lift": 38.7
   },
   {
+   "a": "tenshu",
+   "b": "goten",
+   "frames": 67,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
    "a": "eastwall",
    "b": "aerial",
    "frames": 81,
@@ -535,7 +626,7 @@
    "frames": 65,
    "bad": 0,
    "end": 0,
-   "lift": 17.5
+   "lift": 17.9
   },
   {
    "a": "eastwall",
@@ -543,7 +634,7 @@
    "frames": 93,
    "bad": 0,
    "end": 0,
-   "lift": 22.6
+   "lift": 23.1
   },
   {
    "a": "eastwall",
@@ -552,6 +643,14 @@
    "bad": 0,
    "end": 0,
    "lift": 14
+  },
+  {
+   "a": "eastwall",
+   "b": "goten",
+   "frames": 70,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
   },
   {
    "a": "otejoint",
@@ -599,7 +698,7 @@
    "frames": 69,
    "bad": 0,
    "end": 0,
-   "lift": 0
+   "lift": 1
   },
   {
    "a": "otejoint",
@@ -613,6 +712,14 @@
    "a": "otejoint",
    "b": "bridge",
    "frames": 71,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "otejoint",
+   "b": "goten",
+   "frames": 64,
    "bad": 0,
    "end": 0,
    "lift": 0
@@ -655,7 +762,7 @@
    "frames": 65,
    "bad": 0,
    "end": 0,
-   "lift": 17.5
+   "lift": 17.9
   },
   {
    "a": "sakura",
@@ -663,7 +770,7 @@
    "frames": 69,
    "bad": 0,
    "end": 0,
-   "lift": 0
+   "lift": 1
   },
   {
    "a": "sakura",
@@ -679,7 +786,15 @@
    "frames": 67,
    "bad": 0,
    "end": 0,
-   "lift": 1.5
+   "lift": 0.9
+  },
+  {
+   "a": "sakura",
+   "b": "goten",
+   "frames": 68,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
   },
   {
    "a": "otegate",
@@ -719,7 +834,7 @@
    "frames": 93,
    "bad": 0,
    "end": 0,
-   "lift": 22.6
+   "lift": 23.1
   },
   {
    "a": "otegate",
@@ -746,6 +861,14 @@
    "lift": 10
   },
   {
+   "a": "otegate",
+   "b": "goten",
+   "frames": 65,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
    "a": "bridge",
    "b": "aerial",
    "frames": 82,
@@ -767,7 +890,7 @@
    "frames": 72,
    "bad": 0,
    "end": 0,
-   "lift": 1.5
+   "lift": 0
   },
   {
    "a": "bridge",
@@ -799,7 +922,7 @@
    "frames": 67,
    "bad": 0,
    "end": 0,
-   "lift": 1.5
+   "lift": 0.9
   },
   {
    "a": "bridge",
@@ -808,6 +931,86 @@
    "bad": 0,
    "end": 0,
    "lift": 10
+  },
+  {
+   "a": "bridge",
+   "b": "goten",
+   "frames": 71,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "aerial",
+   "frames": 74,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "top",
+   "frames": 88,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "otemon",
+   "frames": 66,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "tenshu",
+   "frames": 67,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "eastwall",
+   "frames": 70,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "otejoint",
+   "frames": 64,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "sakura",
+   "frames": 68,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "otegate",
+   "frames": 65,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
+  },
+  {
+   "a": "goten",
+   "b": "bridge",
+   "frames": 71,
+   "bad": 0,
+   "end": 0,
+   "lift": 0
   }
  ],
  "cam_geo": {
@@ -819,12 +1022,12 @@
  },
  "cam_input": 0,
  "c8_fault": 1,
- "sig1_again": "2862a389-245-1037",
- "sig1_live": "2862a389-245-1037",
+ "sig1_again": "2862a389-245-1037|d3705824-26",
+ "sig1_live": "2862a389-245-1037|d3705824-26",
  "pack_off": null,
  "audit_live": 0,
- "load_live_s": 8.87,
- "sig2": "d242bb51-245-996",
+ "load_live_s": 10.73,
+ "sig2": "d242bb51-245-996|031fc2c3-27",
  "audit_seed2": 0,
  "audit_now": 0,
  "audit_now_items": [],
@@ -852,14 +1055,42 @@
   "OK   H21 入隅改成圆角（锥面） → H21=4  入隅交汇处：渲染面与组合规则的解析面高差最大 13.06 m（> 0.1 m，圆角/错位）",
   "FAULTS_OK"
  ],
+ "bldg_node": 0,
+ "bldg_log": [
+  "baseline seed 1 江戸盛期 bldgs 26 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":2} gen 367 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 186 ",
+  "baseline seed 1 现状 bldgs 4 {\"yagura(实测)\":4} gen 35 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 21 ",
+  "baseline seed 2 江戸盛期 bldgs 27 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":3} gen 301 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 193 ",
+  "baseline seed 2 现状 bldgs 4 {\"yagura(实测)\":4} gen 12 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 23 ",
+  "roll yagura@坤櫓.rooms:1 → changed 坤櫓 (goten unchanged: true)",
+  "OK   H22 番所移到道路上 → H22=3  番所1：59 个占地采样点不在所属台地（honmaru）上",
+  "OK   H22 蔵压到土塀（移到一段本丸土塀中点） → H22=3  蔵1：占地内地面高差 8.42 m > 基础上限 1.5 m",
+  "OK   H22 两栋建筑重叠（蔵移到御殿上） → H22=1  本丸御殿：与 蔵1 重叠",
+  "OK   H23 番所贴到石垣顶线 1 m 内 → H23=1  番所1：离石垣顶线 0.53 m < 5 m",
+  "OK   H24 廊下墙加高 1.5 m（屋顶穿进殿舍檐口） → H24=2  本丸御殿：屋顶相交：低屋顶脊 37.80 > 高屋顶檐 36.65",
+  "OK   H24 御殿檐口压到别的建筑（番所贴到殿舍墙外 1 m） → H24=1  本丸御殿：与 番所1 的檐口相距不足 1.2 m",
+  "OK   H25 房间的隔断开口全部封死（走不到） → H25=1  本丸御殿：遠侍·上段之間 从入口走不到",
+  "OK   H25 階段跑长减半（坡度过陡） → H25=1  千貫櫓：1階 階段坡度 2.41 > 1.43",
+  "OK   H25 階段上方加一块楼板（净高不足） → H25=1  千貫櫓：1階 階段净高 1.10 m < 1.9",
+  "OK   H26 下层隔断去掉（上层柱悬空） → H26=1  伏見櫓：3階 2 根柱下面没有柱/梁",
+  "OK   H27 外墙去掉一块墙（无门的缺口） → H27=1  坤櫓：1階 外墙有缺口（无门）",
+  "OK   H27 室内侧的窗贴片缺失 → H27=1  坤櫓：窗只有外侧",
+  "OK   H27 门洞里立一根柱 → H27=1  坤櫓：门洞被 fault 挡住",
+  "OK   C9 廊下中间横一道板（相机走不过去） → C9=54  本丸御殿：去 大広間·上段之間 的路上相机球碰到几何（54.67,15.46,33.80）",
+  "OK   C10 上段之間的床の間与房间中心各围一圈屏风（任何机位都看不到主体） → C10=1  本丸御殿：遠侍·上段之間 找不到清空且通视的机位",
+  "BLDG_OK"
+ ],
  "pack_node": 0,
  "pack_log": [
-  "bake/s1-l1.bin.gz gz 938162 live 4760 ms pack 134 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
+  "bake/s1-l1.bin.gz gz 938155 live 4987 ms pack 181 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
-  "bake/s1-l0.bin.gz gz 933987 live 4338 ms pack 181 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
+  "bake/s1-l0.bin.gz gz 933971 live 4544 ms pack 207 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
+  "bake/b-s1-l1.json.gz gz 19180 gen 378 ms bldgs 26 same as live sig ok",
+  "  bldg tamper check caught",
+  "bake/b-s1-l0.json.gz gz 3711 gen 22 ms bldgs 4 same as live sig ok",
+  "  bldg tamper check caught",
   "PACK_OK"
  ]
 }
