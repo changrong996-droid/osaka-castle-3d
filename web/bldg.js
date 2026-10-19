@@ -1,0 +1,790 @@
+'use strict';
+// ===== B1：建筑语法（building grammar）——城内建筑的外观与内部出自同一份规格 =====
+// 不依赖 three.js，node 里也能跑。输入 = site.js 的生成结果 S（现场生成或读包恢复，二者逐位相同），输出 W = { list: [建筑], … }。
+// 思路（参考 背景ガチャ 的节点链 形→开口→ゾーン→置き場→仕上げ→小物）：
+//   类型 → 占地（自由台地面积 − 退距 − 保留通道，规则推导，不写坐标）→ 半間格（0.985 m）属性（身舎/入側/廊下/土間/階段/石落し + 保留通行）
+//   → 开口（门/窗/石落し 记在格边上：外观与内部读同一张表，所以内外永远一致）→ 房间/装置（畳、襖、階段、少量设备）→ 屋顶（入母屋/切妻，逐层叠放）。
+// 每个节点一个种子 = fnv(全局种子 | 建筑键（类型 + 量化位置）| 节点名 | 重摇次数)；生成确定，网址 #seed=…&roll=<建筑键>.<节点>:<n> 可复现、可单独重摇一个节点。
+// 两档：实测/文献元素（地形、石垣、现存橹的平面与层数/面积/高度、天守外观）严格；没有文献的建筑按规则 + 种子生成，标“推定”，每栋带 provenance。
+(function castleBldg(G) {
+  const fnv = (s, h) => { h = h === undefined ? 2166136261 : h; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; };
+  const rng = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const KEN = 1.97, CS = KEN / 2; // 1 間（柱间惯例）；格 = 半間（畳的短边量级）
+  // 格属性
+  const A = { OUT: 0, ROOM: 1, IRI: 2, ROUKA: 3, DOMA: 4, STAIR: 5, ISHI: 6, TOKO: 7, VOID: 8 };
+  const WALKABLE = a => a === A.ROOM || a === A.IRI || a === A.ROUKA || a === A.DOMA || a === A.STAIR;
+  const INSIDE = a => a !== A.OUT;
+  // ---------------- 参数表（每项带来源；“推定”= 无文献，规则 + 种子在范围内取值）----------------
+  const SPEC = {
+    version: 'web-r9-b1', ken: KEN, cell: CS,
+    // 退距与保留通道（规则参数，不是坐标）
+    setback: { crest: 5.0, part: 3.0, tenshu: 12.0, roadMargin: 2.0, gateReach: 50, gateMargin: 3.0, tree: 1.0, between: 3.2 },
+    contact: 0.25,                // 抵接容差：墙端顶到建筑面时允许顶入 ≤0.25 m（= site 墙接触容差 0.2 + 数值带 0.05），不算压到
+    found: { max: 1.5 },          // = site SPEC.found.max：斜面上地板水平、基础 ≤1.5 m
+    clearH: 2.1,                  // 檐下净空 ≥ 人高 1.7 + 0.4（= site SPEC.clear）
+    stair: { riserMax: 0.25, slopeMax: 1.43, head: 1.9 },   // 坡度 ≤55°（城郭急階段的上限量级），净高 ≥1.9 m；推定（惯例）
+    beamMax: 3 * KEN,             // 上层柱落在下层柱或 ≤3 間 的梁上（木梁跨度惯例，与 site 的桥跨 3 間同源）
+    door: { h: 1.8, w: 2 },       // 门洞净高 1.8 m（内法 ≈ 5.8–6 尺），宽 2 格 = 1 間；推定（惯例）
+    win: { sill: 0.9, h: 0.9 },
+    cam: { R: 0.25, eye: 1.3 },   // 室内相机球半径/眼高（门洞 1.8 m 里头顶余量 ≥0.25 m）
+    wallT: 0.24,
+    // 御殿（本丸御殿：徳川期 1626 竣工、存续到 1868；殿舍名 大広間/白書院/黒書院/遠侍/銅御殿(御座)/台所 见 docs/BUILDINGS.md）。位置/尺寸无实测 → 范围（推定）
+    goten: {
+      floor: [0.6, 0.9], wallH: [3.5, 4.2], ov: 1.6, pitch: 0.62, gap: 2, corridor: 3,
+      halls: [ // 名称、宽×深（間）范围；顺序 = 从玄関往“奥”的雁行链（表 → 奥）
+        { name: '遠侍', w: [10, 13], d: [7, 9] },
+        { name: '大広間', w: [14, 18], d: [10, 13] },
+        { name: '対面所', w: [11, 14], d: [8, 10] },
+        { name: '白書院', w: [10, 13], d: [7, 9] },
+        { name: '黒書院', w: [9, 12], d: [7, 9] },
+        { name: '銅御殿', w: [9, 12], d: [7, 9] },
+        { name: '御座之間', w: [8, 11], d: [6, 8] },
+      ],
+      side: { name: '台所', w: [8, 11], d: [6, 8] },
+    },
+    // 橹：层高与屋顶（推定范围）；现存橹的层数/每层面积/总高为实测（重要文化财数据，见 docs/BUILDINGS.md）
+    yagura: { storyH: [3.4, 4.8], plinth: 0.45, ov: [1.5, 1.2, 1.0], pitch: 0.55, iri: 2, lost3H: [18, 20], lost2H: [12, 14] },
+    measured: { // 重要文化财：层数、各层面积 m²、高 m（千貫/乾 = 大阪市「特別公開する櫓について」；六番 = 现地说明牌；一番 高度无公开数据 → 范围）
+      '千貫櫓': { stories: 2, area: [217.26, 162.95], H: 13.5 },
+      '乾櫓': { stories: 2, area: [186.23, 186.23], H: 10.3, L: true },
+      '六番櫓': { stories: 2, area: [224.16, 133.43], H: 15.4 },
+      '一番櫓': { stories: 2, area: null, H: null },
+    },
+    storiesByName: { '伏見櫓': 3 }, // 二之丸唯一的三重櫓（武将の道 4968；AIJ 1942「大阪城伏見櫓建築考」）；site 的槽位尺寸仍是 yagura2 默认 12×10 m
+    small: { bansho: { w: [3, 4], d: [2, 3], wallH: 2.7 }, kura: { w: [3, 5], d: [2, 3], wallH: 3.6 } },
+  };
+
+  // ---------------- 小工具 ----------------
+  const frameOf = (x, y, ang) => { const c = Math.cos(ang), s = Math.sin(ang); return { x, y, ang, c, s, w: (u, v) => [x + u * c - v * s, y + u * s + v * c], l: (px, py) => { const dx = px - x, dy = py - y; return [dx * c + dy * s, -dx * s + dy * c]; } }; };
+  function segDist(px, py, ax, ay, bx, by) { const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy; let t = l ? ((px - ax) * dx + (py - ay) * dy) / l : 0; t = clamp(t, 0, 1); return Math.hypot(px - ax - t * dx, py - ay - t * dy); }
+  function inPoly(x, y, P) { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; }
+  function polyDist(x, y, P) { let d = 1e18; for (let i = 0, j = P.length - 1; i < P.length; j = i++) d = Math.min(d, segDist(x, y, P[j][0], P[j][1], P[i][0], P[i][1])); return inPoly(x, y, P) ? -d : d; }
+  const bbox = P => { let a = 1e18, b = 1e18, c = -1e18, d = -1e18; for (const p of P) { if (p[0] < a) a = p[0]; if (p[1] < b) b = p[1]; if (p[0] > c) c = p[0]; if (p[1] > d) d = p[1]; } return [a, b, c, d]; };
+  // 主轴：曲轮顶线各段方向按长度加权（模 90°）
+  function axisOf(S, g) { const lp = (S.loops || []).find(l => l.g === g); const segs = lp ? lp.crest.segs : g.edges.map(e => ({ tx: e.tx, ty: e.ty, len: e.len })); let sx = 0, sy = 0; for (const s of segs) { const a = Math.atan2(s.ty, s.tx) * 4; sx += Math.cos(a) * s.len; sy += Math.sin(a) * s.len; } return Math.atan2(sy, sx) / 4; }
+  // 最大矩形分解（格集合 → 矩形，贪心；屋顶/外壳按矩形做）
+  function rects(cells, nu, nv, pred) { const used = new Uint8Array(nu * nv), out = []; for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const q = j * nu + i; if (used[q] || !pred(cells[q])) continue; let i1 = i; while (i1 + 1 < nu && !used[j * nu + i1 + 1] && pred(cells[j * nu + i1 + 1])) i1++; let j1 = j; for (;;) { if (j1 + 1 >= nv) break; let ok = true; for (let ii = i; ii <= i1; ii++) { const qq = (j1 + 1) * nu + ii; if (used[qq] || !pred(cells[qq])) { ok = false; break; } } if (!ok) break; j1++; } for (let jj = j; jj <= j1; jj++) for (let ii = i; ii <= i1; ii++) used[jj * nu + ii] = 1; out.push([i, j, i1 + 1, j1 + 1]); } return out; }
+
+  // ---------------- 建筑对象 ----------------
+  // b.F[f] = { z（地板绝对标高）, h（墙高）, a: Uint8Array 属性, r: Int16Array 房间号（-1 无）, kc: Uint8Array 保留通行 }
+  // 格 (i, j) 占 u ∈ [u0 + i·cs, u0 + (i+1)·cs]，v 同理；局部 → 世界：b.fr.w(u, v)
+  function mkB(o) { const b = Object.assign({ cs: CS, F: [], rooms: [], open: [], stairs: [], fix: [], blocks: [], roofs: [], notes: [] }, o); b.fr = frameOf(b.x, b.y, b.ang); return b; }
+  const U = (b, i) => b.u0 + i * b.cs, V = (b, j) => b.v0 + j * b.cs;
+  function floorNew(b, z, h) { const n = b.nu * b.nv, F = { z, h, a: new Uint8Array(n), r: new Int16Array(n).fill(-1), kc: new Uint8Array(n) }; b.F.push(F); return F; }
+  const at = (b, F, i, j) => (i < 0 || j < 0 || i >= b.nu || j >= b.nv) ? A.OUT : F.a[j * b.nu + i];
+  const NB = [[1, 0], [-1, 0], [0, 1], [0, -1]]; // side 0:+u 1:-u 2:+v 3:-v
+  const nodeSeed = (W, key, node) => fnv(W.seed + '|' + key + '|' + node + '|' + (W.roll[key + '.' + node] || 0));
+
+  // ---------------- 自由占地栅格（置き場）----------------
+  // 半間格（与建筑同一网格、同一主轴），格心合格 ⇔ 在曲轮围合线内 ∧ 离石垣顶线 ≥ setback ∧ 离道路（中线）≥ 净宽/2 + margin ∧ 不在门内保留通道
+  // ∧ 离已有部件 ≥ part margin（天守 ≥ tenshu）——全部规则参数，不写坐标。
+  function freeGrid(S, g, ang, opts) {
+    const SB = Object.assign({}, SPEC.setback, opts || {}), bb = g.bb, fr0 = frameOf(0, 0, ang);
+    let u0 = 1e9, v0 = 1e9, u1 = -1e9, v1 = -1e9; for (const [x, y] of [[bb[0], bb[1]], [bb[2], bb[1]], [bb[0], bb[3]], [bb[2], bb[3]]]) { const [u, v] = fr0.l(x, y); u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+    u0 = Math.floor(u0 / KEN) * KEN; v0 = Math.floor(v0 / KEN) * KEN; // 全城一张以原点为基准的間格：同一主轴的建筑柱筋相通
+    const nu = Math.ceil((u1 - u0) / CS) + 1, nv = Math.ceil((v1 - v0) / CS) + 1, M = new Uint8Array(nu * nv);
+    const roads = S.roads.filter(r => r.pts.length > 1), parts = S.parts.filter(p => p.poly && p.region !== undefined).map(p => ({ p, bb: bbox(p.poly), m: p.fam === 'tenshu' ? SB.tenshu : SB.part }));
+    const gates = S.gates.filter(G => G.region === g && G.poly).map(G => { const c = Math.cos(G.ang), s = Math.sin(G.ang); let n = [-s, c]; const tst = k => { const x = G.x + n[0] * k, y = G.y + n[1] * k; return S.inEncl(g, x, y) ? S.crestDist(g, x, y) : -1e9; }; if (tst(12) < tst(-12)) n = [s, -c]; return { G, n, w: (G.open || G.w) / 2 + SB.gateMargin }; });
+    // 判定在“間块”（2×2 格）的中心做，半径按块的半对角线放大（保守），块内 4 格同值——计算量 1/4
+    const half = KEN * 0.7072, nU = Math.ceil(nu / 2), nV = Math.ceil(nv / 2);
+    const segs = []; for (const r of roads) { const m = (r.need || 6) / 2 + SB.roadMargin + half; for (let k = 0; k + 1 < r.pts.length; k++) { const a = r.pts[k], c = r.pts[k + 1]; segs.push([a[0], a[1], c[0], c[1], m, Math.min(a[0], c[0]) - m, Math.min(a[1], c[1]) - m, Math.max(a[0], c[0]) + m, Math.max(a[1], c[1]) + m]); } }
+    for (let J = 0; J < nV; J++) for (let I = 0; I < nU; I++) {
+      const u = u0 + (I + 0.5) * KEN, v = v0 + (J + 0.5) * KEN, [x, y] = fr0.w(u, v);
+      if (x < bb[0] || x > bb[2] || y < bb[1] || y > bb[3] || !S.inEncl(g, x, y) || S.zoneAt(x, y) !== g) continue;
+      let ok = true;
+      for (const q of segs) { if (x < q[5] || x > q[7] || y < q[6] || y > q[8]) continue; if (segDist(x, y, q[0], q[1], q[2], q[3]) < q[4]) { ok = false; break; } }
+      if (!ok) continue;
+      for (const q of gates) { const dx = x - q.G.x, dy = y - q.G.y, a = dx * q.n[0] + dy * q.n[1], l = Math.abs(-dx * q.n[1] + dy * q.n[0]); if (a > -8 && a < SB.gateReach && l < q.w + half + 6) { ok = false; break; } }
+      if (!ok) continue;
+      for (const P of parts) { const m = P.m + half; if (x < P.bb[0] - m || x > P.bb[2] + m || y < P.bb[1] - m || y > P.bb[3] + m) continue; if (polyDist(x, y, P.p.poly) < m) { ok = false; break; } }
+      if (!ok || S.crestDist(g, x, y) < SB.crest + half) continue;
+      for (let dj = 0; dj < 2; dj++) for (let di = 0; di < 2; di++) { const i = 2 * I + di, j = 2 * J + dj; if (i < nu && j < nv) M[j * nu + i] = 1; }
+    }
+    // 二维前缀和：O(1) 判矩形全空
+    const P = new Int32Array((nu + 1) * (nv + 1)); for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) P[(j + 1) * (nu + 1) + i + 1] = M[j * nu + i] + P[j * (nu + 1) + i + 1] + P[(j + 1) * (nu + 1) + i] - P[j * (nu + 1) + i];
+    const sum = (i0, j0, i1, j1) => P[j1 * (nu + 1) + i1] - P[j0 * (nu + 1) + i1] - P[j1 * (nu + 1) + i0] + P[j0 * (nu + 1) + i0];
+    return { g, ang, u0, v0, nu, nv, M, fr0, free: (i0, j0, i1, j1) => i0 >= 0 && j0 >= 0 && i1 <= nu && j1 <= nv && sum(i0, j0, i1, j1) === (i1 - i0) * (j1 - j0), x: (i, j) => fr0.w(u0 + i * CS, v0 + j * CS) };
+  }
+
+  // ---------------- 类型：本丸御殿（書院造：大広間/書院 + 入側 + 廊下 + 中庭）----------------
+  function goten(S, W, g) {
+    const GS = SPEC.goten, ang = axisOf(S, g), FG = freeGrid(S, g, ang), key = 'goten@' + g.name;
+    const R = node => rng(nodeSeed(W, key, node));
+    // 置き場：入口锚点 = 本曲轮主门（桜門系：有枡形里门的门）里侧道路终点附近的自由格；方向 = 指向天守（“奥”）
+    const gate = S.gates.filter(G => G.region === g).sort((a, b) => (b.spec.masugata ? 1 : 0) - (a.spec.masugata ? 1 : 0))[0], ten = S.parts.find(p => p.fam === 'tenshu');
+    if (!gate) { W.notes.push(key + ': 无门'); return null; }
+    const inner = S.parts.find(p => p.masugataOf === gate) || gate, [ga, gb] = FG.fr0.l(inner.x, inner.y), [ta, tb] = ten ? FG.fr0.l(ten.x, ten.y) : [ga, gb + 100];
+    const dirU = Math.abs(ta - ga) > Math.abs(tb - gb) ? Math.sign(ta - ga) : 0, dirV = dirU ? 0 : Math.sign(tb - gb); // 主方向（沿主轴的 ±u 或 ±v）
+    const sideSign = rng(nodeSeed(W, key, 'bend'))() < 0.5 ? 1 : -1, DIRS = [[dirU, dirV], dirU ? [0, sideSign] : [sideSign, 0], dirU ? [0, -sideSign] : [-sideSign, 0]];
+    const occ = new Uint8Array(FG.nu * FG.nv), mark = (r, m) => { for (let j = Math.max(0, r[1] - m); j < Math.min(FG.nv, r[3] + m); j++) for (let i = Math.max(0, r[0] - m); i < Math.min(FG.nu, r[2] + m); i++) occ[j * FG.nu + i] = 1; };
+    let OP = null; const opRebuild = () => { const nu = FG.nu, nv = FG.nv; OP = new Int32Array((nu + 1) * (nv + 1)); for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) OP[(j + 1) * (nu + 1) + i + 1] = occ[j * nu + i] + OP[j * (nu + 1) + i + 1] + OP[(j + 1) * (nu + 1) + i] - OP[j * (nu + 1) + i]; };
+    const occAny = (i0, j0, i1, j1) => { const nu = FG.nu; i0 = Math.max(0, i0); j0 = Math.max(0, j0); i1 = Math.min(FG.nu, i1); j1 = Math.min(FG.nv, j1); if (i1 <= i0 || j1 <= j0) return false; return OP[j1 * (nu + 1) + i1] - OP[j0 * (nu + 1) + i1] - OP[j1 * (nu + 1) + i0] + OP[j0 * (nu + 1) + i0] > 0; };
+    const clearR = r => FG.free(r[0], r[1], r[2], r[3]) && !occAny(r[0], r[1], r[2], r[3]); opRebuild();
+    const r0 = R('shape'), placed = [], corr = [], gap = GS.gap * 2, cw = GS.corridor;
+    const hallSize = (h, k) => { const w = Math.round(h.w[0] + (h.w[1] - h.w[0]) * r0()) * 2, d = Math.round(h.d[0] + (h.d[1] - h.d[0]) * r0()) * 2; return dirU ? [d, w] : [w, d]; }; // 宽沿横向
+    const gi = Math.round((ga - FG.u0) / CS), gj = Math.round((gb - FG.v0) / CS);
+    const rp = R('place');
+    for (let k = 0; k < GS.halls.length; k++) {
+      const h = GS.halls[k]; let [w, d] = hallSize(h, k), best = null;
+      for (let shrink = 0; shrink < 4 && !best; shrink++) {
+        const ww = Math.max(8, w - shrink * 2 * (dirU ? 0 : 1)), dd = Math.max(8, d - shrink * 2 * (dirU ? 1 : 0)), prev = placed[placed.length - 1];
+        const win = prev ? [prev.r[0] - ww - gap - 8, prev.r[1] - dd - gap - 8, prev.r[2] + gap + 8, prev.r[3] + gap + 8] : [0, 0, FG.nu, FG.nv];
+        for (let j = Math.max(0, win[1]); j + dd <= Math.min(FG.nv, win[3] + dd); j++) for (let i = Math.max(0, win[0]); i + ww <= Math.min(FG.nu, win[2] + ww); i++) {
+          const r = [i, j, i + ww, j + dd]; if (!clearR(r)) continue;
+          let sc;
+          if (!prev) { const cx = i + ww / 2, cy = j + dd / 2; sc = Math.hypot(cx - gi, cy - gj); } // 遠侍：离入口最近
+          else { // 雁行：沿主方向接在前一栋后面（中间隔 gap 的中庭带），横向错开但重叠 ≥ 廊下宽 + 2
+            // 方向：先沿主方向（往“奥”），走不通再转 90°（链拐弯）——每个方向一个代价档
+            const p = prev.r; sc = 1e9;
+            for (let t = 0; t < DIRS.length; t++) { const [du, dv] = DIRS[t], ov = du ? Math.min(p[3], r[3]) - Math.max(p[1], r[1]) : Math.min(p[2], r[2]) - Math.max(p[0], r[0]);
+              if (ov < cw + 2) continue;
+              const g0 = du > 0 ? r[0] - p[2] : du < 0 ? p[0] - r[2] : dv > 0 ? r[1] - p[3] : p[1] - r[3];
+              if (g0 < gap || g0 > gap + 6) continue;
+              const lat = du ? (r[1] + r[3] - p[1] - p[3]) / 2 : (r[0] + r[2] - p[0] - p[2]) / 2, want = sideSign * (t ? 0 : 1) * (0.35 + 0.3 * rp()) * (du ? (p[3] - p[1]) : (p[2] - p[0])); // 雁行：沿一侧逐栋错开（台阶状）
+              const c = t * 1000 + (g0 - gap) * 2 + Math.abs(lat - want); if (c < sc) { sc = c; r.dir = [du, dv]; } }
+            if (sc >= 1e9) continue;
+          }
+          sc += rp() * 0.5;
+          if (!best || sc < best.sc) best = { r: r.slice(), sc }, best.r.dir = r.dir;
+        }
+      }
+      if (!best) { W.notes.push(key + ': ' + h.name + ' 放不下（自由面积不够）'); continue; }
+      const prev = placed[placed.length - 1]; placed.push({ name: h.name, r: best.r }); mark(best.r, gap);
+      if (prev) { // 廊下：两栋相对的墙之间，横向在重叠区中央，宽 cw 格
+        const p = prev.r, r = best.r, [du, dv] = r.dir; let c;
+        if (du) { const a = Math.max(p[1], r[1]), bnd = Math.min(p[3], r[3]), m = Math.floor((a + bnd - cw) / 2); c = du > 0 ? [p[2], m, r[0], m + cw] : [r[2], m, p[0], m + cw]; }
+        else { const a = Math.max(p[0], r[0]), bnd = Math.min(p[2], r[2]), m = Math.floor((a + bnd - cw) / 2); c = dv > 0 ? [m, p[3], m + cw, r[1]] : [m, r[3], m + cw, p[1]]; }
+        corr.push(c); mark(c, 2);
+      }
+      opRebuild();
+    }
+    if (!placed.length) return null;
+    // 台所：接在遠侍的侧面（与主方向垂直的一侧），廊下相连
+    { const h = GS.side, e = placed[0].r; let [w, d] = hallSize(h, 9); const opts = [];
+      for (const sd of [-1, 1]) { const r = dirU ? (sd > 0 ? [e[0], e[3] + gap, e[0] + w, e[3] + gap + d] : [e[0], e[1] - gap - d, e[0] + w, e[1] - gap]) : (sd > 0 ? [e[2] + gap, e[1], e[2] + gap + w, e[1] + d] : [e[0] - gap - w, e[1], e[0] - gap, e[1] + d]); opts.push(r); }
+      opRebuild(); const pick = opts.find(clearR); if (pick) { const r = pick, m = dirU ? Math.floor((Math.max(e[0], r[0]) + Math.min(e[2], r[2]) - cw) / 2) : Math.floor((Math.max(e[1], r[1]) + Math.min(e[3], r[3]) - cw) / 2);
+        const c = dirU ? (r[1] > e[1] ? [m, e[3], m + cw, r[1]] : [m, r[3], m + cw, e[1]]) : (r[0] > e[0] ? [e[2], m, r[0], m + cw] : [r[2], m, e[0], m + cw]); placed.push({ name: h.name, r, side: true }); corr.push(c); mark(r, gap); mark(c, 2); } else W.notes.push(key + ': 台所 放不下'); }
+    // 组装成一个建筑（同一网格）
+    let i0 = 1e9, j0 = 1e9, i1 = -1e9, j1 = -1e9; for (const r of placed.map(p => p.r).concat(corr)) { i0 = Math.min(i0, r[0]); j0 = Math.min(j0, r[1]); i1 = Math.max(i1, r[2]); j1 = Math.max(j1, r[3]); }
+    const [ox, oy] = FG.x(i0, j0), b = mkB({ fgOff: [i0, j0], key, type: 'goten', name: '本丸御殿', tier: 'est', region: g.i, x: ox, y: oy, ang, u0: 0, v0: 0, nu: i1 - i0, nv: j1 - j0, dir: [dirU, dirV] });
+    const sh = r => [r[0] - i0, r[1] - j0, r[2] - i0, r[3] - j0];
+    // 地板：台地面最高点 + 床高（推定 0.6–0.9 m）
+    const fl = GS.floor[0] + (GS.floor[1] - GS.floor[0]) * R('floor')(); const blocks = placed.map(p => ({ name: p.name, r: sh(p.r), kind: 'hall' })).concat(corr.map((c, k) => ({ name: '廊下' + (k + 1), r: sh(c), kind: 'rouka' })));
+    b.blocks = blocks; b.prov = { tier: '推定', src: 'goten', note: '殿舍名 = 徳川期本丸御殿史料；位置/尺寸 = 规则 + 种子（范围见 SPEC.goten）' };
+    const zg = groundMax(S, b, blocks.map(k => k.r)); b.zg = zg;
+    const hw = GS.wallH[0] + (GS.wallH[1] - GS.wallH[0]) * R('height')();
+    const F = floorNew(b, zg.max + fl, hw);
+    F.bk = new Int16Array(b.nu * b.nv).fill(-1);
+    blocks.forEach((k, bi) => { if (k.kind === 'hall') { k.h = hw; k.pitch = GS.pitch; } else { const half = Math.min(k.r[2] - k.r[0], k.r[3] - k.r[1]) * CS / 2 + 0.8, room = 0.35 + 0.1 + 0.25; k.h = Math.max(SPEC.door.h + 0.5, hw - (half * 0.45 + room)); k.pitch = Math.min(0.45, (hw - room - k.h) / half); } /* 廊下屋脊（含脊瓦 0.35）收在殿舍檐口下 ≥0.25 m：墙高不够时减小坡度 */ for (let j = k.r[1]; j < k.r[3]; j++) for (let i = k.r[0]; i < k.r[2]; i++) { F.a[j * b.nu + i] = k.kind === 'rouka' ? A.ROUKA : A.ROOM; F.bk[j * b.nu + i] = bi; } });
+    // ゾーン：每栋殿舍 = 入側（外圈 2 格 = 1 間）+ 身舎（房间）
+    const rr = R('rooms');
+    blocks.forEach((k, bi) => { if (k.kind !== 'hall') return; const [a0, b0, a1, b1] = k.r;
+      for (let j = b0; j < b1; j++) for (let i = a0; i < a1; i++) if (i < a0 + 2 || i >= a1 - 2 || j < b0 + 2 || j >= b1 - 2) F.a[j * b.nu + i] = A.IRI;
+      // 身舎分间：沿长边切成 2–4 格宽一间（每间 2–4 間），深 ≥8 格时分前后两列；离入口最远的一间 = 上段
+      const m0 = a0 + 2, m1 = a1 - 2, n0 = b0 + 2, n1 = b1 - 2, longU = (m1 - m0) >= (n1 - n0), L = longU ? m1 - m0 : n1 - n0, Dp = longU ? n1 - n0 : m1 - m0;
+      const rows = Dp >= 10 ? 2 : 1, cuts = [0]; while (cuts[cuts.length - 1] < L) { const rem = L - cuts[cuts.length - 1]; let w = 2 * (2 + Math.floor(rr() * 3)); if (rem - w < 4) w = rem; cuts.push(cuts[cuts.length - 1] + w); }
+      const names = k.name === '台所' ? ['土間', '板間', '囲炉裏の間', '御膳所'] : ['上段之間', '下段之間', '二之間', '三之間', '四之間', '納戸'];
+      let ri = 0; const far = (dirU || dirV) ? (longU ? (dirU >= 0 ? 1 : -1) : (dirV >= 0 ? 1 : -1)) : 1;
+      for (let row = 0; row < rows; row++) for (let c = 0; c + 1 < cuts.length; c++) {
+        const cc = far > 0 ? cuts.length - 2 - c : c, s0 = cuts[cc], s1 = cuts[cc + 1], d0 = Math.round(Dp * row / rows), d1 = Math.round(Dp * (row + 1) / rows);
+        const rect = longU ? [m0 + s0, n0 + d0, m0 + s1, n0 + d1] : [m0 + d0, n0 + s0, m0 + d1, n0 + s1];
+        const id = b.rooms.length, nm = (row ? '次' : '') + (names[ri] || ('之間' + ri)); ri++;
+        const doma = k.name === '台所' && row === 0 && c === 0;
+        b.rooms.push({ id, name: k.name + '·' + nm, block: bi, rect, kind: doma ? 'doma' : 'tatami', f: 0, jodan: k.name !== '台所' && row === 0 && c === 0 });
+        for (let j = rect[1]; j < rect[3]; j++) for (let i = rect[0]; i < rect[2]; i++) { F.r[j * b.nu + i] = id; if (doma) F.a[j * b.nu + i] = A.DOMA; }
+      }
+      const irid = b.rooms.length; b.rooms.push({ id: irid, name: k.name + '·入側', block: bi, rect: k.r, kind: 'iri', f: 0 }); for (let j = b0; j < b1; j++) for (let i = a0; i < a1; i++) if (F.a[j * b.nu + i] === A.IRI) F.r[j * b.nu + i] = irid;
+    });
+    blocks.forEach((k, bi) => { if (k.kind !== 'rouka') return; const id = b.rooms.length; b.rooms.push({ id, name: k.name, block: bi, rect: k.r, kind: 'rouka', f: 0 }); for (let j = k.r[1]; j < k.r[3]; j++) for (let i = k.r[0]; i < k.r[2]; i++) F.r[j * b.nu + i] = id; });
+    // 开口：房间 ↔ 入側：每间朝入側一侧开 2 格襖（离角 ≥1 格）；相邻房间之间开 2 格襖；廊下两端接殿舍入側（开口 = 廊下全宽减两侧各 0.5 格 → 取廊下宽 −1 格）
+    partitionOpenings(b, 0, rr);
+    // 外门：遠侍（玄関）朝入口一侧开 1 樘门（2 格），台所朝外开 1 樘；外墙其余 = 障子/窓（每間一扇，种子取舍）
+    const ent = blocks[0].r, side = sideToward(b, ent, gi - i0, gj - j0); addDoor(b, 0, ent, side, 'door', rr); const kit = blocks.find(k => k.name === '台所'); if (kit) addDoor(b, 0, kit.r, oppositeSide(b, kit.r, ent), 'door', rr);
+    exteriorWindows(b, 0, rr, 'akari', 0.85); // 明かり障子
+    // 装置：上段之間的床（床の間，1 間 × 半間，靠最远的墙），不压保留通行格
+    keepClear(b, 0); for (const r of b.rooms) if (r.jodan) addToko(b, 0, r);
+    // 屋顶：每栋殿舍 入母屋（ov 1.6 m），廊下 切妻（屋脊低于殿舍檐口）
+    for (const k of blocks) b.roofs.push({ f: 0, r: k.r, h: k.h, kind: k.kind === 'hall' ? 'irimoya' : 'kirizuma', ov: k.kind === 'hall' ? GS.ov : 0.8, oe: k.kind === 'hall' ? undefined : 0, pitch: k.pitch, top: true });
+    W.free[g.name] = FG; return b;
+  }
+  function groundMax(S, b, rs) { let mx = -1e9, mn = 1e9; for (const r of rs) for (let j = r[1]; j <= r[3]; j++) for (let i = r[0]; i <= r[2]; i++) { const [x, y] = b.fr.w(U(b, i), V(b, j)), z = S.heightAt(x, y); if (z > mx) mx = z; if (z < mn) mn = z; } return { max: mx, min: mn }; }
+  function sideToward(b, r, ti, tj) { const cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2, dx = ti - cx, dy = tj - cy; return Math.abs(dx) / (r[2] - r[0]) > Math.abs(dy) / (r[3] - r[1]) ? (dx > 0 ? 0 : 1) : (dy > 0 ? 2 : 3); }
+  function oppositeSide(b, r, e) { const s = sideToward(b, r, (e[0] + e[2]) / 2, (e[1] + e[3]) / 2); return s ^ 1; }
+  // 在矩形 r 的 side 边上找一段 n 格、两侧都是 inside/outside 正确的边，开门
+  function addDoor(b, f, r, side, kind, rr, n) {
+    n = n || SPEC.door.w; const F = b.F[f], cand = [];
+    const along = side < 2 ? [r[1], r[3]] : [r[0], r[2]];
+    for (let s = along[0] + 1; s + n <= along[1] - 1; s++) { let ok = true; for (let k = 0; k < n; k++) { const i = side === 0 ? r[2] - 1 : side === 1 ? r[0] : s + k, j = side === 2 ? r[3] - 1 : side === 3 ? r[1] : s + k; const [di, dj] = NB[side]; if (!WALKABLE(at(b, F, i, j)) || at(b, F, i + di, j + dj) !== A.OUT) { ok = false; break; } } if (ok) cand.push(s); }
+    if (!cand.length) { b.notes.push('门放不下 side ' + side); return null; }
+    const mid = (along[0] + along[1] - n) / 2; cand.sort((a, c) => Math.abs(a - mid) - Math.abs(c - mid)); const s = cand[Math.min(cand.length - 1, Math.floor(rr() * Math.min(3, cand.length)))];
+    const i = side === 0 ? r[2] - 1 : side === 1 ? r[0] : s, j = side === 2 ? r[3] - 1 : side === 3 ? r[1] : s, o = { f, i, j, side, kind, n }; b.open.push(o); return o;
+  }
+  // 房间之间 / 房间与入側之间的隔断开口（襖）；yagura 用板戸
+  function partitionOpenings(b, f, rr, kind) {
+    const F = b.F[f], nu = b.nu, seen = new Set();
+    // 收集每对相邻房间的公共边段
+    const pairs = new Map();
+    for (let j = 0; j < b.nv; j++) for (let i = 0; i < nu; i++) { const q = j * nu + i, ra = F.r[q]; if (ra < 0 || !WALKABLE(F.a[q]) || F.a[q] === A.STAIR) continue; for (const side of [0, 2]) { const [di, dj] = NB[side], i2 = i + di, j2 = j + dj; if (i2 >= nu || j2 >= b.nv) continue; const q2 = j2 * nu + i2, rb = F.r[q2]; if (rb < 0 || rb === ra || !WALKABLE(F.a[q2]) || F.a[q2] === A.STAIR) continue; const k = Math.min(ra, rb) + ':' + Math.max(ra, rb) + ':' + side; if (!pairs.has(k)) pairs.set(k, []); pairs.get(k).push([i, j]); } }
+    for (const [k, L] of pairs) { const side = +k.split(':')[2]; L.sort((p, q) => side === 0 ? p[0] - q[0] || p[1] - q[1] : p[1] - q[1] || p[0] - q[0]);
+      // 按直线连续分段
+      const runs = []; let cur = [L[0]]; for (let t = 1; t < L.length; t++) { const p = L[t - 1], q = L[t], cont = side === 0 ? (q[0] === p[0] && q[1] === p[1] + 1) : (q[1] === p[1] && q[0] === p[0] + 1); if (cont) cur.push(q); else { runs.push(cur); cur = [q]; } } runs.push(cur);
+      const ra = +k.split(':')[0], rbn = +k.split(':')[1], rA = b.rooms[ra], rB = b.rooms[rbn], rouka = (rA && rA.kind === 'rouka') || (rB && rB.kind === 'rouka');
+      runs.sort((p, q) => q.length - p.length); const run = runs[0]; // 只剩 1 格长的公共边（例如被楼板洞切开）：开半間戸
+      const n = run.length < 2 ? 1 : rouka ? Math.max(2, run.length - 1) : Math.min(run.length - (run.length >= 4 ? 2 : 0), 2 + (run.length >= 8 ? 2 : 0)), st = Math.floor((run.length - n) / 2), p0 = run[st];
+      b.open.push({ f, i: p0[0], j: p0[1], side, kind: kind || 'fusuma', n });
+    }
+  }
+  function exteriorWindows(b, f, rr, kind, prob) { // 外墙每 2 格（1 間）一个窗位，种子取舍；门、石落し 占的位置跳过
+    const F = b.F[f], taken = new Set(); for (const o of b.open) if (o.f === f) for (let k = -1; k <= o.n; k++) taken.add(o.side + ':' + (o.side < 2 ? o.i + ':' + (o.j + k) : (o.i + k) + ':' + o.j));
+    for (let side = 0; side < 4; side++) { const [di, dj] = NB[side];
+      for (let j = 0; j < b.nv; j++) for (let i = 0; i < b.nu; i++) { const a = F.a[j * b.nu + i]; if (!INSIDE(a) || at(b, F, i + di, j + dj) !== A.OUT) continue; const s = side < 2 ? j : i; if (s % 2) continue;
+        const i2 = side < 2 ? i : i + 1, j2 = side < 2 ? j + 1 : j; if (!INSIDE(at(b, F, i2, j2)) || at(b, F, i2 + di, j2 + dj) !== A.OUT) continue;
+        if (taken.has(side + ':' + i + ':' + j) || taken.has(side + ':' + i2 + ':' + j2)) continue; if (rr() > prob) continue;
+        b.open.push({ f, i, j, side, kind, n: 2 }); taken.add(side + ':' + i + ':' + j); taken.add(side + ':' + i2 + ':' + j2); } }
+  }
+  // 保留通行：门内 1 格、开口两侧各 1 格、階段上下端 1 格
+  function keepClear(b, f) { const F = b.F[f]; for (const o of b.open) { if (o.f !== f || o.kind === 'window' || o.kind === 'akari' || o.kind === 'ishi') continue; const [di, dj] = NB[o.side]; for (let k = 0; k < o.n; k++) { const i = o.side < 2 ? o.i : o.i + k, j = o.side < 2 ? o.j + k : o.j; for (const s of [0, 1]) { const ii = i - di * s, jj = j - dj * s; if (ii >= 0 && jj >= 0 && ii < b.nu && jj < b.nv) F.kc[jj * b.nu + ii] = 1; const i3 = i + di * (s + 1), j3 = j + dj * (s + 1); if (i3 >= 0 && j3 >= 0 && i3 < b.nu && j3 < b.nv && INSIDE(F.a[j3 * b.nu + i3])) F.kc[j3 * b.nu + i3] = 1; } } }
+    for (const st of b.stairs) { if (st.f === f) for (const [i, j] of [st.bot]) F.kc[j * b.nu + i] = 1; if (st.f + 1 === f) for (const [i, j] of [st.top]) F.kc[j * b.nu + i] = 1; } }
+  function addToko(b, f, room) { // 床の間：靠房间里离门最远的那面墙，宽 2 格、深 1 格，不压保留通行
+    const F = b.F[f], [a0, b0, a1, b1] = room.rect, cands = [];
+    for (const side of [0, 1, 2, 3]) { const L = side < 2 ? b1 - b0 : a1 - a0; for (let s = 0; s + 2 <= L; s++) { const cells = [0, 1].map(k => side === 0 ? [a1 - 1, b0 + s + k] : side === 1 ? [a0, b0 + s + k] : side === 2 ? [a0 + s + k, b1 - 1] : [a0 + s + k, b0]); if (cells.every(([i, j]) => !F.kc[j * b.nu + i] && F.r[j * b.nu + i] === room.id)) cands.push({ side, cells, sc: Math.abs(s + 1 - L / 2) }); } }
+    if (!cands.length) return; cands.sort((p, q) => p.sc - q.sc); const c = cands[0]; for (const [i, j] of c.cells) F.a[j * b.nu + i] = A.TOKO; b.fix.push({ f, kind: 'toko', cells: c.cells, room: room.id, side: c.side });
+  }
+
+  // ---------------- 类型：橹（2–3 层）。现存橹 = 实测平面/层数/面积/高（严格），失传橹 = 槽位平面 + 规则（推定）----------------
+  function yagura(S, W, p) {
+    const real = !!p.real, M = real ? SPEC.measured[p.name] : null, stories = M ? M.stories : (SPEC.storiesByName[p.name] || (p.fam === 'yagura3' ? 3 : 2));
+    const key = 'yagura@' + p.name, R = node => rng(nodeSeed(W, key, node)), YS = SPEC.yagura;
+    // 位置与朝向 = site 的部件（现存橹已按“面贴边”平移到外墙面与石垣顶线齐平；失传橹 = 槽位）；平面形状（L 形）取 OSM 外形，移到部件中心
+    const ang = p.ang || 0, fr00 = frameOf(p.x, p.y, ang), pl = bbox(p.poly.map(q => fr00.l(q[0], q[1]))), [pcx, pcy] = fr00.w((pl[0] + pl[2]) / 2, (pl[1] + pl[3]) / 2), fr0 = frameOf(pcx, pcy, ang), PW = pl[2] - pl[0], PD = pl[3] - pl[1]; // 部件多边形的实际外形（现存橹 = 0.92 × OSM 尺寸）
+    const fp = real && p.data && p.data.fp ? p.data.fp : p.poly, loc0 = fp.map(q => fr0.l(q[0], q[1])), lb0 = bbox(loc0), loc = loc0.map(q => [q[0] - (lb0[0] + lb0[2]) / 2, q[1] - (lb0[1] + lb0[3]) / 2]);
+    // 一层：失传橹 = 槽位矩形按格取整；现存橹 = 按实测一层面积等比缩（OSM 外形按屋顶轮廓含出檐理解），L 形按格栅格化
+    let mask = null, scale = 1;
+    if (M && M.area) scale = Math.sqrt(M.area[0] / (M.L ? Math.abs(area(loc)) : PW * PD));
+    const fit = (L, k) => { let n = Math.round(L * k / CS); if (n * CS > L + 1e-6) n--; return Math.max(4, n); }, nu = fit(PW, scale), nv = fit(PD, scale); // 不超出部件外形
+    if (M && M.L) { mask = new Uint8Array(nu * nv); for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const u = (i + 0.5 - nu / 2) * CS / scale, v = (j + 0.5 - nv / 2) * CS / scale; if (inPoly(u, v, loc)) mask[j * nu + i] = 1; } }
+    // 内外：部件各边中点外 3 m 处离石垣顶线的距离——最大的一侧 = 城内侧（开门），< 2.5 m 的 = 朝外（贴边、放石落し）
+    const g = S.regions[p.region], sideIn = [0, 1, 2, 3].map(sd => { const [di, dj] = NB[sd], [x, y] = fr0.w(di * (PW / 2 + 3), dj * (PD / 2 + 3)); return S.inEncl(g, x, y) ? S.crestDist(g, x, y) : -1e9; });
+    const inSide = sideIn.indexOf(Math.max(...sideIn)), outSides = [0, 1, 2, 3].filter(sd => sideIn[sd] < 2.5).sort((a, c) => sideIn[a] - sideIn[c]).slice(0, 2);
+    // 外墙面与部件的朝外面齐平（墙站在石垣边上，出檐伸出石垣外）；不朝外的轴居中
+    const u0 = outSides.includes(1) ? -PW / 2 : outSides.includes(0) ? PW / 2 - nu * CS : -nu * CS / 2, v0 = outSides.includes(3) ? -PD / 2 : outSides.includes(2) ? PD / 2 - nv * CS : -nv * CS / 2;
+    const b = mkB({ key, type: 'yagura', name: p.name, tier: real ? 'measured' : 'est', region: p.region, x: pcx, y: pcy, ang, u0, v0, nu, nv, part: p.id, stories, outSides, inSide });
+    if (M && M.area) { let n = 0; for (let q = 0; q < nu * nv; q++) if (!mask || mask[q]) n++; b.areaRes = [n * CS * CS, M.area[0]]; }
+    // 贴边：朝外的墙面落在石垣顶线上（离顶线 0…+0.05 m，不外挑——部件外形含出檐时会外挑 0.4–0.6 m）
+    for (const sd of outSides) { const [di, dj] = NB[sd]; let worst = 1e9; for (const t of [0.15, 0.5, 0.85]) { const u = di > 0 ? b.u0 + nu * CS : di < 0 ? b.u0 : b.u0 + nu * CS * t, v = dj > 0 ? b.v0 + nv * CS : dj < 0 ? b.v0 : b.v0 + nv * CS * t, [x, y] = b.fr.w(u, v); worst = Math.min(worst, S.crestDist(g, x, y)); }
+      if (worst < 0.02) { const d = 0.05 - worst; if (sd === 0) b.u0 -= d; else if (sd === 1) b.u0 += d; else if (sd === 2) b.v0 -= d; else b.v0 += d; } }
+    const zg = groundMax(S, b, [[0, 0, nu, nv]]); b.zg = zg;
+    // 每层格：上层 = 下层按入側宽内收（逓減，柱筋相通）；现存橹按实测上层面积选每轴内收格数
+    const masks = [mask || new Uint8Array(nu * nv).fill(1)], insets = [];
+    for (let f = 1; f < stories; f++) { let ia = 1, ib = 1;
+      if (M && M.area && M.area[f]) { const prev = masks[f - 1]; let bestE = 1e9; for (let a = 0; a <= 3; a++) for (let c = 0; c <= 3; c++) { let n = 0; for (let j = c * (f > 0 ? 1 : 0); j < nv - c; j++) for (let i = a; i < nu - a; i++) if (inset(prev, nu, nv, i, j, a, c)) n++; const e = Math.abs(n * CS * CS - M.area[f]); if (e < bestE - 1e-9) { bestE = e; ia = a; ib = c; } } }
+      else { const r = R('taper')(); ia = stories >= 3 ? 1 : (r < 0.5 ? 2 : 1); ib = ia; } // 三重橹槽位只有 13×11 m：每层每侧内收半間，顶层仍放得下階段
+      const prev = masks[f - 1], mk = new Uint8Array(nu * nv); for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) if (inset(prev, nu, nv, i, j, ia, ib)) mk[j * nu + i] = 1; masks.push(mk); insets.push([ia, ib]); }
+    // 层高：现存橹 = 按实测总高反推（夹在范围内），失传橹 = 范围内取（三重 ≥18 m）
+    const rh = R('height'), Hwant = M && M.H ? M.H : (stories === 3 ? YS.lost3H : YS.lost2H)[0] + rh() * 2;
+    const roofRise = f => { const r = rectOf(masks[f], nu, nv); return Math.min(r[2] - r[0], r[3] - r[1]) * CS / 2 * YS.pitch + 0.6; };
+    let sh = (Hwant - YS.plinth - roofRise(stories - 1) - 0.3 * (stories - 1)) / stories; sh = clamp(sh, YS.storyH[0], YS.storyH[1]);
+    b.prov = real ? { tier: '实测', src: 'measured', note: '平面 = OSM 外形按实测一层面积缩放；层数/各层面积/总高 = 重要文化财数据；内部 = 规则 + 种子（推定）', area: M && M.area, H: M && M.H } : { tier: '推定', src: 'lost-slot', note: '位置 = site 失传橹槽位（遗址点吸附石垣）；层数 = 类型/文献；尺寸 = 规则 + 种子' };
+    let z = zg.max + YS.plinth;
+    const rr = R('rooms'), ro = R('open');
+    for (let f = 0; f < stories; f++) { const F = floorNew(b, z, sh), mk = masks[f]; for (let q = 0; q < mk.length; q++) if (mk[q]) F.a[q] = A.ROOM; z += sh + 0.3; }
+    // ゾーン：入側（武者走り）= 上层墙线外侧的一圈（宽 = 内收格数）；内收为 0（総二階）或顶层：外圈 2 格（1 間）——身舎太小就不设
+    for (let f = 0; f < stories; f++) { const F = b.F[f], up = masks[f + 1], mk = masks[f];
+      const ring = !up || insets[f].every(x => x === 0);
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const q = j * nu + i; if (!F.a[q]) continue; const iri = ring ? !insetOk(mk, nu, nv, i, j, 2) : !up[q]; if (iri) F.a[q] = A.IRI; }
+      let nRoom = 0; for (let q = 0; q < F.a.length; q++) if (F.a[q] === A.ROOM) nRoom++;
+      if (ring && nRoom < 24) for (let q = 0; q < F.a.length; q++) if (F.a[q] === A.IRI) F.a[q] = A.ROOM; } // 身舎太小：整层一间（不设武者走り）
+    // 房间：自上而下。上层的结构线（墙、入側线、隔断）投到下层身舎里必须是隔断线（柱筋相通：上层柱落在下层柱/隔断上，H26）；
+    // 顶层身舎按种子切 1–2 间。身舎 = 被这些线切开的连通块。
+    let req = null; // 上一层（更高一层）的结构边集合
+    for (let f = stories - 1; f >= 0; f--) { const F = b.F[f];
+      const cut = new Set(req || []);
+      if (!req) { const core = rectOfAttr(F, nu, nv, A.ROOM); if (core && core[2] - core[0] >= 8 && rr() < 0.6) { const m = core[0] + 2 * Math.round((core[2] - core[0]) / 4); for (let j = core[1]; j < core[3]; j++) cut.add('u:' + m + ':' + j); } }
+      // 连通块
+      let t = 0; for (let q = 0; q < F.a.length; q++) { if (F.a[q] !== A.ROOM || F.r[q] >= 0) continue; const id = b.rooms.length, st = [q]; F.r[q] = id; let n = 0, i0 = 1e9, j0 = 1e9, i1 = -1, j1 = -1;
+        while (st.length) { const c0 = st.pop(), i = c0 % nu, j = (c0 - i) / nu; n++; i0 = Math.min(i0, i); j0 = Math.min(j0, j); i1 = Math.max(i1, i + 1); j1 = Math.max(j1, j + 1);
+          for (let sd = 0; sd < 4; sd++) { const [di, dj] = NB[sd], i2 = i + di, j2 = j + dj; if (i2 < 0 || j2 < 0 || i2 >= nu || j2 >= nv) continue; const q2 = j2 * nu + i2; if (F.a[q2] !== A.ROOM || F.r[q2] >= 0) continue; const ek = sd < 2 ? 'u:' + Math.max(i, i2) + ':' + j : 'v:' + i + ':' + Math.max(j, j2); if (cut.has(ek)) continue; F.r[q2] = id; st.push(q2); } }
+        b.rooms.push({ id, name: p.name + '·' + (f + 1) + '階·内室' + (++t), rect: [i0, j0, i1, j1], kind: 'board', f, n }); }
+      const iid = b.rooms.length; b.rooms.push({ id: iid, name: p.name + '·' + (f + 1) + '階·武者走り', rect: [0, 0, nu, nv], kind: 'iri', f }); for (let q = 0; q < F.a.length; q++) if (F.a[q] === A.IRI) F.r[q] = iid;
+      // 本层结构边（给下一层用）：格边两侧 属性/房间 不同（含外墙）
+      req = []; for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) { const q = j * nu + i, here = i < nu && j < nv ? F.r[q] : -2, inH = i < nu && j < nv && INSIDE(F.a[q]);
+        if (i > 0 && j < nv) { const l = F.r[q - 1], inL = INSIDE(F.a[q - 1]); if ((inH || inL) && (l !== (i < nu ? here : -2) || inH !== inL)) req.push('u:' + i + ':' + j); }
+        if (j > 0 && i < nu) { const d = F.r[q - nu], inD = INSIDE(F.a[q - nu]); if ((inH || inD) && (d !== (j < nv ? here : -2) || inH !== inD)) req.push('v:' + i + ':' + j); } }
+    }
+    // 階段：每层在身舎（或入側）一角，沿长向，2 格宽；格数 = 让坡度 ≤ slopeMax
+    addDoor(b, 0, [0, 0, nu, nv], inSide, 'door', ro); keepClear(b, 0); // 先定门（城内侧），门内保留通行格不放階段
+    if (!placeStairs(b, R)) b.notes.push(p.name + ' 階段放不下');
+    // 开口：一层门（城内侧，2 格）；内室之间/内室↔武者走り 板戸；窓：外墙每間一个位（种子取舍）；石落し：一层朝外两侧中部各 1 处（2 格）
+    for (let f = 0; f < stories; f++) partitionOpenings(b, f, rr, 'itado');
+    for (const sd of outSides) addIshi(b, 0, sd, ro);
+    for (let f = 0; f < stories; f++) exteriorWindows(b, f, ro, 'window', 0.6);
+    for (let f = 0; f < stories; f++) keepClear(b, f);
+    // 屋顶：每层：非顶层 = 腰屋根（下层墙顶 → 上层墙），顶层 = 入母屋
+    for (let f = 0; f < stories; f++) for (const r of rects(b.F[f].a, nu, nv, INSIDE)) b.roofs.push({ f, r, kind: f === stories - 1 ? 'irimoya' : 'koshi', ov: YS.ov[Math.min(f, 2)], pitch: YS.pitch, top: f === stories - 1 });
+    // 土塀续接：顶到部件外形（含出檐）的土塀端头，沿墙轴续到本橹墙面（同高同厚）——部件外形比墙大时，防御线不留缝
+    b.wext = []; for (const d of S.parts) { if (d.fam !== 'dobei' || d.x0 === undefined) continue; for (const e of [0, 1]) { const ex = e ? d.x1 : d.x0, ey = e ? d.y1 : d.y0, ox = e ? d.x0 : d.x1, oy = e ? d.y0 : d.y1; if (Math.abs(polyDist(ex, ey, p.poly)) > 0.6) continue;
+      const L = Math.hypot(ex - ox, ey - oy) || 1, dx = (ex - ox) / L, dy = (ey - oy) / L; let k = 0; while (k < 8 && !inBodyXY(b, ex + dx * k, ey + dy * k)) k += 0.05; if (k <= 0.05 || k >= 8) continue;
+      const z = e ? (d.z1 !== undefined ? d.z1 : d.z) : (d.z0 !== undefined ? d.z0 : d.z); b.wext.push({ x0: ex - dx * 0.1, y0: ey - dy * 0.1, x1: ex + dx * (k + 0.1), y1: ey + dy * (k + 0.1), z, h: d.h || 2.2, t: d.t || 0.6, part: d.id }); } }
+    b.insets = insets; b.Hwant = Hwant; return b;
+  }
+  const inBodyXY = (b, x, y) => { const [u, v] = b.fr.l(x, y), i = Math.floor((u - b.u0) / b.cs), j = Math.floor((v - b.v0) / b.cs); return i >= 0 && j >= 0 && i < b.nu && j < b.nv && INSIDE(b.F[0].a[j * b.nu + i]); };
+  const area = P => { let s = 0; for (let i = 0; i < P.length; i++) { const a = P[i], c = P[(i + 1) % P.length]; s += a[0] * c[1] - c[0] * a[1]; } return s / 2; };
+  function inset(m, nu, nv, i, j, a, c) { if (i - a < 0 || j - c < 0 || i + a >= nu || j + c >= nv) return false; for (let jj = j - c; jj <= j + c; jj++) for (let ii = i - a; ii <= i + a; ii++) if (!m[jj * nu + ii]) return false; return !!m[j * nu + i]; }
+  function insetOk(m, nu, nv, i, j, w) { return inset(m, nu, nv, i, j, w, w); }
+  function rectOf(m, nu, nv) { let a = 1e9, b = 1e9, c = -1, d = -1; for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) if (m[j * nu + i]) { a = Math.min(a, i); b = Math.min(b, j); c = Math.max(c, i + 1); d = Math.max(d, j + 1); } return [a, b, c, d]; }
+  function rectOfAttr(F, nu, nv, at0) { let a = 1e9, b = 1e9, c = -1, d = -1; for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) if (F.a[j * nu + i] === at0) { a = Math.min(a, i); b = Math.min(b, j); c = Math.max(c, i + 1); d = Math.max(d, j + 1); } return c < 0 ? null : [a, b, c, d]; }
+  // 階段：2 格宽 × run 格长，下端和上端外各 1 格可走（上层同位置可走、不是 VOID），上层压在梯段上方的格标 VOID（楼板开洞 → 净高）
+  function placeStair(b, f, run, r) {
+    const F = b.F[f], F2 = b.F[f + 1], nu = b.nu, nv = b.nv, cands = [];
+    for (const dir of [0, 1, 2, 3]) { const [di, dj] = NB[dir], L = dir < 2 ? run : 2, Wd = dir < 2 ? 2 : run;
+      for (let j = 0; j + Wd <= nv; j++) for (let i = 0; i + L <= nu; i++) {
+        let ok = true; for (let jj = j; jj < j + Wd && ok; jj++) for (let ii = i; ii < i + L; ii++) { const a = F.a[jj * nu + ii]; if (!(a === A.ROOM || a === A.IRI) || !INSIDE(F2.a[jj * nu + ii]) || F.kc[jj * nu + ii]) { ok = false; break; } } if (!ok) continue;
+        // 下端（dir 反向一格）与上端（dir 正向一格）
+        const bot = dir === 0 ? [i - 1, j] : dir === 1 ? [i + L, j] : dir === 2 ? [i, j - 1] : [i, j + Wd], top = dir === 0 ? [i + L, j] : dir === 1 ? [i - 1, j] : dir === 2 ? [i, j + Wd] : [i, j - 1];
+        const bq = at(b, F, bot[0], bot[1]), tq = at(b, F2, top[0], top[1]); if (!(bq === A.ROOM || bq === A.IRI) || !(tq === A.ROOM || tq === A.IRI)) continue;
+        const rid0 = F.r[bot[1] * nu + bot[0]]; let same = true; for (let jj = j; jj < j + Wd && same; jj++) for (let ii = i; ii < i + L; ii++) if (F.r[jj * nu + ii] !== rid0) { same = false; break; } if (!same) continue;
+        // 上层：梯段上方（VOID）不能切断上层房间的连通——上端格与本层门洞侧仍要相连（交给 H25 复查）；这里只要求上端格不是 VOID 区
+        let upOk = true; const rTop = F2.r[top[1] * nu + top[0]]; for (let jj = j; jj < j + Wd && upOk; jj++) for (let ii = i; ii < i + L; ii++) { const a2 = F2.a[jj * nu + ii]; if (!(a2 === A.ROOM || a2 === A.IRI) || F2.r[jj * nu + ii] !== rTop) { upOk = false; break; } } if (!upOk) continue; // 楼板洞与上端格同一房间（上楼的出口没有隔断）
+        // 偏好：贴墙角（两侧有外墙/入側边）
+        let edge = 0; for (let jj = j - 1; jj <= j + Wd; jj++) for (let ii = i - 1; ii <= i + L; ii++) if (!INSIDE(at(b, F, ii, jj))) edge++;
+        cands.push({ dir, i, j, L, Wd, bot, top, sc: -edge + r() * 0.5 });
+      } }
+    if (!cands.length) return null; cands.sort((p, q) => p.sc - q.sc);
+    // 连通：放下梯段后，本层可走格（不含梯段、楼板洞）仍是一个连通块，且包含下一层梯段的上端格（否则上来的人被梯段/楼板洞围住）
+    const land = b.stairs.filter(s3 => s3.f + 1 === f).map(s3 => s3.top);
+    const conn = c => { // 每个房间（按房间号）去掉梯段格后仍连通（梯段/楼板洞不把一个房间切成两块），且包含下层梯段的上端格
+      const blk = (ii, jj) => ii >= c.i && ii < c.i + c.L && jj >= c.j && jj < c.j + c.Wd, ok = q => { const a = F.a[q]; return a === A.ROOM || a === A.IRI; }, seen = new Uint8Array(F.a.length);
+      for (let q0 = 0; q0 < F.a.length; q0++) { const i0 = q0 % nu, j0 = (q0 - i0) / nu; if (!ok(q0) || blk(i0, j0) || seen[q0]) continue; const rid = F.r[q0], st = [q0]; seen[q0] = 1; let first = true;
+        while (st.length) { const q = st.pop(), ii = q % nu, jj = (q - ii) / nu; for (const [di, dj] of NB) { const i2 = ii + di, j2 = jj + dj; if (i2 < 0 || j2 < 0 || i2 >= nu || j2 >= nv) continue; const q2 = j2 * nu + i2; if (seen[q2] || !ok(q2) || blk(i2, j2) || F.r[q2] !== rid) continue; seen[q2] = 1; st.push(q2); } }
+        // 同房间里还有没被这次洪泛到的格 = 被切成两块
+        for (let q = 0; q < F.a.length; q++) { const ii = q % nu, jj = (q - ii) / nu; if (ok(q) && !blk(ii, jj) && F.r[q] === rid && !seen[q]) return false; } }
+      return land.every(([ii, jj]) => !blk(ii, jj)) && !blk(c.bot[0], c.bot[1]); };
+    return cands.filter(conn);
+  }
+  function applyStair(b, f, c) { const F = b.F[f], F2 = b.F[f + 1], nu = b.nu, rid = F.r[c.bot[1] * nu + c.bot[0]], undo = [];
+    for (let jj = c.j; jj < c.j + c.Wd; jj++) for (let ii = c.i; ii < c.i + c.L; ii++) { const q = jj * nu + ii; undo.push([q, F.a[q], F.r[q], F2.a[q]]); F.a[q] = A.STAIR; F.r[q] = rid; F2.a[q] = A.VOID; }
+    const st = { f, dir: c.dir, rect: [c.i, c.j, c.i + c.L, c.j + c.Wd], bot: c.bot, top: c.top, rise: F2.z - F.z, run: (c.dir < 2 ? c.L : c.Wd) * CS }; b.stairs.push(st);
+    return () => { for (const [q, a, r, a2] of undo) { F.a[q] = a; F.r[q] = r; F2.a[q] = a2; } b.stairs.pop(); }; }
+  // 逐层放階段，带回溯：下层的梯段（及其在上层的楼板洞）要让上层还放得下自己的梯段
+  function placeStairs(b, R) { const n = b.F.length, rr = R('stair');
+    const go = f => { if (f + 1 >= n) return true; const F = b.F[f], F2 = b.F[f + 1], run = Math.ceil((F2.z - F.z) / SPEC.stair.slopeMax / CS), cs = placeStair(b, f, run, rr) || [];
+      for (const c of cs.slice(0, 24)) { const undo = applyStair(b, f, c); if (go(f + 1)) return true; undo(); } return false; };
+    return go(0); }
+  function addIshi(b, f, side, r) { // 石落し：外墙中部 2 格，地板对应格开洞（ISHI），外观是向外挑出的箱
+    const F = b.F[f], [di, dj] = NB[side], cells = []; for (let j = 0; j < b.nv; j++) for (let i = 0; i < b.nu; i++) if (F.a[j * b.nu + i] === A.IRI && at(b, F, i + di, j + dj) === A.OUT) cells.push([i, j]);
+    if (cells.length < 4) return; cells.sort((p, q) => side < 2 ? p[1] - q[1] : p[0] - q[0]); const mid = Math.floor(cells.length / 2) - 1, c0 = cells[mid], c1 = cells[mid + 1];
+    if (!c1 || (side < 2 ? c1[1] !== c0[1] + 1 : c1[0] !== c0[0] + 1)) return;
+    for (const [i, j] of [c0, c1]) { if (F.kc[j * b.nu + i]) return; }
+    for (const [i, j] of [c0, c1]) F.a[j * b.nu + i] = A.ISHI; b.open.push({ f, i: c0[0], j: c0[1], side, kind: 'ishi', n: 2 });
+  }
+
+  // ---------------- 类型：番所（门内）/ 蔵（剩余自由地）----------------
+  function small(S, W, g, FG, kind, anchor, k) {
+    const sp = SPEC.small[kind], key = kind + '@' + g.name + '@' + Math.round(anchor[0] / 5) + ',' + Math.round(anchor[1] / 5), R = node => rng(nodeSeed(W, key, node)), r0 = R('shape');
+    const w = Math.round(sp.w[0] + (sp.w[1] - sp.w[0]) * r0()) * 2, d = Math.round(sp.d[0] + (sp.d[1] - sp.d[0]) * r0()) * 2, [au, av] = FG.fr0.l(anchor[0], anchor[1]), ai = Math.round((au - FG.u0) / CS), aj = Math.round((av - FG.v0) / CS);
+    let best = null; const occ = W.occ[g.name], nu = FG.nu, nv = FG.nv, OP = new Int32Array((nu + 1) * (nv + 1)), m = Math.ceil(SPEC.setback.between / CS);
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) OP[(j + 1) * (nu + 1) + i + 1] = occ[j * nu + i] + OP[j * (nu + 1) + i + 1] + OP[(j + 1) * (nu + 1) + i] - OP[j * (nu + 1) + i];
+    const occAny = (i0, j0, i1, j1) => { i0 = Math.max(0, i0); j0 = Math.max(0, j0); i1 = Math.min(nu, i1); j1 = Math.min(nv, j1); return i1 > i0 && j1 > j0 && OP[j1 * (nu + 1) + i1] - OP[j0 * (nu + 1) + i1] - OP[j1 * (nu + 1) + i0] + OP[j0 * (nu + 1) + i0] > 0; };
+    const rp = R('place');
+    for (const [ww, dd] of [[w, d], [d, w]]) for (let j = Math.max(0, aj - 40); j + dd <= Math.min(nv, aj + 40); j++) for (let i = Math.max(0, ai - 40); i + ww <= Math.min(nu, ai + 40); i++) {
+      if (!FG.free(i, j, i + ww, j + dd) || occAny(i - m, j - m, i + ww + m, j + dd + m)) continue;
+      const sc = Math.hypot(i + ww / 2 - ai, j + dd / 2 - aj) + rp() * 0.3; if (!best || sc < best.sc) best = { sc, r: [i, j, i + ww, j + dd] }; }
+    if (!best) { W.notes.push(key + ' 放不下'); return null; }
+    const r = best.r; for (let j = r[1]; j < r[3]; j++) for (let i = r[0]; i < r[2]; i++) occ[j * FG.nu + i] = 1;
+    const [ox, oy] = FG.x(r[0], r[1]), b = mkB({ key, type: kind, name: (kind === 'bansho' ? '番所' : '蔵') + (k + 1), tier: 'est', region: g.i, x: ox, y: oy, ang: FG.ang, u0: 0, v0: 0, nu: r[2] - r[0], nv: r[3] - r[1] });
+    b.prov = { tier: '推定', src: kind, note: (kind === 'bansho' ? '门内番所（加番・番衆的诘所惯例）' : '蔵（城内仓库惯例）') + '；位置 = 规则（门内保留通道外最近的自由地 / 剩余自由地），尺寸 = 范围 + 种子' };
+    const zg = groundMax(S, b, [[0, 0, b.nu, b.nv]]); b.zg = zg; const F = floorNew(b, zg.max + (kind === 'kura' ? 0.45 : 0.4), sp.wallH);
+    for (let q = 0; q < F.a.length; q++) F.a[q] = A.ROOM;
+    const rr = R('rooms');
+    if (kind === 'bansho') { // 土間（一半，靠门）+ 畳间
+      const half = b.nu >= b.nv ? [0, 0, b.nu / 2, b.nv] : [0, 0, b.nu, b.nv / 2], r1 = b.nu >= b.nv ? [b.nu / 2, 0, b.nu, b.nv] : [0, b.nv / 2, b.nu, b.nv];
+      b.rooms.push({ id: 0, name: b.name + '·土間', rect: half, kind: 'doma', f: 0 }, { id: 1, name: b.name + '·詰所', rect: r1, kind: 'tatami', f: 0 });
+      for (let j = 0; j < b.nv; j++) for (let i = 0; i < b.nu; i++) { const inH = i < half[2] && j < half[3]; F.r[j * b.nu + i] = inH ? 0 : 1; if (inH) F.a[j * b.nu + i] = A.DOMA; }
+      partitionOpenings(b, 0, rr, 'shoji'); const gt = anchor; const [gi2, gj2] = (() => { const [u, v] = b.fr.l(gt[0], gt[1]); return [u / CS, v / CS]; })(); addDoor(b, 0, half, sideToward(b, half, gi2, gj2), 'door', rr); if (!b.open.some(o => o.kind === 'door')) { for (const sd of [1, 3, 0, 2]) if (addDoor(b, 0, half, sd, 'door', rr)) break; }
+      exteriorWindows(b, 0, rr, 'window', 0.5);
+    } else { b.rooms.push({ id: 0, name: b.name + '·内', rect: [0, 0, b.nu, b.nv], kind: 'board', f: 0 }); F.r.fill(0); for (const sd of [3, 2, 1, 0]) if (addDoor(b, 0, [0, 0, b.nu, b.nv], sd, 'door', rr)) break; }
+    keepClear(b, 0);
+    if (kind === 'kura') { const rc = R('fix'); for (let j = 0; j < b.nv; j++) for (let i = 0; i < b.nu; i++) { const q = j * b.nu + i, edge = i === 0 || j === 0 || i === b.nu - 1 || j === b.nv - 1; if (edge && !F.kc[q] && F.a[q] === A.ROOM && rc() < 0.35) { const nb = [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]].filter(([a, c]) => a >= 0 && c >= 0 && a < b.nu && c < b.nv && F.a[c * b.nu + a] === A.ROOM).length; if (nb >= 2) { F.a[q] = A.TOKO; b.fix.push({ f: 0, kind: 'chest', cells: [[i, j]], room: 0 }); } } } }
+    b.roofs.push({ f: 0, r: [0, 0, b.nu, b.nv], kind: 'kirizuma', ov: 0.9, pitch: 0.55, top: true });
+    return b;
+  }
+
+
+  // ================= 几何：外观（LOD0 细节 / LOD1 外壳 = 相机碰撞体）与内部（按需）——全部出自同一份格/开口/屋顶规格 =================
+  // 输出：按材质分组的三角形顶点数组（site 坐标 x 东 y 北 z 上），app 只做坐标轴换算。
+  function Acc() { const acc = {}; const put = (m, a) => { const L = acc[m] || (acc[m] = []); for (const v of a) L.push(v); }; return { acc, put }; }
+  function mkPrims(b, out) {
+    const fr = b.fr, Pw = (u, v, z) => { const [x, y] = fr.w(u, v); return [x, y, z]; };
+    const tri = (m, a, c, d) => out.put(m, [a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2]]);
+    const quad = (m, a, c, d, e) => { tri(m, a, c, d); tri(m, a, d, e); };
+    function box(m, u0, v0, z0, u1, v1, z1) { if (u1 - u0 < 1e-6 || v1 - v0 < 1e-6 || z1 - z0 < 1e-6) return; const p = [Pw(u0, v0, z0), Pw(u1, v0, z0), Pw(u1, v1, z0), Pw(u0, v1, z0), Pw(u0, v0, z1), Pw(u1, v0, z1), Pw(u1, v1, z1), Pw(u0, v1, z1)];
+      quad(m, p[4], p[5], p[6], p[7]); quad(m, p[0], p[3], p[2], p[1]); quad(m, p[0], p[1], p[5], p[4]); quad(m, p[1], p[2], p[6], p[5]); quad(m, p[2], p[3], p[7], p[6]); quad(m, p[3], p[0], p[4], p[7]); }
+    // 入母屋（近似）：檐口矩形 → 长屋脊（寄棟下半）+ 两端竖直山花三角（妻）；ridge 长 = (长 − 短) + 0.45·短
+    function irimoya(mt, r, zE, ov, pitch) { const u0 = U(b, r[0]) - ov, u1 = U(b, r[2]) + ov, v0 = V(b, r[1]) - ov, v1 = V(b, r[3]) + ov, W2 = (u1 - u0) / 2, D2 = (v1 - v0) / 2, cu = (u0 + u1) / 2, cv = (v0 + v1) / 2, longU = W2 >= D2, S2 = Math.min(W2, D2), Lh = Math.max(W2, D2), rise = S2 * pitch, zR = zE + rise, rr = (Lh - S2) + S2 * 0.45;
+      const P = (a, c, z) => longU ? Pw(cu + a, cv + c, z) : Pw(cu + c, cv + a, z), e0 = P(-Lh, -S2, zE), e1 = P(Lh, -S2, zE), e2 = P(Lh, S2, zE), e3 = P(-Lh, S2, zE), ra = P(-rr, 0, zR), rb = P(rr, 0, zR);
+      if (longU) { quad(mt, e0, e1, rb, ra); quad(mt, e2, e3, ra, rb); tri(mt, e1, e2, rb); tri(mt, e3, e0, ra); } else { quad(mt, e1, e0, ra, rb); quad(mt, e3, e2, rb, ra); tri(mt, e2, e1, rb); tri(mt, e0, e3, ra); }
+      quad(mt, e3, e2, e1, e0); // 檐底
+      const g = S2 * (1 - (Lh - rr) / Lh) * 0.5, zg = zR - g * pitch * S2 / S2; // 山花：在 ±rr 处的竖直三角
+      for (const sd of [-1, 1]) { const a = P(sd * rr, -g, zR - g * (rise / S2)), c = P(sd * rr, g, zR - g * (rise / S2)), d = P(sd * rr, 0, zR); tri('plaster', a, c, d); tri('plaster', c, a, d); }
+      ridge(P(-rr, 0, zR), P(rr, 0, zR)); }
+    function ridge(a, c) { const dx = c[0] - a[0], dy = c[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L * 0.22, ny = dx / L * 0.22, z0 = a[2] - 0.1, z1 = a[2] + 0.35, q = [[a[0] - nx, a[1] - ny, z0], [c[0] - nx, c[1] - ny, z0], [c[0] + nx, c[1] + ny, z0], [a[0] + nx, a[1] + ny, z0]], t = q.map(p => [p[0], p[1], z1]);
+      quad('ridge', t[0], t[1], t[2], t[3]); quad('ridge', q[0], q[1], t[1], t[0]); quad('ridge', q[1], q[2], t[2], t[1]); quad('ridge', q[2], q[3], t[3], t[2]); quad('ridge', q[3], q[0], t[0], t[3]); }
+    // 切妻：屋脊沿长边；端头出檐 oe（贴着别的殿舍时为 0）
+    function kirizuma(mt, r, zE, ov, pitch, oe) { const longU = (r[2] - r[0]) >= (r[3] - r[1]), u0 = U(b, r[0]), u1 = U(b, r[2]), v0 = V(b, r[1]), v1 = V(b, r[3]);
+      const [a0, a1, c0, c1] = longU ? [u0 - oe, u1 + oe, v0 - ov, v1 + ov] : [v0 - oe, v1 + oe, u0 - ov, u1 + ov], cm = (c0 + c1) / 2, half = (c1 - c0) / 2, zR = zE + half * pitch, P = (a, c, z) => longU ? Pw(a, c, z) : Pw(c, a, z);
+      quad(mt, P(a0, c0, zE), P(a1, c0, zE), P(a1, cm, zR), P(a0, cm, zR)); quad(mt, P(a1, c1, zE), P(a0, c1, zE), P(a0, cm, zR), P(a1, cm, zR)); quad(mt, P(a0, c1, zE), P(a1, c1, zE), P(a1, c0, zE), P(a0, c0, zE));
+      const w0 = longU ? [u0, u1] : [v0, v1], cw0 = longU ? [v0, v1] : [u0, u1]; for (const a of w0) { tri('plaster', P(a, cw0[0], zE), P(a, cw0[1], zE), P(a, cm, zR - 0.05)); tri('plaster', P(a, cw0[1], zE), P(a, cw0[0], zE), P(a, cm, zR - 0.05)); }
+      ridge(P(a0, cm, zR), P(a1, cm, zR)); }
+    // 腰屋根：下层墙顶（檐口外扩 ov）→ 上层墙面（内收后的矩形），四个梯形
+    function koshi(mt, r, r2, zE, ov, pitch) { const o = [U(b, r[0]) - ov, V(b, r[1]) - ov, U(b, r[2]) + ov, V(b, r[3]) + ov], dist = Math.max(0.3, Math.min(U(b, r2[0]) - o[0], o[2] - U(b, r2[2]), V(b, r2[1]) - o[1], o[3] - V(b, r2[3]))), zI = zE + dist * pitch, i = [U(b, r2[0]), V(b, r2[1]), U(b, r2[2]), V(b, r2[3])];
+      const E = [Pw(o[0], o[1], zE), Pw(o[2], o[1], zE), Pw(o[2], o[3], zE), Pw(o[0], o[3], zE)], I = [Pw(i[0], i[1], zI), Pw(i[2], i[1], zI), Pw(i[2], i[3], zI), Pw(i[0], i[3], zI)];
+      for (let k = 0; k < 4; k++) { const k2 = (k + 1) % 4; quad(mt, E[k], E[k2], I[k2], I[k]); } quad(mt, E[3], E[2], E[1], E[0]); return zI; }
+    return { box, tri, quad, irimoya, kirizuma, koshi, Pw };
+  }
+  const blkH = (b, F, q) => { if (!b.blocks.length || !F.bk) return F.h; const k = F.bk[q]; return k >= 0 && b.blocks[k].h ? b.blocks[k].h : F.h; };
+  // 外墙边列表：[{f, side, i, j, q}]，按（side, 线坐标）分组成连续段
+  function wallRuns(b, f) { const F = b.F[f], runs = new Map(); for (let j = 0; j < b.nv; j++) for (let i = 0; i < b.nu; i++) { const q = j * b.nu + i; if (!INSIDE(F.a[q])) continue; for (let sd = 0; sd < 4; sd++) { const [di, dj] = NB[sd]; if (INSIDE(at(b, F, i + di, j + dj))) continue; const line = sd < 2 ? i : j, s = sd < 2 ? j : i, k = sd + ':' + line; if (!runs.has(k)) runs.set(k, []); runs.get(k).push(s); } }
+    const out = []; for (const [k, L] of runs) { const [sd, line] = k.split(':').map(Number); L.sort((a, c) => a - c); let s0 = L[0], pv = L[0]; for (let t = 1; t <= L.length; t++) { if (t < L.length && L[t] === pv + 1) { pv = L[t]; continue; } out.push({ f, sd, line, s0, s1: pv + 1 }); if (t < L.length) { s0 = pv = L[t]; } } } return out; }
+  // 开口在格边上的区间：[s0, s1)（沿边方向的格号）
+  const openSpan = o => o.side < 2 ? [o.j, o.j + o.n] : [o.i, o.i + o.n];
+  const openLine = o => o.side < 2 ? o.i : o.j;
+  // 局部坐标里一条外墙边的矩形（外表面在格边上，向内厚 t）：返回 [u0,v0,u1,v1]（s 区间 [a, c) 格）
+  function wallRect(b, sd, line, a, c, t, out0) { const o = out0 || 0; if (sd === 0) return [U(b, line + 1) - t, V(b, a), U(b, line + 1) + o, V(b, c)]; if (sd === 1) return [U(b, line) - o, V(b, a), U(b, line) + t, V(b, c)]; if (sd === 2) return [U(b, a), V(b, line + 1) - t, U(b, c), V(b, line + 1) + o]; return [U(b, a), V(b, line) - o, U(b, c), V(b, line) + t]; }
+  function exterior(b, opt) { // → { lod0: acc, hull: acc, boxes: [局部盒（外壳，室内相机也用）] }；opt.hullOnly：只出外壳（首帧用，细节在首帧后补）
+    const L0 = opt && opt.hullOnly ? { acc: {}, put() {} } : Acc(), H = Acc(), P0 = mkPrims(b, L0), PH = mkPrims(b, H), boxes = [], wins = [], t = SPEC.wallT, DH = SPEC.door.h, gt = b.type === 'goten';
+    const addBox = (m, bx, solid, hull, tag, o) => { P0.box(m, bx[0], bx[1], bx[2], bx[3], bx[4], bx[5]); if (solid) boxes.push({ m, b: bx, tag, o }); if (hull) PH.box('plaster', bx[0] - 0.06, bx[1] - 0.06, bx[2], bx[3] + 0.06, bx[4] + 0.06, bx[5]); };
+    const F0 = b.F[0], zb = b.zg.min - 0.3;
+    // 基础（石垣台/礎石）：一层格的矩形分解
+    const comps0 = b.blocks.length ? b.blocks.map(k => k.r) : rects(F0.a, b.nu, b.nv, INSIDE);
+    for (const r of comps0) addBox('stone', [U(b, r[0]), V(b, r[1]), zb, U(b, r[2]), V(b, r[3]), F0.z - (gt ? 0.25 : 0.05)], true, true, 'plinth'); // 台面低于室内地板面层（不共面，免 z-fighting）
+    if (gt) for (const r of comps0) addBox('wood', [U(b, r[0]) + 0.05, V(b, r[1]) + 0.05, F0.z - 0.25, U(b, r[2]) - 0.05, V(b, r[3]) - 0.05, F0.z - 0.05], true, false, 'plinth');
+    b.F.forEach((F, f) => {
+      const runs = wallRuns(b, f), ops = b.open.filter(o => o.f === f && (o.kind === 'door' || o.kind === 'window' || o.kind === 'akari' || o.kind === 'ishi'));
+      for (const R of runs) {
+        const mine = ops.filter(o => o.side === R.sd && openLine(o) === R.line); const hOf = s => { const i = R.sd < 2 ? R.line : s, j = R.sd < 2 ? s : R.line; return blkH(b, F, j * b.nu + i); };
+        // 逐格：门格 = 门洞（只画门楣以上），其它 = 整墙；同高连续合并
+        let s = R.s0; while (s < R.s1) { const isDoor = mine.some(o => o.kind === 'door' && s >= openSpan(o)[0] && s < openSpan(o)[1]), h = hOf(s); let e = s + 1; while (e < R.s1 && hOf(e) === h && mine.some(o => o.kind === 'door' && e >= openSpan(o)[0] && e < openSpan(o)[1]) === isDoor) e++;
+          const wr = wallRect(b, R.sd, R.line, s, e, t);
+          if (isDoor) addBox('plaster', [wr[0], wr[1], F.z + DH, wr[2], wr[3], F.z + h], true, false, 'lintel');
+          else if (gt) { addBox('wood', [wr[0], wr[1], F.z - (f === 0 ? 0.05 : 0), wr[2], wr[3], F.z + DH], true, false, 'wall'); addBox('plaster', [wr[0], wr[1], F.z + DH, wr[2], wr[3], F.z + h], true, false, 'wall'); }
+          else addBox('plaster', [wr[0], wr[1], F.z - (f === 0 ? 0.05 : 0), wr[2], wr[3], F.z + h], true, false, 'wall');
+          s = e; }
+        // 窓 / 障子（外表面贴片；室内另画）
+        for (const o of mine) { const [a, c] = openSpan(o); if (o.kind === 'window') { const w = wallRect(b, R.sd, R.line, a, c, -0.0, 0.03); const sh = 0.15; const ins = R.sd < 2 ? [0, sh, 0, -sh] : [sh, 0, -sh, 0]; P0.box('window', w[0] + ins[0], w[1] + ins[1], F.z + SPEC.win.sill, w[2] + ins[2], w[3] + ins[3], F.z + SPEC.win.sill + SPEC.win.h); wins.push({ o }); }
+          else if (o.kind === 'akari') { const w = wallRect(b, R.sd, R.line, a, c, -0.0, 0.03), sh = 0.06, ins = R.sd < 2 ? [0, sh, 0, -sh] : [sh, 0, -sh, 0]; P0.box('shoji', w[0] + ins[0], w[1] + ins[1], F.z + 0.08, w[2] + ins[2], w[3] + ins[3], F.z + DH - 0.08); wins.push({ o }); }
+          else if (o.kind === 'ishi') { const w = wallRect(b, R.sd, R.line, a, c, -0.0, 0.55), bx = [w[0], w[1], F.z - 0.7, w[2], w[3], F.z + 1.3]; addBox('plaster', bx, true, true, 'ishi', o); const cap = wallRect(b, R.sd, R.line, a - 0.15, c + 0.15, -0.0, 0.75); P0.box('tile', cap[0], cap[1], F.z + 1.3, cap[2], cap[3], F.z + 1.45); PH.box('plaster', cap[0], cap[1], F.z + 1.3, cap[2], cap[3], F.z + 1.45); } }
+        // 门外踏石（地面 → 地板下 0.2 m），门格外一格
+        for (const o of mine) if (o.kind === 'door' && f === 0) { const [a, c] = openSpan(o), w = wallRect(b, R.sd, R.line, a, c, -0.0, CS); const zl = b.zg.min - 0.3, top = F.z - Math.min(0.45, Math.max(0.15, (F.z - b.zg.max) / 2)); if (top > zl + 0.05) addBox('stone', [w[0], w[1], zl, w[2], w[3], top], true, true, 'step-out'); }
+      }
+      // 柱（御殿外墙每間一根，外露 4 cm）
+      if (gt) for (const R of runs) for (let s = R.s0; s <= R.s1; s += 2) { const w = wallRect(b, R.sd, R.line, s, s, t, 0.04); const c = R.sd < 2 ? [w[0], V(b, s) - 0.12, w[2], V(b, s) + 0.12] : [U(b, s) - 0.12, w[1], U(b, s) + 0.12, w[3]]; const i = R.sd < 2 ? R.line : Math.min(s, R.s1 - 1), j = R.sd < 2 ? Math.min(s, R.s1 - 1) : R.line; P0.box('wood', c[0], c[1], F.z, c[2], c[3], F.z + blkH(b, F, j * b.nu + i)); }
+      // 外壳：每层按矩形分解（御殿按殿舍块，各自墙高）
+      const comps = b.blocks.length ? b.blocks.map((k, bi) => ({ r: k.r, h: k.h || F.h })) : rects(F.a, b.nu, b.nv, INSIDE).map(r => ({ r, h: F.h }));
+      for (const c of comps) PH.box('plaster', U(b, c.r[0]) - 0.06, V(b, c.r[1]) - 0.06, F.z - (f ? 0.3 : 0), U(b, c.r[2]) + 0.06, V(b, c.r[3]) + 0.06, F.z + c.h);
+      // 不同高的殿舍块相接处：低块墙顶以上补墙（外观连续）
+      if (b.blocks.length) for (let j = 0; j < b.nv; j++) for (let i = 0; i < b.nu; i++) { const q = j * b.nu + i; if (!INSIDE(F.a[q])) continue; for (const sd of [0, 2]) { const [di, dj] = NB[sd], i2 = i + di, j2 = j + dj; if (i2 >= b.nu || j2 >= b.nv) continue; const q2 = j2 * b.nu + i2; if (!INSIDE(F.a[q2]) || F.bk[q] === F.bk[q2]) continue; const h1 = blkH(b, F, q), h2 = blkH(b, F, q2); if (Math.abs(h1 - h2) < 1e-6) continue; const lo = Math.min(h1, h2), hi = Math.max(h1, h2), w = wallRect(b, sd, sd < 2 ? i : j, sd < 2 ? j : i, (sd < 2 ? j : i) + 1, t / 2, t / 2); addBox('plaster', [w[0], w[1], F.z + lo, w[2], w[3], F.z + hi], true, false, 'joint'); } }
+    });
+    // 土塀续接（局部坐标里是斜放的墙：按 site 的土塀同样的盒画）
+    for (const w of (b.wext || [])) { const [ua, va] = b.fr.l(w.x0, w.y0), [uc, vc] = b.fr.l(w.x1, w.y1), L = Math.hypot(uc - ua, vc - va), nx = -(vc - va) / L * w.t / 2, ny = (uc - ua) / L * w.t / 2;
+      const q = [[ua - nx, va - ny], [uc - nx, vc - ny], [uc + nx, vc + ny], [ua + nx, va + ny]], z0 = w.z - 0.3, z1 = w.z + w.h; for (const [P, m] of [[P0, 'plaster'], [PH, 'plaster']]) { const lo = q.map(p => P.Pw(p[0], p[1], z0)), hi = q.map(p => P.Pw(p[0], p[1], z1)); P.quad(m, hi[0], hi[1], hi[2], hi[3]); for (let k = 0; k < 4; k++) { const k2 = (k + 1) % 4; P.quad(m, lo[k], lo[k2], hi[k2], hi[k]); } }
+      const cap = q.map(p => P0.Pw(p[0] * 1, p[1], z1)); P0.quad('tile', ...cap.map(c => [c[0], c[1], c[2] + 0.12])); }
+    // 屋顶（外观与外壳同一组三角形）
+    for (const R of b.roofs) { const F = b.F[R.f], h = R.h || (b.blocks.length ? (b.blocks.find(k => k.r === R.r) || {}).h || F.h : F.h), zE = F.z + h + 0.1;
+      for (const P of [P0, PH]) { if (R.kind === 'irimoya') P.irimoya('tile', R.r, zE, R.ov, R.pitch); else if (R.kind === 'kirizuma') P.kirizuma('tile', R.r, zE, R.ov, R.pitch, R.oe !== undefined ? R.oe : R.ov); else if (R.kind === 'koshi') { const r2 = rectOf(b.F[R.f + 1].a.map(INSIDE), b.nu, b.nv); P.koshi('tile', R.r, r2, zE, R.ov, R.pitch); } } }
+    return { lod0: L0.acc, hull: H.acc, boxes, wins };
+  }
+
+
+  // ---------------- 内部（按需生成）：地板/畳/天井/隔断/柱/階段/室内窗/装置；碰撞盒 = 外壳盒 + 内部实心盒 ----------------
+  const PASS_KINDS = new Set(['fusuma', 'itado', 'shoji', 'door']);
+  function openEdgeSet(b) { const S = new Set(); for (const o of b.open) { if (!PASS_KINDS.has(o.kind)) continue; for (let k = 0; k < o.n; k++) { const i = o.side < 2 ? o.i : o.i + k, j = o.side < 2 ? o.j + k : o.j; S.add(edgeKey(o.f, i, j, o.side)); } } return S; }
+  // 格边键：统一成“较小格 + 方向 u/v”
+  function edgeKey(f, i, j, side) { if (side === 1) return f + ':u:' + i + ':' + j; if (side === 0) return f + ':u:' + (i + 1) + ':' + j; if (side === 3) return f + ':v:' + i + ':' + j; return f + ':v:' + i + ':' + (j + 1); }
+  const label = (b, F, i, j) => { const a = at(b, F, i, j); return INSIDE(a) ? F.r[j * b.nu + i] : -1; }; // 楼板洞（VOID）保留原房间号：洞只是房间地板上的开口
+  // 柱：格点四周格的标签（房间号/外部）不全相同 = 在墙/隔断线上；間格点（偶数）或转角/丁字点立柱；门/开口跨度内的点、階段/楼板洞旁的点不立
+  function columnsOf(b, f) {
+    const F = b.F[f], out = [], oe = openEdgeSet(b);
+    for (let j = 0; j <= b.nv; j++) for (let i = 0; i <= b.nu; i++) {
+      const tl = label(b, F, i - 1, j), tr = label(b, F, i, j), bl = label(b, F, i - 1, j - 1), br = label(b, F, i, j - 1); // 上 = j，下 = j−1（v 方向）
+      if (tl < 0 && tr < 0 && bl < 0 && br < 0) continue; if (tl === tr && tr === bl && bl === br) continue;
+      let ns = 0, nv0 = 0, hole = false; for (const [ii, jj] of [[i - 1, j], [i, j], [i - 1, j - 1], [i, j - 1]]) { const a = at(b, F, ii, jj); if (a === A.STAIR) ns++; if (a === A.VOID) nv0++; if (a === A.ISHI) hole = true; } if (hole || ns === 4 || nv0 === 4) continue; // 楼板洞（梯段上方，由梁框住）与石落し 旁、梯段内部不立柱
+      const straightV = tl === bl && tr === br && tl !== tr, straightU = tl === tr && bl === br && tl !== bl, ken = i % 2 === 0 && j % 2 === 0;
+      if ((straightV || straightU) && !ken) continue;
+      // 开口跨度内（点两侧的边都开着）不立
+      if (straightV && oe.has(f + ':u:' + i + ':' + j) && oe.has(f + ':u:' + i + ':' + (j - 1))) continue;
+      if (straightU && oe.has(f + ':v:' + i + ':' + j) && oe.has(f + ':v:' + (i - 1) + ':' + j)) continue;
+      // 门（外墙）跨度内
+      out.push([i, j]);
+    }
+    return out;
+  }
+  function interior(b) {
+    const ACC = Acc(), PR = mkPrims(b, ACC), boxes = [], wins = [], t = SPEC.wallT, DH = SPEC.door.h, gt = b.type === 'goten', oe = openEdgeSet(b);
+    const add = (m, bx, solid, tag) => { PR.box(m, bx[0], bx[1], bx[2], bx[3], bx[4], bx[5]); if (solid) boxes.push({ m, b: bx, tag }); return bx; };
+    b.F.forEach((F, f) => {
+      const up = b.F[f + 1], nu = b.nu;
+      // 地板：楼板（结构）+ 面层（畳 / 板）；土間低 0.35 m；VOID/ISHI 不铺（开洞）
+      const slabCell = a => a === A.ROOM || a === A.IRI || a === A.ROUKA || a === A.STAIR || a === A.TOKO;
+      for (const r of rects(F.a, nu, b.nv, slabCell)) add('floorwood', [U(b, r[0]), V(b, r[1]), F.z - 0.25, U(b, r[2]), V(b, r[3]), F.z - 0.04], true, 'slab');
+      for (const r of rects(F.a, nu, b.nv, a => a === A.DOMA)) add('doma', [U(b, r[0]), V(b, r[1]), b.zg.min - 0.3, U(b, r[2]), V(b, r[3]), F.z - 0.35], true, 'doma');
+      for (const rm of b.rooms) { if (rm.f !== f) continue; const tat = rm.kind === 'tatami';
+        // 面层：按房间的格（畳：2×1 格一张，沿长向排；其余：整块板）
+        const cells = []; for (let j = rm.rect[1]; j < rm.rect[3]; j++) for (let i = rm.rect[0]; i < rm.rect[2]; i++) { const q = j * nu + i; if (F.r[q] === rm.id && (F.a[q] === A.ROOM || F.a[q] === A.IRI || F.a[q] === A.ROUKA)) cells.push([i, j]); }
+        if (!tat) { const m = new Uint8Array(nu * b.nv); for (const [i, j] of cells) m[j * nu + i] = 1; for (const r of rects(m, nu, b.nv, x => x === 1)) add('floorwood', [U(b, r[0]), V(b, r[1]), F.z - 0.04, U(b, r[2]), V(b, r[3]), F.z], false); continue; }
+        const used = new Set(), longU = (rm.rect[2] - rm.rect[0]) >= (rm.rect[3] - rm.rect[1]), g = 0.012;
+        for (const [i, j] of cells) { const k = i + ',' + j; if (used.has(k)) continue; const i2 = longU ? i + 1 : i, j2 = longU ? j : j + 1, ok = cells.some(c => c[0] === i2 && c[1] === j2) && !used.has(i2 + ',' + j2) && ((longU ? (i - rm.rect[0] + (j - rm.rect[1]) % 2) : (j - rm.rect[1] + (i - rm.rect[0]) % 2)) % 2 === 0);
+          used.add(k); if (ok) used.add(i2 + ',' + j2); const iE = ok ? i2 + 1 : i + 1, jE = ok ? j2 + 1 : j + 1; add('tatami', [U(b, i) + g, V(b, j) + g, F.z - 0.04, U(b, iE) - g, V(b, jE) - g, F.z], false); }
+        const m = new Uint8Array(nu * b.nv); for (const [i, j] of cells) m[j * nu + i] = 1; for (const r of rects(m, nu, b.nv, x => x === 1)) PR.box('heri', U(b, r[0]), V(b, r[1]), F.z - 0.045, U(b, r[2]), V(b, r[3]), F.z - 0.035);
+      }
+      // 天井：本层格（上层同格是楼板洞 VOID 的不铺）
+      const hC = q => blkH(b, F, q);
+      { const m = new Uint8Array(nu * b.nv); for (let q = 0; q < m.length; q++) if (INSIDE(F.a[q]) && F.a[q] !== A.VOID && !(up && up.a[q] === A.VOID)) m[q] = 1;
+        if (b.blocks.length) { for (const k of b.blocks) { const mm = new Uint8Array(nu * b.nv); for (let j = k.r[1]; j < k.r[3]; j++) for (let i = k.r[0]; i < k.r[2]; i++) mm[j * nu + i] = m[j * nu + i]; for (const r of rects(mm, nu, b.nv, x => x === 1)) add('ceil', [U(b, r[0]), V(b, r[1]), F.z + k.h, U(b, r[2]), V(b, r[3]), F.z + k.h + 0.06], true, 'ceil'); } }
+        else for (const r of rects(m, nu, b.nv, x => x === 1)) add('ceil', [U(b, r[0]), V(b, r[1]), F.z + F.h, U(b, r[2]), V(b, r[3]), F.z + F.h + 0.06], true, 'ceil'); }
+      // 隔断：两侧都在内、标签不同的格边；开口边 = 门洞（只画门楣以上）
+      const th = gt ? 0.1 : 0.14;
+      for (let j = 0; j < b.nv; j++) for (let i = 0; i < nu; i++) { const q = j * nu + i; const la = label(b, F, i, j); if (la < 0) continue;
+        for (const sd of [0, 2]) { const [di, dj] = NB[sd], i2 = i + di, j2 = j + dj; if (i2 >= nu || j2 >= b.nv) continue; const lb = label(b, F, i2, j2); if (lb < 0 || lb === la) continue;
+          const q2 = j2 * nu + i2, h = Math.min(hC(q), hC(q2)), open = oe.has(edgeKey(f, i, j, sd)), bx = sd === 0 ? [U(b, i + 1) - th / 2, V(b, j), U(b, i + 1) + th / 2, V(b, j + 1)] : [U(b, i), V(b, j + 1) - th / 2, U(b, i + 1), V(b, j + 1) + th / 2];
+          const lowM = gt || b.type === 'bansho' ? 'fusuma' : 'wood', hiM = gt ? 'kabe' : 'wood';
+          if (b.type === 'yagura' && ((F.a[q] === A.IRI) !== (F.a[q2] === A.IRI))) { add('wood', [bx[0], bx[1], F.z + h - 0.35, bx[2], bx[3], F.z + h], true, 'beam'); continue; } // 橹：入側与身舎之间不设隔断，只有柱 + 梁（武者走り对身舎敞开）
+          if (!open) add(lowM, [bx[0], bx[1], F.z, bx[2], bx[3], F.z + DH], true, 'part');
+          add(hiM, [bx[0], bx[1], F.z + DH, bx[2], bx[3], F.z + h], true, 'lintel'); } }
+      // 柱
+      for (const [i, j] of columnsOf(b, f)) { let h = 1e9; for (const [ii, jj] of [[i - 1, j], [i, j], [i - 1, j - 1], [i, j - 1]]) if (INSIDE(at(b, F, ii, jj))) h = Math.min(h, hC(jj * nu + ii)); add('wood', [U(b, i) - 0.11, V(b, j) - 0.11, F.z, U(b, i) + 0.11, V(b, j) + 0.11, F.z + h], true, 'col'); }
+      // 室内窗（内表面贴片）
+      for (const o of b.open) { if (o.f !== f || (o.kind !== 'window' && o.kind !== 'akari')) continue; const [a, c] = openSpan(o), w = wallRect(b, o.side, openLine(o), a, c, t + 0.03, -t), sh = o.kind === 'window' ? 0.15 : 0.06, ins = o.side < 2 ? [0, sh, 0, -sh] : [sh, 0, -sh, 0], z0 = o.kind === 'window' ? F.z + SPEC.win.sill : F.z + 0.08, z1 = o.kind === 'window' ? z0 + SPEC.win.h : F.z + DH - 0.08;
+        const bx = [w[0] + ins[0], w[1] + ins[1], z0, w[2] + ins[2], w[3] + ins[3], z1]; PR.box('shoji', bx[0], bx[1], bx[2], bx[3], bx[4], bx[5]); wins.push({ o, b: bx }); }
+    });
+    // 階段：实心台阶（每级一块，从下层地板到该级踏面）
+    for (const st of b.stairs) { const F = b.F[st.f], n = Math.ceil(st.rise / SPEC.stair.riserMax), [i0, j0, i1, j1] = st.rect, u0 = U(b, i0), u1 = U(b, i1), v0 = V(b, j0), v1 = V(b, j1);
+      for (let k = 0; k < n; k++) { const t0 = k / n, t1 = (k + 1) / n, z1 = F.z + st.rise * (k + 1) / n - 0.0; let bx;
+        if (st.dir === 0) bx = [u0 + (u1 - u0) * t0, v0, F.z - 0.04, u0 + (u1 - u0) * t1, v1, z1]; else if (st.dir === 1) bx = [u1 - (u1 - u0) * t1, v0, F.z - 0.04, u1 - (u1 - u0) * t0, v1, z1];
+        else if (st.dir === 2) bx = [u0, v0 + (v1 - v0) * t0, F.z - 0.04, u1, v0 + (v1 - v0) * t1, z1]; else bx = [u0, v1 - (v1 - v0) * t1, F.z - 0.04, u1, v1 - (v1 - v0) * t0, z1];
+        add('wood', bx, true, 'step'); } }
+    // 装置：床の間（台 + 背后金地壁贴）、蔵里的长持（箱）
+    for (const fx of b.fix) { const F = b.F[fx.f]; let u0 = 1e9, v0 = 1e9, u1 = -1e9, v1 = -1e9; for (const [i, j] of fx.cells) { u0 = Math.min(u0, U(b, i)); v0 = Math.min(v0, V(b, j)); u1 = Math.max(u1, U(b, i + 1)); v1 = Math.max(v1, V(b, j + 1)); }
+      if (fx.kind === 'toko') { add('floorwood', [u0, v0, F.z, u1, v1, F.z + 0.15], true, 'fix'); const sd = fx.side; const w = sd === 0 ? [u1 - 0.03, v0, u1, v1] : sd === 1 ? [u0, v0, u0 + 0.03, v1] : sd === 2 ? [u0, v1 - 0.03, u1, v1] : [u0, v0, u1, v0 + 0.03]; PR.box('gold', w[0], w[1], F.z + 0.15, w[2], w[3], F.z + DH); }
+      else add('wood', [u0 + 0.1, v0 + 0.15, F.z, u1 - 0.1, v1 - 0.15, F.z + 0.65], true, 'fix'); }
+    return { acc: ACC.acc, boxes, wins };
+  }
+
+
+  // ================= 审计 H22–H27（只读生成结果与几何；不复用生成器的中间判断）=================
+  const FAM_TOP = { dobei: 2.4, mwall: 3.4, gate: 7.6, yaguramon: 9.5, tamon: 9.0, hall: 12, kura: 7, pavilion: 5, tenshu: 60 }; // 已有部件顶高（m，高于底）：渲染同量级，判檐口是否压到
+  function geoOf(b) { if (!b._geo) { const e = exterior(b), i = interior(b); b._geo = { ext: e, int: i, solid: e.boxes.concat(i.boxes) }; } return b._geo; }
+  // 盒的 2 m 桶索引（只为提速；结果与逐盒求相同）
+  function boxIdx(G) { if (G._ix && G._ixN === G.solid.length) return G._ix; const M = new Map(), K = 2; for (const B of G.solid) { const x = B.b; for (let i = Math.floor(x[0] / K); i <= Math.floor(x[3] / K); i++) for (let j = Math.floor(x[1] / K); j <= Math.floor(x[4] / K); j++) { const k = i * 100003 + j; let L = M.get(k); if (!L) M.set(k, L = []); L.push(B); } } G._ix = M; G._ixN = G.solid.length; return M; }
+  function clearG(G, p, R) { const M = boxIdx(G), K = 2; let m = R + 1; for (let i = Math.floor((p[0] - R) / K); i <= Math.floor((p[0] + R) / K); i++) for (let j = Math.floor((p[1] - R) / K); j <= Math.floor((p[1] + R) / K); j++) { const L = M.get(i * 100003 + j); if (L) for (const B of L) { const d = boxDist(p, B.b); if (d < m) m = d; } } return m; }
+  // 球（局部坐标点 p，半径 R）到盒集合的最近距离（精确，AABB）
+  function boxDist(p, bx) { const dx = Math.max(bx[0] - p[0], 0, p[0] - bx[3]), dy = Math.max(bx[1] - p[1], 0, p[1] - bx[4]), dz = Math.max(bx[2] - p[2], 0, p[2] - bx[5]); return Math.hypot(dx, dy, dz); }
+  function clearLocal(boxes, p) { let m = 1e9; for (const B of boxes) { const b = B.b; if (p[0] < b[0] - m || p[0] > b[3] + m || p[1] < b[1] - m || p[1] > b[4] + m || p[2] < b[2] - m || p[2] > b[5] + m) continue; const d = boxDist(p, b); if (d < m) m = d; } return m; }
+  // 一层占地采样：每个内格 3×3 点（内缩 0.05 m）
+  function fpSamples(b, f) { const F = b.F[f || 0], P = [], nu = b.nu, seen = new Uint8Array((nu + 1) * (b.nv + 1)); for (let j = 0; j < b.nv; j++) for (let i = 0; i < nu; i++) if (INSIDE(F.a[j * nu + i])) { P.push(b.fr.w(U(b, i + 0.5), V(b, j + 0.5))); for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const k = (j + dj) * (nu + 1) + i + di; if (seen[k]) continue; seen[k] = 1; const ii = i + di, jj = j + dj, iu = ii === 0 || !INSIDE(at(b, F, ii, jj - 0)) && !INSIDE(at(b, F, ii, jj - 1)) ? 0.05 : ii === nu ? -0.05 : 0, ou = 0; P.push(b.fr.w(U(b, ii) + (di ? -0.05 : 0.05), V(b, jj) + (dj ? -0.05 : 0.05))); } } return P; }
+  // 一层外轮廓（格边段，世界坐标，向内缩 0.05 m）
+  function outline(b, m) { m = m || 0.05; const out = []; for (const R of wallRuns(b, 0)) { const w = wallRect(b, R.sd, R.line, R.s0, R.s1, m, -m), e = R.sd === 0 ? [w[2], w[2]] : R.sd === 1 ? [w[0], w[0]] : null, a = R.sd < 2 ? [R.sd === 0 ? w[0] : w[2], w[1] + m] : [w[0] + m, R.sd === 2 ? w[1] : w[3]], c = R.sd < 2 ? [R.sd === 0 ? w[0] : w[2], w[3] - m] : [w[2] - m, R.sd === 2 ? w[1] : w[3]]; out.push([b.fr.w(a[0], a[1]), b.fr.w(c[0], c[1])]); } return out; }
+  function segX(a, b2, c, d) { const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]); const d1 = o(c, d, a), d2 = o(c, d, b2), d3 = o(a, b2, c), d4 = o(a, b2, d); return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0)); }
+  function segSegDist(a, b2, c, d) { if (segX(a, b2, c, d)) return 0; return Math.min(segDist(a[0], a[1], c[0], c[1], d[0], d[1]), segDist(b2[0], b2[1], c[0], c[1], d[0], d[1]), segDist(c[0], c[1], a[0], a[1], b2[0], b2[1]), segDist(d[0], d[1], a[0], a[1], b2[0], b2[1])); }
+  const insideB = (b, x, y, m) => { const [u0, v0] = b.fr.l(x, y); for (const [du, dv] of m ? [[-m, -m], [m, -m], [-m, m], [m, m]] : [[0, 0]]) { const i = Math.floor((u0 + du - b.u0) / b.cs), j = Math.floor((v0 + dv - b.v0) / b.cs); if (i < 0 || j < 0 || i >= b.nu || j >= b.nv || !INSIDE(b.F[0].a[j * b.nu + i])) return false; } return true; };
+  function roofTris(b, R) { const acc = Acc(), P = mkPrims(b, acc), F = b.F[R.f], h = R.h || F.h, zE = F.z + h + 0.1; if (R.kind === 'irimoya') P.irimoya('tile', R.r, zE, R.ov, R.pitch); else if (R.kind === 'kirizuma') P.kirizuma('tile', R.r, zE, R.ov, R.pitch, R.oe !== undefined ? R.oe : R.ov); else { const r2 = rectOf(b.F[R.f + 1].a.map(INSIDE), b.nu, b.nv); P.koshi('tile', R.r, r2, zE, R.ov, R.pitch); } let zmax = -1e9, zmin = 1e9, x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const m in acc.acc) { const a = acc.acc[m]; for (let k = 0; k < a.length; k += 3) { zmax = Math.max(zmax, a[k + 2]); zmin = Math.min(zmin, a[k + 2]); } } const tl = acc.acc.tile; const pts = []; for (let k = 0; k < tl.length; k += 3) { pts.push([tl[k], tl[k + 1]]); } return { zmax, zmin, pts, zE }; }
+  function eavePoly(b, R) { const o = R.ov, oe = R.kind === 'kirizuma' && R.oe !== undefined ? R.oe : o, longU = (R.r[2] - R.r[0]) >= (R.r[3] - R.r[1]), ou = R.kind === 'kirizuma' ? (longU ? oe : o) : o, ov = R.kind === 'kirizuma' ? (longU ? o : oe) : o; return [[U(b, R.r[0]) - ou, V(b, R.r[1]) - ov], [U(b, R.r[2]) + ou, V(b, R.r[1]) - ov], [U(b, R.r[2]) + ou, V(b, R.r[3]) + ov], [U(b, R.r[0]) - ou, V(b, R.r[3]) + ov]].map(q => b.fr.w(q[0], q[1])); }
+  function polysOverlap(A, B, m) { // 凸四边形/多边形面积重叠（分离轴，内缩 m）
+    const ax = P => { const out = []; for (let i = 0; i < P.length; i++) { const a = P[i], c = P[(i + 1) % P.length], L = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1; out.push([-(c[1] - a[1]) / L, (c[0] - a[0]) / L]); } return out; };
+    for (const n of ax(A).concat(ax(B))) { let a0 = 1e18, a1 = -1e18, b0 = 1e18, b1 = -1e18; for (const p of A) { const d = p[0] * n[0] + p[1] * n[1]; a0 = Math.min(a0, d); a1 = Math.max(a1, d); } for (const p of B) { const d = p[0] * n[0] + p[1] * n[1]; b0 = Math.min(b0, d); b1 = Math.max(b1, d); } if (a1 - m <= b0 + m || b1 - m <= a0 + m) return false; } return true; }
+  function audit(S, W, opt) {
+    opt = opt || {}; const items = [], cnt = { H22: 0, H23: 0, H24: 0, H25: 0, H26: 0, H27: 0 }, bad = (rule, b, msg) => { cnt[rule]++; if (items.length < 200) items.push({ rule, msg: b.name + '：' + msg, b: b.id }); b.bad = true; };
+    const regionsBy = S.regions, trees = S.trees.map((t, i) => ({ t, i })).filter(o => !W.hideTrees || !W.hideTrees.includes(o.i));
+    const roadSegs = []; for (const r of S.roads) for (let k = 0; k + 1 < r.pts.length; k++) roadSegs.push([r.pts[k], r.pts[k + 1], (r.need || 6) / 2]);
+    for (const b of W.list) { if (opt.only !== undefined && b.id !== opt.only) continue;
+      const g = regionsBy[b.region], P = fpSamples(b, 0), F0 = b.F[0];
+      // ---- H22 占地：一块台地、有支撑、不压墙/部件/道路/别的建筑/树 ----
+      let off = 0, zmin = 1e9, zmax = -1e9; for (const [x, y] of P) { if (S.zoneAt(x, y) !== g || ((S.loops || []).some(l => l.g === g) && !S.inEncl(g, x, y))) off++; const z = S.heightAt(x, y); zmin = Math.min(zmin, z); zmax = Math.max(zmax, z); }
+      if (off) bad('H22', b, off + ' 个占地采样点不在所属台地（' + g.name + '）上');
+      if (zmax - zmin > SPEC.found.max + 1e-6) bad('H22', b, '占地内地面高差 ' + (zmax - zmin).toFixed(2) + ' m > 基础上限 ' + SPEC.found.max + ' m');
+      if (F0.z < zmax - 1e-6) bad('H22', b, '地板 ' + F0.z.toFixed(2) + ' 低于地面最高点 ' + zmax.toFixed(2));
+      if (b.zg.min - 0.3 > zmin + 1e-6) bad('H22', b, '基础底高于地面（悬空）');
+      const OL = outline(b, 0.05), OLc = outline(b, SPEC.contact), bbm = [b.bb[0] - 8, b.bb[1] - 8, b.bb[2] + 8, b.bb[3] + 8], near = q => !(q[2] < bbm[0] || q[0] > bbm[2] || q[3] < bbm[1] || q[1] > bbm[3]);
+      for (const p of S.parts) { if (!p.poly || p.id === b.part) continue; const bb = bbox(p.poly); if (!near(bb)) continue; // 精确：轮廓边相交 或 一方顶点在另一方内（部件多边形内缩 0.05 m）
+        let hit = p.poly.some(q => insideB(b, q[0], q[1], SPEC.contact)) || P.some(([x, y]) => x >= bb[0] && x <= bb[2] && y >= bb[1] && y <= bb[3] && polyDist(x, y, p.poly) < -0.05);
+        if (!hit) for (const [a, c] of OLc) { for (let k = 0; k < p.poly.length && !hit; k++) if (segX(a, c, p.poly[k], p.poly[(k + 1) % p.poly.length])) hit = true; if (hit) break; }
+        if (hit) bad('H22', b, '压到部件 ' + (p.name || p.fam)); }
+      if (b.type !== 'yagura') { let rh = false; for (const [a, c, w] of roadSegs) { if (!near([Math.min(a[0], c[0]) - w, Math.min(a[1], c[1]) - w, Math.max(a[0], c[0]) + w, Math.max(a[1], c[1]) + w])) continue; if (insideB(b, a[0], a[1]) || insideB(b, c[0], c[1]) || OL.some(([p0, p1]) => segSegDist(p0, p1, a, c) < w)) { rh = true; break; } } if (rh) bad('H22', b, '压到道路（净宽带）'); }
+      for (const o of W.list) { if (o === b || o.id < b.id) continue; if (o.bb[2] < b.bb[0] || o.bb[0] > b.bb[2] || o.bb[3] < b.bb[1] || o.bb[1] > b.bb[3]) continue; let h = 0; for (const [x, y] of P) if (insideB(o, x, y)) { h++; break; } if (h) bad('H22', b, '与 ' + o.name + ' 重叠'); }
+      for (const { t } of trees) { if (t.x < b.bb[0] - 2 || t.x > b.bb[2] + 2 || t.y < b.bb[1] - 2 || t.y > b.bb[3] + 2) continue; const [u, v] = b.fr.l(t.x, t.y), i = Math.floor((u - b.u0) / b.cs), j = Math.floor((v - b.v0) / b.cs); let n = false; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (INSIDE(at(b, F0, i + di, j + dj))) n = true; if (n) { bad('H22', b, '树干在占地内/贴墙'); break; } }
+      // ---- H23 石垣顶线退距：一般建筑 ≥ setback.crest；橹（立在石垣边上）外挑 ≤0.3 m ----
+      { let mn = 1e9; for (const [x, y] of P) mn = Math.min(mn, S.crestDist(g, x, y)); const need = b.type === 'yagura' ? -0.3 : SPEC.setback.crest; if (mn < need - 1e-6) bad('H23', b, '离石垣顶线 ' + mn.toFixed(2) + ' m < ' + need + ' m'); }
+      // ---- H24 屋顶/檐口：檐下净空、与别的建筑/部件的檐口不相撞、同栋低屋顶收在高屋顶檐下 ----
+      const RF = b.roofs.map(R => ({ R, poly: eavePoly(b, R), t: roofTris(b, R) }));
+      for (const r of RF) { let gz = -1e9; for (const [x, y] of r.poly) gz = Math.max(gz, S.heightAt(x, y)); const cx = r.poly.reduce((s, q) => s + q[0], 0) / 4, cy = r.poly.reduce((s, q) => s + q[1], 0) / 4; gz = Math.max(gz, S.heightAt(cx, cy)); if (r.t.zE - gz < SPEC.clearH && b.type !== 'yagura') bad('H24', b, '檐下净空 ' + (r.t.zE - gz).toFixed(2) + ' m < ' + SPEC.clearH);
+        if (b.type !== 'yagura') for (const p of S.parts) { if (!p.poly || p.id === b.part || p.fam === 'tenshu') continue; if (!polysOverlap(r.poly, p.poly, 0.05)) continue; const top = (p.z !== undefined ? p.z : Math.max(p.z0 || 0, p.z1 || 0)) + (p.h || FAM_TOP[p.fam] || 8); if (top > r.t.zE - 0.1) bad('H24', b, '檐口压到 ' + (p.name || p.fam)); } }
+      for (let a = 0; a < RF.length; a++) for (let c = a + 1; c < RF.length; c++) { const A1 = RF[a], B1 = RF[c]; if (!polysOverlap(A1.poly, B1.poly, 0.05)) continue; if (A1.R.f !== B1.R.f) continue; if (Math.abs(A1.t.zE - B1.t.zE) < 1e-6 && Math.abs(A1.R.pitch - B1.R.pitch) < 1e-9 && rTouch(A1.R.r, B1.R.r)) continue; // 同高同坡、相邻的两块 = 谷（L 形屋顶的正常交线）
+        const lo = A1.t.zmax <= B1.t.zmax ? A1 : B1, hi = lo === A1 ? B1 : A1; if (lo.t.zmax > hi.t.zE - 0.1 + 1e-6) bad('H24', b, '屋顶相交：低屋顶脊 ' + lo.t.zmax.toFixed(2) + ' > 高屋顶檐 ' + hi.t.zE.toFixed(2)); }
+      for (const o of W.list) { if (o.id <= b.id || o.bb[2] < b.bb[0] - 6 || o.bb[0] > b.bb[2] + 6 || o.bb[3] < b.bb[1] - 6 || o.bb[1] > b.bb[3] + 6) continue; let hit = false; for (const r of RF) { for (const R2 of o.roofs) if (polysOverlap(r.poly, eavePoly(o, R2), -SPEC.setback.between / 2 + 1.0)) { hit = true; break; } if (hit) break; } if (hit) bad('H24', b, '与 ' + o.name + ' 的檐口相距不足 ' + (SPEC.setback.between - 2).toFixed(1) + ' m'); }
+      // ---- H25/H26/H27 用几何 ----
+      const G = geoOf(b);
+      auditPass(S, b, G, bad); auditCols(b, bad); auditOpen(b, G, bad);
+    }
+    const total = Object.values(cnt).reduce((a, c) => a + c, 0);
+    return { total, cnt, items };
+  }
+  // H25：从外门出发的格图寻路（4 邻；同房间直通，不同房间只能经过开口边；高差 ≤0.5 m；階段连上下层），每个房间可达；門外是可走的地面；階段坡度/踢面/净高
+  function auditPass(S, b, G, bad) {
+    const oe = openEdgeSet(b), nf = b.F.length, nu = b.nu, nv = b.nv, N = nu * nv, seen = new Uint8Array(N * nf), st = [];
+    const lvl = (F, a) => a === A.DOMA ? F.z - 0.35 : F.z;
+    for (const o of b.open) if (o.kind === 'door' && o.f === 0) { // 门外：离墙 0.7 m 处的地面可走、高差 ≤ 地板 + 1.0
+      const [di, dj] = NB[o.side]; for (let k = 0; k < o.n; k++) { const i = o.side < 2 ? o.i : o.i + k, j = o.side < 2 ? o.j + k : o.j; const q = j * nu + i; if (WALKABLE(b.F[0].a[q])) { seen[q] = 1; st.push(q); } }
+      const i = o.side < 2 ? o.i : o.i + o.n / 2, j = o.side < 2 ? o.j + o.n / 2 : o.j, [x, y] = b.fr.w(U(b, i + 0.5 + di * (0.5 + 0.7 / b.cs)), V(b, j + 0.5 + dj * (0.5 + 0.7 / b.cs))), zg = S.heightAt(x, y);
+      if (S.zoneAt(x, y) !== S.regions[b.region] || b.F[0].z - zg > 1.0 + 1e-6 || zg > b.F[0].z + 0.05) bad('H25', b, '门外不是可走的同台地地面（高差 ' + (b.F[0].z - zg).toFixed(2) + ' m）');
+      if (S.parts.some(p => p.poly && p.id !== b.part && polyDist(x, y, p.poly) < 0.3)) bad('H25', b, '门外被部件挡住'); }
+    if (!st.length) { bad('H25', b, '没有外门'); return; }
+    const stairAt = new Map(); for (const s2 of b.stairs) { const [i0, j0, i1, j1] = s2.rect; let last; if (s2.dir === 0) last = [i1 - 1, j0]; else if (s2.dir === 1) last = [i0, j0]; else if (s2.dir === 2) last = [i0, j1 - 1]; else last = [i0, j0]; for (let w = 0; w < 2; w++) { const lq = s2.dir < 2 ? [last[0], last[1] + w] : [last[0] + w, last[1]], tq = s2.dir < 2 ? [s2.top[0], s2.top[1] + w] : [s2.top[0] + w, s2.top[1]]; stairAt.set(s2.f * N + lq[1] * nu + lq[0], (s2.f + 1) * N + tq[1] * nu + tq[0]); stairAt.set((s2.f + 1) * N + tq[1] * nu + tq[0], s2.f * N + lq[1] * nu + lq[0]); } }
+    while (st.length) { const c = st.pop(), f = Math.floor(c / N), q = c - f * N, i = q % nu, j = (q - i) / nu, F = b.F[f], a = F.a[q];
+      const nx = stairAt.get(c); if (nx !== undefined && !seen[nx]) { const f2 = Math.floor(nx / N), a2 = b.F[f2].a[nx - f2 * N]; if (WALKABLE(a2)) { seen[nx] = 1; st.push(nx); } }
+      for (let sd = 0; sd < 4; sd++) { const [di, dj] = NB[sd], i2 = i + di, j2 = j + dj; if (i2 < 0 || j2 < 0 || i2 >= nu || j2 >= nv) continue; const q2 = j2 * nu + i2, a2 = F.a[q2]; if (!WALKABLE(a2) || seen[f * N + q2]) continue;
+        if (a === A.STAIR || a2 === A.STAIR) { // 梯段：只能从下端沿上行方向进出，梯段内可横移；上端经 stairAt 接到上层
+          const s2 = b.stairs.find(s3 => s3.f === f && ((a === A.STAIR && inR(s3.rect, i, j)) || (a2 === A.STAIR && inR(s3.rect, i2, j2))));
+          if (!s2) continue; if (!(a === A.STAIR && a2 === A.STAIR)) { const sIn = a2 === A.STAIR ? [i2, j2] : [i, j], first = s2.dir === 0 ? sIn[0] === s2.rect[0] : s2.dir === 1 ? sIn[0] === s2.rect[2] - 1 : s2.dir === 2 ? sIn[1] === s2.rect[1] : sIn[1] === s2.rect[3] - 1; if (!first || (a2 === A.STAIR ? sd !== s2.dir : sd !== (s2.dir ^ 1))) continue; } }
+        if (F.r[q2] !== F.r[q] && !oe.has(edgeKey(f, i, j, sd))) continue; if (Math.abs(lvl(F, a) - lvl(F, a2)) > 0.5) continue; seen[f * N + q2] = 1; st.push(f * N + q2); } }
+    for (const s2 of b.stairs) { const F2 = b.F[s2.f + 1], [i0, j0, i1, j1] = s2.rect, nu2 = b.nu; for (let w = 0; w < 2; w++) { const tq = s2.dir < 2 ? [s2.top[0], s2.top[1] + w] : [s2.top[0] + w, s2.top[1]], vq = s2.dir === 0 ? [i1 - 1, tq[1]] : s2.dir === 1 ? [i0, tq[1]] : s2.dir === 2 ? [tq[0], j1 - 1] : [tq[0], j0]; if (label(b, F2, vq[0], vq[1]) !== label(b, F2, tq[0], tq[1])) { bad('H25', b, (s2.f + 1) + '階 階段上端有隔断（楼板洞与上端格不同房间）'); break; } } }
+    for (const r of b.rooms) { let any = false, ok = false; const F = b.F[r.f]; for (let j = r.rect[1]; j < r.rect[3]; j++) for (let i = r.rect[0]; i < r.rect[2]; i++) { const q = j * nu + i; if (F.r[q] !== r.id || !WALKABLE(F.a[q])) continue; any = true; if (seen[r.f * N + q]) ok = true; } if (any && !ok) bad('H25', b, r.name + ' 从入口走不到'); }
+    for (const s2 of b.stairs) { const slope = s2.rise / s2.run, n = Math.ceil(s2.rise / SPEC.stair.riserMax), riser = s2.rise / n; if (slope > SPEC.stair.slopeMax + 1e-6) bad('H25', b, (s2.f + 1) + '階 階段坡度 ' + slope.toFixed(2) + ' > ' + SPEC.stair.slopeMax);
+      const steps = G.int.boxes.filter(B => B.tag === 'step' && B.b[0] >= U(b, s2.rect[0]) - 1e-6 && B.b[3] <= U(b, s2.rect[2]) + 1e-6 && B.b[1] >= V(b, s2.rect[1]) - 1e-6 && B.b[4] <= V(b, s2.rect[3]) + 1e-6);
+      let mxR = 0, prev = b.F[s2.f].z; steps.map(B => B.b[5]).sort((x, y) => x - y).forEach(z => { mxR = Math.max(mxR, z - prev); prev = z; }); mxR = Math.max(mxR, b.F[s2.f + 1].z - prev); if (mxR > SPEC.stair.riserMax + 1e-6) bad('H25', b, '踢面 ' + mxR.toFixed(2) + ' m > ' + SPEC.stair.riserMax);
+      // 净高：沿梯段中线每 0.25 m，踏面（台阶盒顶）到上方最低实心盒底 ≥ head
+      const [i0, j0, i1, j1] = s2.rect; for (let tt = 0.1; tt < 0.95; tt += 0.25 / s2.run) { const u = s2.dir === 0 ? U(b, i0) + (U(b, i1) - U(b, i0)) * tt : s2.dir === 1 ? U(b, i1) - (U(b, i1) - U(b, i0)) * tt : (U(b, i0) + U(b, i1)) / 2, v = s2.dir === 2 ? V(b, j0) + (V(b, j1) - V(b, j0)) * tt : s2.dir === 3 ? V(b, j1) - (V(b, j1) - V(b, j0)) * tt : (V(b, j0) + V(b, j1)) / 2;
+        let tread = -1e9, over = 1e9; for (const B of G.solid) { const x = B.b; if (u < x[0] || u > x[3] || v < x[1] || v > x[4]) continue; if (B.tag === 'step') tread = Math.max(tread, x[5]); } for (const B of G.solid) { const x = B.b; if (u < x[0] || u > x[3] || v < x[1] || v > x[4] || B.tag === 'step') continue; if (x[2] > tread + 0.05) over = Math.min(over, x[2]); }
+        if (over - tread < SPEC.stair.head - 1e-6) { bad('H25', b, (s2.f + 1) + '階 階段净高 ' + (over - tread).toFixed(2) + ' m < ' + SPEC.stair.head); break; } } }
+  }
+  const rTouch = (a, c) => (a[2] === c[0] || c[2] === a[0]) && Math.min(a[3], c[3]) > Math.max(a[1], c[1]) || (a[3] === c[1] || c[3] === a[1]) && Math.min(a[2], c[2]) > Math.max(a[0], c[0]);
+  const inR = (r, i, j) => i >= r[0] && i < r[2] && j >= r[1] && j < r[3];
+  // H26：上层柱落在下层柱上，或落在下层的结构线（墙/入側线/隔断：两侧标签不同的格边）上且两侧最近下层柱 ≤ beamMax
+  function auditCols(b, bad) {
+    for (let f = 1; f < b.F.length; f++) { const lower = b.F[f - 1], L = new Set(columnsOf(b, f - 1).map(p => p[0] + ',' + p[1])), struct = (i, j, dir) => dir === 'u' ? label(b, lower, i - 1, j) !== label(b, lower, i, j) : label(b, lower, i, j - 1) !== label(b, lower, i, j);
+      let n = 0; for (const [i, j] of columnsOf(b, f)) { if (L.has(i + ',' + j)) continue;
+        let ok = false; // 沿 v 方向的线（u = i）：边 (i, j−1) 与 (i, j) 都是结构边
+        if (struct(i, j - 1, 'u') && struct(i, j, 'u')) { let a = 1, c = 1; while (a < 12 && !L.has(i + ',' + (j - a))) a++; while (c < 12 && !L.has(i + ',' + (j + c))) c++; if ((a + c) * b.cs <= SPEC.beamMax + 1e-6) ok = true; }
+        if (!ok && struct(i - 1, j, 'v') && struct(i, j, 'v')) { let a = 1, c = 1; while (a < 12 && !L.has((i - a) + ',' + j)) a++; while (c < 12 && !L.has((i + c) + ',' + j)) c++; if ((a + c) * b.cs <= SPEC.beamMax + 1e-6) ok = true; }
+        if (!ok) n++; }
+      if (n) bad('H26', b, (f + 1) + '階 ' + n + ' 根柱下面没有柱/梁'); }
+  }
+  // H27：开口内外一致——门洞两层壳都通、外墙没有无门的缺口、每扇窗内外两面都有、石落し 外挑箱 + 楼板开洞
+  function auditOpen(b, G, bad) {
+    const t = SPEC.wallT, DH = SPEC.door.h, solid = G.solid;
+    for (const o of b.open) { const F = b.F[o.f], [a, c] = openSpan(o);
+      if (o.kind === 'door') { const w = wallRect(b, o.side, openLine(o), a + 0.12 / b.cs, c - 0.12 / b.cs, t + 0.12, 0.12), vol = [w[0], w[1], F.z + 0.05, w[2], w[3], F.z + DH - 0.05]; if (o.n < SPEC.door.w) bad('H27', b, '门宽 ' + o.n + ' 格 < ' + SPEC.door.w);
+        for (const B of solid) { const x = B.b; if (x[0] < vol[3] && x[3] > vol[0] && x[1] < vol[4] && x[4] > vol[1] && x[2] < vol[5] && x[5] > vol[2]) { bad('H27', b, '门洞被 ' + (B.tag || B.m) + ' 挡住'); break; } } }
+      if (o.kind === 'window' || o.kind === 'akari') { const inn = G.int.wins.some(W2 => W2.o === o), out = G.ext.wins.some(W2 => W2.o === o); if (!inn || !out) bad('H27', b, '窗只有' + (inn ? '内' : '外') + '侧'); }
+      if (o.kind === 'ishi') { const box = G.ext.boxes.some(B => B.tag === 'ishi' && B.o === o); let slab = false; for (let k = 0; k < o.n; k++) { const i = o.side < 2 ? o.i : o.i + k, j = o.side < 2 ? o.j + k : o.j, cu = U(b, i + 0.5), cv = V(b, j + 0.5); if (G.int.boxes.some(B => B.tag === 'slab' && cu > B.b[0] && cu < B.b[3] && cv > B.b[1] && cv < B.b[4] && B.b[5] > F.z - 0.5 && B.b[2] < F.z + 0.1)) slab = true; } if (!box || slab) bad('H27', b, '石落し ' + (box ? '' : '外挑箱缺失 ') + (slab ? '楼板没开洞' : '')); } }
+    // 外墙缺口：每条外墙格边中点、地板上 1.0 m 处必须有墙盒（除非是门）
+    const doorE = new Set(); for (const o of b.open) if (o.kind === 'door') for (let k = 0; k < o.n; k++) { const i = o.side < 2 ? o.i : o.i + k, j = o.side < 2 ? o.j + k : o.j; doorE.add(edgeKey(o.f, i, j, o.side)); }
+    b.F.forEach((F, f) => { for (const R of wallRuns(b, f)) for (let s2 = R.s0; s2 < R.s1; s2++) { const i = R.sd < 2 ? R.line : s2, j = R.sd < 2 ? s2 : R.line; if (doorE.has(edgeKey(f, i, j, R.sd))) continue; const w = wallRect(b, R.sd, R.line, s2 + 0.5, s2 + 0.5, t / 2, 0), p = [(w[0] + w[2]) / 2, (w[1] + w[3]) / 2, F.z + 1.0]; if (!G.ext.boxes.some(B => B.tag === 'wall' && p[0] >= B.b[0] - 1e-6 && p[0] <= B.b[3] + 1e-6 && p[1] >= B.b[1] - 1e-6 && p[1] <= B.b[4] + 1e-6 && p[2] >= B.b[2] && p[2] <= B.b[5])) { bad('H27', b, (f + 1) + '階 外墙有缺口（无门）'); return; } } });
+    // 反向：外侧窗贴片都对应一个开口
+    for (const W2 of G.ext.wins) if (!b.open.includes(W2.o)) bad('H27', b, '外侧有窗但开口表里没有');
+  }
+
+
+  // ================= 相机 C9/C10（室内相机 = 半径 R 的球，眼高 eye；碰撞 = 外壳盒 + 内部实心盒，局部坐标里精确球-盒距离）=================
+  function segBox(p, q, bx) { let t0 = 0, t1 = 1; for (let k = 0; k < 3; k++) { const d = q[k] - p[k]; if (Math.abs(d) < 1e-12) { if (p[k] < bx[k] || p[k] > bx[k + 3]) return false; continue; } let a = (bx[k] - p[k]) / d, c = (bx[k + 3] - p[k]) / d; if (a > c) { const t = a; a = c; c = t; } t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) return false; } return true; }
+  // 格图（与 H25 同一张：同房间直通、异房间经开口边、階段只从下端进），带父指针，给相机路径用
+  function cellGraph(b) {
+    const oe = openEdgeSet(b), nu = b.nu, nv = b.nv, N = nu * nv, nf = b.F.length;
+    const lvl = (F, a) => a === A.DOMA ? F.z - 0.35 : F.z;
+    const stairAt = new Map(); for (const s2 of b.stairs) { const [i0, j0, i1, j1] = s2.rect; const last = s2.dir === 0 ? [i1 - 1, j0] : s2.dir === 1 ? [i0, j0] : s2.dir === 2 ? [i0, j1 - 1] : [i0, j0]; for (let w = 0; w < 2; w++) { const lq = s2.dir < 2 ? [last[0], last[1] + w] : [last[0] + w, last[1]], tq = s2.dir < 2 ? [s2.top[0], s2.top[1] + w] : [s2.top[0] + w, s2.top[1]]; stairAt.set(s2.f * N + lq[1] * nu + lq[0], (s2.f + 1) * N + tq[1] * nu + tq[0]); stairAt.set((s2.f + 1) * N + tq[1] * nu + tq[0], s2.f * N + lq[1] * nu + lq[0]); } }
+    const nbr = c => { const out = [], f = Math.floor(c / N), q = c - f * N, i = q % nu, j = (q - i) / nu, F = b.F[f], a = F.a[q]; const x = stairAt.get(c); if (x !== undefined) { const f2 = Math.floor(x / N); if (WALKABLE(b.F[f2].a[x - f2 * N])) out.push(x); }
+      for (let sd = 0; sd < 4; sd++) { const [di, dj] = NB[sd], i2 = i + di, j2 = j + dj; if (i2 < 0 || j2 < 0 || i2 >= nu || j2 >= nv) continue; const q2 = j2 * nu + i2, a2 = F.a[q2]; if (!WALKABLE(a2)) continue;
+        if (a === A.STAIR || a2 === A.STAIR) { const s2 = b.stairs.find(s3 => s3.f === f && ((a === A.STAIR && inR(s3.rect, i, j)) || (a2 === A.STAIR && inR(s3.rect, i2, j2)))); if (!s2) continue; if (!(a === A.STAIR && a2 === A.STAIR)) { const sIn = a2 === A.STAIR ? [i2, j2] : [i, j], first = s2.dir === 0 ? sIn[0] === s2.rect[0] : s2.dir === 1 ? sIn[0] === s2.rect[2] - 1 : s2.dir === 2 ? sIn[1] === s2.rect[1] : sIn[1] === s2.rect[3] - 1; if (!first || (a2 === A.STAIR ? sd !== s2.dir : sd !== (s2.dir ^ 1))) continue; } }
+        if (F.r[q2] !== F.r[q] && !oe.has(edgeKey(f, i, j, sd))) continue; if (Math.abs(lvl(F, a) - lvl(F, a2)) > 0.5) continue; out.push(f * N + q2); } return out; };
+    // 格心眼点（局部坐标）：土間低 0.35；梯段按格心在梯段上的位置插值踏面高
+    const eyeAt = c => { const f = Math.floor(c / N), q = c - f * N, i = q % nu, j = (q - i) / nu, F = b.F[f], a = F.a[q]; let z = lvl(F, a);
+      if (a === A.STAIR) { const s2 = b.stairs.find(s3 => s3.f === f && inR(s3.rect, i, j)), L = s2.dir < 2 ? s2.rect[2] - s2.rect[0] : s2.rect[3] - s2.rect[1], k = s2.dir === 0 ? i - s2.rect[0] : s2.dir === 1 ? s2.rect[2] - 1 - i : s2.dir === 2 ? j - s2.rect[1] : s2.rect[3] - 1 - j, n = Math.ceil(s2.rise / SPEC.stair.riserMax), fr = (k + 0.5) / L; z = F.z + s2.rise * Math.ceil(fr * n - 1e-9) / n; }
+      return [U(b, i + 0.5), V(b, j + 0.5), z + SPEC.cam.eye]; };
+    return { N, nbr, eyeAt };
+  }
+  function camAudit(S, W, opt) {
+    opt = opt || {}; const items = [], cnt = { C9: 0, C10: 0 }, R = SPEC.cam.R, bad = (rule, b, msg) => { cnt[rule]++; if (items.length < 100) items.push({ rule, msg: b.name + '：' + msg, b: b.id }); }; let nRooms = 0, nPath = 0;
+    for (const b of W.list) { if (opt.only !== undefined && b.id !== opt.only) continue;
+      const G = geoOf(b), boxes = G.solid, CG = cellGraph(b), nu = b.nu, N = CG.N, clear = p => clearG(G, p, R) >= R - 1e-3;
+      const door = b.open.find(o => o.kind === 'door' && o.f === 0); if (!door) { bad('C9', b, '没有门可进'); continue; }
+      // 门外起点：门洞中心外 1.2 m，眼高 = 地面 + eye
+      const [di, dj] = NB[door.side], mi = door.side < 2 ? door.i + 0.5 : door.i + door.n / 2, mj = door.side < 2 ? door.j + door.n / 2 : door.j + 0.5, edgeU = door.side === 0 ? U(b, door.i + 1) : door.side === 1 ? U(b, door.i) : U(b, mi), edgeV = door.side === 2 ? V(b, door.j + 1) : door.side === 3 ? V(b, door.j) : V(b, mj);
+      const outU = edgeU + di * 1.2, outV = edgeV + dj * 1.2, [ox, oy] = b.fr.w(outU, outV), pOut = [outU, outV, S.heightAt(ox, oy) + SPEC.cam.eye], pDoor = [edgeU, edgeV, b.F[0].z + SPEC.cam.eye];
+      const startCells = []; for (let k = 0; k < door.n; k++) { const i = door.side < 2 ? door.i : door.i + k, j = door.side < 2 ? door.j + k : door.j; startCells.push(j * nu + i); }
+      // BFS（父指针）
+      const par = new Int32Array(N * b.F.length).fill(-2), st = []; for (const c of startCells) { par[c] = -1; st.push(c); } for (let h = 0; h < st.length; h++) for (const c2 of CG.nbr(st[h])) if (par[c2] === -2) { par[c2] = st[h]; st.push(c2); }
+      const seg = (p, q) => { const L = Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]), n = Math.max(1, Math.ceil(L / 0.1)); for (let k = 0; k <= n; k++) { const t = k / n, x = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t]; if (!clear(x)) return x; } return null; };
+      { const h = seg(pOut, pDoor); if (h) { bad('C9', b, '从门外进门时相机球碰到几何（' + h.map(v => v.toFixed(2)).join(',') + '）'); continue; } }
+      b.cams = [];
+      for (const r of b.rooms) { // 房间代表格：离房间中心最近的可走格
+        const F = b.F[r.f]; let best = -1, bd = 1e9; const cu = (r.rect[0] + r.rect[2]) / 2, cv = (r.rect[1] + r.rect[3]) / 2; for (let j = r.rect[1]; j < r.rect[3]; j++) for (let i = r.rect[0]; i < r.rect[2]; i++) { const q = j * nu + i; if (F.r[q] !== r.id || !(F.a[q] === A.ROOM || F.a[q] === A.IRI || F.a[q] === A.ROUKA || F.a[q] === A.DOMA)) continue; const d = Math.hypot(i + 0.5 - cu, j + 0.5 - cv); if (d < bd) { bd = d; best = r.f * N + q; } }
+        if (best < 0) continue; nRooms++; if (par[best] === -2) { bad('C9', b, r.name + ' 相机走不到'); continue; }
+        const path = []; for (let c = best; c !== -1; c = par[c]) path.push(c); path.reverse(); nPath++;
+        let prev = pDoor, hit = null; for (const c of path) { const e = CG.eyeAt(c); hit = seg(prev, e); if (hit) break; prev = e; }
+        if (hit) bad('C9', b, '去 ' + r.name + ' 的路上相机球碰到几何（' + hit.map(v => v.toFixed(2)).join(',') + '）'); // C10 照样评（机位只用格图可达的格）
+        // C10：房间语义的机位——候选机位 = 路径上本房间的格（从进房那一格起）；候选主体 = 上段的床の間 / 橹的本房间外墙窓（近→远）/ 房间中心；取第一对“机位清空 + 视线不被挡 + 距离 ≥1 m”
+        const tgts = [], tk = b.fix.find(fx => fx.kind === 'toko' && fx.room === r.id); if (tk) { const [i, j] = tk.cells[0]; tgts.push({ p: [U(b, i + 1), V(b, j + 0.5), F.z + 0.9], what: 'toko' }); }
+        if (b.type === 'yagura') for (const w of b.open) { if (w.f !== r.f || w.kind !== 'window' || F.r[w.j * nu + w.i] !== r.id) continue; const [a, c2] = openSpan(w), m2 = (a + c2) / 2, uu = w.side === 0 ? U(b, w.i + 1) - 0.3 : w.side === 1 ? U(b, w.i) + 0.3 : U(b, m2), vv = w.side === 2 ? V(b, w.j + 1) - 0.3 : w.side === 3 ? V(b, w.j) + 0.3 : V(b, m2); tgts.push({ p: [uu, vv, F.z + SPEC.win.sill + SPEC.win.h / 2], what: 'window' }); }
+        { const q0 = best - r.f * N, i0 = q0 % nu, j0 = (q0 - i0) / nu; tgts.push({ p: [U(b, i0 + 0.5), V(b, j0 + 0.5), F.z + 1.0], what: 'center' }); } // 房间中心 = 离格心均值最近的本房间格（L 形房间的包围盒中心可能不在房间里）
+        const camCells = path.filter(c => { const f = Math.floor(c / N); return f === r.f && b.F[f].r[c - f * N] === r.id; }); { const e0 = camCells[0], ei = (e0 - r.f * N) % nu, ej = Math.floor((e0 - r.f * N) / nu), more = []; for (let j = r.rect[1]; j < r.rect[3]; j++) for (let i = r.rect[0]; i < r.rect[2]; i++) { const q = j * nu + i, c = r.f * N + q; if (F.r[q] === r.id && WALKABLE(F.a[q]) && F.a[q] !== A.STAIR && par[c] !== -2 && !camCells.includes(c)) more.push([Math.hypot(i - ei, j - ej), c]); } more.sort((x, y) => x[0] - y[0]); for (const m of more) camCells.push(m[1]); } // 再加本房间其它可达格（离进房格由近到远）
+        const vis = (pc, t) => { for (const B of boxes) { const x = B.b; if (t[0] > x[0] - 0.35 && t[0] < x[3] + 0.35 && t[1] > x[1] - 0.35 && t[1] < x[4] + 0.35 && t[2] > x[2] - 0.35 && t[2] < x[5] + 0.35) continue; if (segBox(pc, t, x)) return B; } return null; };
+        let pick = null; for (const t of tgts) { let bd = -1; for (const c of camCells) { const pc = CG.eyeAt(c), d = Math.hypot(t.p[0] - pc[0], t.p[1] - pc[1]); if (d < 1.0 || d <= bd || d > 14 || !clear(pc) || vis(pc, t.p)) continue; pick = { pc, t }; bd = d; } if (pick) break; } // 取看得见主体的最远一格（≤14 m）：看到整间房
+        if (!pick) { bad('C10', b, r.name + ' 找不到清空且通视的机位'); continue; }
+        const camP = pick.pc, tgt = pick.t.p, what = pick.t.what;
+        const W0 = (q2) => { const [x, y] = b.fr.w(q2[0], q2[1]); return [x, y, q2[2]]; }; b.cams.push({ room: r.id, name: r.name, what, cam: W0(camP), tgt: W0(tgt), path: path.map(c => W0(CG.eyeAt(c))), out: W0(pOut), door: W0(pDoor) });
+      }
+    }
+    const total = cnt.C9 + cnt.C10; return { total, cnt, items, rooms: nRooms, paths: nPath };
+  }
+  // 运行时：相机球（世界坐标）到建筑 b 的几何的间隙
+  function clearance(b, p, R) { const g = geoOf(b), [u, v] = b.fr.l(p[0], p[1]); return clearG(g, [u, v, p[2]], R || 2); }
+
+
+  // ================= 结果包（B1）：生成结果 W 的确定性快照（页面读包跳过生成；tests/test_pack.js 校验 读包 = 现场生成）=================
+  const TA = { Uint8Array, Int16Array };
+  const b64e = u8 => { if (typeof Buffer !== 'undefined') return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64'); let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); };
+  const b64d = s => { if (typeof Buffer !== 'undefined') { const B0 = Buffer.from(s, 'base64'); return new Uint8Array(B0.buffer, B0.byteOffset, B0.length).slice(); } const t = atob(s), u = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) u[i] = t.charCodeAt(i); return u; };
+  const SKIP = new Set(['fr', '_geo', '_ext', 'bad', 'cams']);
+  function packW(W) { const enc = v => { if (ArrayBuffer.isView(v)) return { $t: v.constructor.name, d: b64e(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) }; if (Array.isArray(v)) return v.map(enc); if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) if (!SKIP.has(k) && typeof v[k] !== 'function') o[k] = enc(v[k]); return o; } return v; };
+    return { v: 1, seed: W.seed, lost: W.lost, roll: W.roll, notes: W.notes, hideTrees: W.hideTrees, stats: W.stats, list: W.list.map(enc) }; }
+  function unpackW(P) { const dec = v => { if (v && v.$t) { const u = b64d(v.d); return new TA[v.$t](u.buffer, u.byteOffset, u.byteLength / TA[v.$t].BYTES_PER_ELEMENT); } if (Array.isArray(v)) return v.map(dec); if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = dec(v[k]); return o; } return v; };
+    const W = { seed: P.seed, lost: P.lost, roll: P.roll, notes: P.notes, hideTrees: P.hideTrees, stats: P.stats, spec: SPEC, ms: 0, fromPack: true, list: P.list.map(o => { const b = dec(o); b.fr = frameOf(b.x, b.y, b.ang); return b; }) }; return W; }
+  let SRC_HASH = null; const genKey = (siteKey, roll) => { if (!SRC_HASH) SRC_HASH = ('00000000' + fnv(castleBldg.toString()).toString(16)).slice(-8); return 'b1-' + SRC_HASH + '-' + siteKey + '-r' + (roll || ''); };
+  const RULES = [
+    { id: 'H22', name: '建筑占地：一块台地、有支撑，不压墙/部件/道路/别的建筑/树' },
+    { id: 'H23', name: '石垣顶线退距：一般建筑 ≥5 m；橹墙面不外挑' },
+    { id: 'H24', name: '屋顶/檐口：檐下净空 ≥2.1 m，与别的建筑/部件不相撞，低屋顶收在高屋顶檐下' },
+    { id: 'H25', name: '室内通行：每个房间从外门走得到，门外是地面，階段坡度/踢面/净高' },
+    { id: 'H26', name: '上层柱落在下层柱或梁（结构线）上' },
+    { id: 'H27', name: '开口内外一致：门洞两层都通，外墙无无门缺口，窗内外两面都有，石落し开洞' },
+  ];
+  const CRULES = [{ id: 'C9', name: '进得去：室内相机球从门外经门洞走到每个房间，全程不碰几何' }, { id: 'C10', name: '室内机位：每个房间有清空且通视主体的机位（床の間/窓/房间中心）' }];
+
+  // ---------------- 生成入口 ----------------
+  function parseRoll(s) { const o = {}; if (!s) return o; for (const t of String(s).split(',')) { const m = t.split(':'); if (m.length === 2) o[m[0]] = +m[1] || 0; } return o; }
+  function generate(S, opt) {
+    opt = opt || {}; const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+    const W = { seed: String(opt.seed !== undefined ? opt.seed : S.opt.seed), lost: opt.lost !== undefined ? !!opt.lost : !!S.opt.lost, roll: parseRoll(opt.roll), list: [], notes: [], free: {}, occ: {}, spec: SPEC };
+    const hm = S.regions.find(g => g.name === 'honmaru');
+    // 现存/失传橹：现存的每个时代都有（外观按实测重做 + 生成内部）；失传的只在江戸盛期（site 已按 lost 开关放了槽位）
+    for (const p of S.parts) if (p.fam === 'yagura2' || p.fam === 'yagura3') { const b = yagura(S, W, p); if (b) W.list.push(b); }
+    if (W.lost && hm) { // 江戸盛期：本丸御殿 + 门内番所 + 剩余地上的蔵
+      const b = goten(S, W, hm); if (b) W.list.push(b);
+      const FG = W.free.honmaru || freeGrid(S, hm, axisOf(S, hm)); W.occ.honmaru = new Uint8Array(FG.nu * FG.nv);
+      if (b) { const o = b.fgOff, m = 4; for (const k of b.blocks) for (let j = Math.max(0, k.r[1] + o[1] - m); j < Math.min(FG.nv, k.r[3] + o[1] + m); j++) for (let i = Math.max(0, k.r[0] + o[0] - m); i < Math.min(FG.nu, k.r[2] + o[0] + m); i++) W.occ.honmaru[j * FG.nu + i] = 1; }
+      let k = 0; for (const G of S.gates.filter(G => G.region === hm)) { const inner = S.parts.find(p => p.masugataOf === G) || G; const s = small(S, W, hm, FG, 'bansho', [inner.x, inner.y], k); if (s) { W.list.push(s); k++; } }
+      const rk = rng(nodeSeed(W, 'kura@honmaru', 'count')), nk = 2 + Math.floor(rk() * 2); for (let q = 0; q < nk; q++) { const ten = S.parts.find(p => p.fam === 'tenshu'), a = rk() * Math.PI * 2, rad = 40 + rk() * 40; const s = small(S, W, hm, FG, 'kura', [ten.x + Math.cos(a) * rad, ten.y + Math.sin(a) * rad], q); if (s) W.list.push(s); }
+    }
+    W.list.forEach((b, i) => { b.id = i; b.bb = worldBB(b); });
+    // 江戸盛期：被建筑（含出檐 + 1 m）压住的现代树不画（树来自 OSM/现状，不是江戸期的）
+    W.hideTrees = []; if (W.lost) S.trees.forEach((t, i) => { for (const b of W.list) { if (b.type === 'yagura' && b.tier === 'measured') continue; const [u, v] = b.fr.l(t.x, t.y), m = (t.r || 3) + 2.6; if (u > b.u0 - m && u < b.u0 + b.nu * CS + m && v > b.v0 - m && v < b.v0 + b.nv * CS + m) { W.hideTrees.push(i); break; } } });
+    W.ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
+    W.stats = statsOf(W); delete W.free; delete W.occ; return W;
+  }
+  function worldBB(b) { const P = []; for (const [i, j] of [[0, 0], [b.nu, 0], [0, b.nv], [b.nu, b.nv]]) P.push(b.fr.w(U(b, i), V(b, j))); return bbox(P); }
+  function statsOf(W) { const by = {}; let rooms = 0, tatami = 0; for (const b of W.list) { const k = b.type + (b.tier === 'measured' ? '(实测)' : '(推定)'); by[k] = (by[k] || 0) + 1; rooms += b.rooms.length; for (const r of b.rooms) if (r.kind === 'tatami') tatami += Math.round((r.rect[2] - r.rect[0]) * (r.rect[3] - r.rect[1]) / 2); } return { n: W.list.length, by, rooms, tatami }; }
+  function signature(W) { let h = 2166136261; for (const b of W.list) { h = fnv(b.key + ':' + b.nu + 'x' + b.nv + ':' + b.F.length + ':' + b.rooms.length + ':' + b.open.length + ':' + b.x.toFixed(3) + ',' + b.y.toFixed(3), h); for (const F of b.F) for (let q = 0; q < F.a.length; q += 7) h = fnv(String(F.a[q]), h); } return ('00000000' + h.toString(16)).slice(-8) + '-' + W.list.length; }
+
+  const API = { SPEC, A, generate, signature, packW, unpackW, genKey, RULES, CRULES, exterior, interior, audit, camAudit, clearance, cellGraph, geoOf, clearLocal, boxDist, columnsOf, openEdgeSet, edgeKey, wallRuns, wallRect, openSpan, openLine, rectOf, frameOf, rects, KEN, CS, U, V, NB, at, WALKABLE, INSIDE, fnv, rng, bbox, polyDist, inPoly, segDist };
+  G.CASTLE_BLDG = API;
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+})(typeof window !== 'undefined' ? window : globalThis);
