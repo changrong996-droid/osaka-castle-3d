@@ -11,13 +11,13 @@
   // ---------- URL 参数（#seed=1&lost=1&view=aerial&labels=1&cell=1.5）----------
   function readHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0' };
+    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0', roll: p.get('roll') || '' };
   }
-  function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? 1 : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
+  function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? 1 : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : '') + (o.roll ? '&roll=' + o.roll : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
 
   // r8a：预构建结果包（web/bake/，tools/bake.js 生成）。键 = site.js 源码哈希 + 数据哈希 + 选项，与清单（bake/manifest.js）里的一致才下载；
   // 下载与 three.js 的加载并行；任何一步失败（file://、没有 DecompressionStream、键不符、解码出错）都退回现场生成，结果相同。
-  let PACK_RAW = null;
+  let PACK_RAW = null, PREB = null;
   // r8（S1）：首次加载的 H 审计放进 Web Worker（不占主线程：审计 ~2.5 s 时页面照常可拖动/缩放）。Worker 用同一份 data.js/pack.js/site.js 源码
   // （按页面上 <script src> 的地址取文本拼成 Blob，htmlpreview 下也可用）读同一个包、跑 audit()，回传签名 + 计数 + 条目（纯数据）。
   // 签名与主线程不同、Worker 出错、或有违规（要在主线程标红部件）→ 退回主线程 site.audit()（结果相同，只是会卡一下）。
@@ -45,8 +45,17 @@
     PACK_RAW = raw; // r8：首帧后的 H 审计在 Worker 里读同一个包
     state.pack = { used: false, file: ent.file, bytes: raw.length, fetchMs: Math.round(t1 - t0), unzipMs: Math.round(performance.now() - t1) }; return P;
   }
+  // B1：建筑语法的结果包（web/bake/b-*.json.gz）；键 = bldg.js 源码哈希 + site 键 + roll
+  async function loadBPack(o) {
+    const B = window.CASTLE_BLDG, MAN = window.CASTLE_BAKE_B, PK = window.CASTLE_PACK;
+    if (!B || !MAN || !PK || location.protocol === 'file:' || o.cell !== SITE.SPEC.grid.cell || !o.usePack) return null;
+    const key = B.genKey(SITE.genKey({ seed: o.seed, lost: o.lost, cell: o.cell }), o.roll), ent = MAN[key]; if (!ent) { state.bpack = { used: false, why: 'no bldg pack for key' }; return null; }
+    const t0 = performance.now(), r = await fetch(ent.file + '?k=' + key.split('-')[1]); if (!r.ok) throw new Error('bpack ' + r.status);
+    const u8 = await PK.gunzip(new Uint8Array(await r.arrayBuffer())), W = B.unpackW(JSON.parse(new TextDecoder().decode(u8)));
+    state.bpack = { used: false, file: ent.file, bytes: ent.bytes, ms: Math.round(performance.now() - t0), key }; return W;
+  }
   async function main() {
-    const T00 = performance.now(), P0 = readHash(), packP = loadPack(P0).catch(e => { state.pack = { used: false, why: String(e && e.message || e) }; return null; });
+    const T00 = performance.now(), P0 = readHash(), packP = loadPack(P0).catch(e => { state.pack = { used: false, why: String(e && e.message || e) }; return null; }), bpackP = loadBPack(P0).catch(e => { state.bpack = { used: false, why: String(e && e.message || e) }; return null; });
     const im = document.createElement('script'); im.type = 'importmap';
     im.textContent = JSON.stringify({ imports: { three: THREE_BASE + 'build/three.module.js', 'three/addons/': THREE_BASE + 'examples/jsm/' } });
     document.head.appendChild(im);
@@ -55,6 +64,7 @@
     const pk = await packP; let pre = null; state.tl = { main: Math.round(T00), pack: Math.round(performance.now()) };
     if (pk) { try { pre = SITE.build({ seed: P0.seed, lost: P0.lost, cell: P0.cell, pack: pk }); state.pack.used = true; state.pack.restoreMs = Math.round(pre.ms); } catch (e) { state.pack.used = false; state.pack.why = 'restore: ' + (e && e.message || e); pre = null; } }
     state.tl.restored = Math.round(performance.now()); const [THREE, { OrbitControls }, { Sky }] = await modsP; state.tl.mods = Math.round(performance.now());
+    PREB = pre ? await bpackP : null; // 建筑包只配读包恢复的 site（键里含 site 键）
     run(THREE, OrbitControls, Sky, pre, T00);
   }
 
@@ -78,6 +88,7 @@
     const sun = new THREE.DirectionalLight(0xfff0dc, 3.0); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
     Object.assign(sun.shadow.camera, { left: -620, right: 620, top: 620, bottom: -620, near: 10, far: 3000 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.6;
     scene.add(sun, sun.target); const hemi = new THREE.HemisphereLight(0xd6e4ff, 0x5d5545, 1.35); scene.add(hemi);
+    const intLight = new THREE.PointLight(0xfff0d8, 0, 0, 1); camera.add(intLight); scene.add(camera); // B1：室内模式的灯（跟着相机；屋顶挡住了太阳）
     { const el = 0.6, az = THREE.MathUtils.degToRad(215), v = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - el, az); su.sunPosition.value.copy(v); sun.position.copy(v).multiplyScalar(1500); sun.target.position.set(0, 0, 0); }
     // world (x 东, y 北, z 上) -> three (x, z, -y)
     const W = (x, y, z) => new THREE.Vector3(x, z, -y);
@@ -97,6 +108,15 @@
       vermil: new THREE.MeshStandardMaterial({ color: 0x9a3b26, roughness: 0.7 }),
       gold: new THREE.MeshStandardMaterial({ color: 0xd9a63a, metalness: 1, roughness: 0.3 }),
       road: new THREE.MeshStandardMaterial({ color: 0xa39478, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+      // B1：建筑语法（web/bldg.js）的材质
+      shoji: new THREE.MeshStandardMaterial({ color: 0xece6d4, roughness: 0.95, emissive: 0x2a2620 }),
+      tatami: new THREE.MeshStandardMaterial({ color: 0xbdb27a, roughness: 0.95 }),
+      heri: new THREE.MeshStandardMaterial({ color: 0x2d2a22, roughness: 0.9 }),
+      fusuma: new THREE.MeshStandardMaterial({ color: 0xdcd0ad, roughness: 0.85 }),
+      floorwood: new THREE.MeshStandardMaterial({ color: 0x8c6b47, roughness: 0.75 }),
+      doma: new THREE.MeshStandardMaterial({ color: 0x6f665a, roughness: 1 }),
+      kabe: new THREE.MeshStandardMaterial({ color: 0xd9ccb0, roughness: 0.95 }),
+      ceil: new THREE.MeshStandardMaterial({ color: 0x9b7b55, roughness: 0.8 }),
     };
     const badMat = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.45, depthWrite: false });
 
@@ -293,13 +313,14 @@
         const wm = new THREE.Mesh(new THREE.ShapeGeometry(sh), wmat); wm.rotation.x = -Math.PI / 2; wm.position.y = b.level; wm.receiveShadow = true; wm.name = 'water'; grp.add(wm); }
       return grp;
     }
-    function treesMesh(S) {
-      const grp = new THREE.Group(), N = S.trees.length; grp.userData.trees = true; if (!N) return grp;
+    function treesMesh(S, hide) {
+      const T = hide && hide.size ? S.trees.filter((t, i) => !hide.has(i)) : S.trees;
+      const grp = new THREE.Group(), N = T.length; grp.userData.trees = true; if (!N) return grp;
       const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.38, 1, 6), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1 }), N);
       const crownG = new THREE.IcosahedronGeometry(1, 1), crown = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ roughness: 0.9 }), N * 2);
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
       let ci = 0;
-      S.trees.forEach((t, i) => {
+      T.forEach((t, i) => {
         const G = SITE.treeGeom(t), h = G.h; // 树的几何与 H18 净空审计共用
         m4.compose(W(t.x, t.y, t.z + h * 0.4), q, new THREE.Vector3(t.s, h * 0.8, t.s)); trunk.setMatrixAt(i, m4);
         const pine = t.kind === 'pine';
@@ -315,8 +336,46 @@
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true })); sp.renderOrder = 10; sp.userData.aspect = cv.width / cv.height; sp.scale.set(0.026 * sp.userData.aspect, 0.026, 1); sp.material.sizeAttenuation = false; return sp;
     }
 
+    // ---------- B1：建筑（web/bldg.js 生成规格 + 几何；这里只做坐标轴换算与网格）----------
+    function accMeshes(accs, name, shadow) { const out = []; for (const [m, a] of Object.entries(accs)) { const n = a.length, f = new Float32Array(n); for (let i = 0; i < n; i += 3) { f[i] = a[i]; f[i + 1] = a[i + 2]; f[i + 2] = -a[i + 1]; }
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(f, 3)); fastNormals(g); const mesh = new THREE.Mesh(g, M[m] || M.plaster); mesh.name = name; mesh.castShadow = shadow; mesh.receiveShadow = true; out.push(mesh); } return out; }
+    const mergeAcc = (dst, src) => { for (const [m, a] of Object.entries(src)) { const L = dst[m] || (dst[m] = []); for (let i = 0; i < a.length; i++) L.push(a[i]); } };
+    function bldgWorld(bw) { // 首帧：只有外壳（显示 + 进相机碰撞场）；首帧之后逐栋补外观细节（LOD0），换成 LOD（近 = 细节，远 = 外壳）
+      const grp = new THREE.Group(); grp.name = 'bldg-group'; const HU = {};
+      for (const b of bw.list) mergeAcc(HU, BLDG.exterior(b, { hullOnly: true }).hull);
+      const hull = new THREE.Group(); hull.name = 'bldg-hull'; for (const m of accMeshes(HU, 'bldg-hull', true)) hull.add(m); grp.add(hull); grp.userData.hu = HU;
+      return grp; }
+    function bldgDetail(grp, b0) { // 首帧之后：逐栋算细节（每步 ≤30 ms），全部算完再一次换上
+      const L0 = {}; let k = 0; const st = () => { if (bw !== b0 || !grp.parent) return; const t = performance.now(); while (k < b0.list.length && performance.now() - t < 30) { mergeAcc(L0, BLDG.exterior(b0.list[k]).lod0); k++; }
+        if (k < b0.list.length) { setTimeout(st, 0); return; }
+        const near = new THREE.Group(); near.name = 'bldg'; for (const m of accMeshes(L0, 'bldg', true)) near.add(m);
+        const far = new THREE.Group(); far.name = 'bldg-far'; for (const m of accMeshes(grp.userData.hu, 'bldg-far', true)) far.add(m);
+        const lod = new THREE.LOD(); lod.name = 'bldg-lod'; lod.addLevel(near, 0); lod.addLevel(far, 700); grp.add(lod);
+        const hull = grp.getObjectByName('bldg-hull'); if (hull) hull.visible = false; // 外壳网格留在场景里（相机碰撞场已经用了它），只是不再显示
+        state.bldgDetail = true; requestRender(); }; setTimeout(st, 0); }
+    // B1：建筑审计 H22–H27 逐栋分步跑（每栋之间让出主线程），合并进 H 审计结果
+    function withBldgAudit(A0, s0, b0, done) { const cnt = { H22: 0, H23: 0, H24: 0, H25: 0, H26: 0, H27: 0 }, items = []; let k = 0, t1 = performance.now();
+      const st = () => { if (site !== s0 || bw !== b0) return; const t = performance.now(); while (k < b0.list.length && performance.now() - t < 40) { const R = BLDG.audit(s0, b0, { only: b0.list[k].id }); for (const r in R.cnt) cnt[r] += R.cnt[r]; for (const it of R.items) items.push({ rule: it.rule, name: b0.list[it.b].name, msg: it.msg }); k++; }
+        if (k < b0.list.length) { setTimeout(st, 0); return; } state.bldgAuditMs = Math.round(performance.now() - t1); const tot = Object.values(cnt).reduce((a, c) => a + c, 0);
+        done({ total: A0.total + tot, cnt: Object.assign({}, A0.cnt, cnt), rules: (A0.rules || []).concat(BLDG.RULES), items: (A0.items || []).concat(items), worker: A0.worker, bldg: { cnt, total: tot } }); };
+      setTimeout(st, 0); }
+    // B1：内部按需生成（相机离建筑 <45 m 时建，>110 m 时释放；最多同时 6 栋）
+    const interiors = new Map(); let intGroup = null;
+    function interiorFor(b) { let e = interiors.get(b.id); if (e) return e; const t0 = performance.now(), g = BLDG.geoOf(b), grp = new THREE.Group(); grp.name = 'bldg-int'; for (const m of accMeshes(g.int.acc, 'bldg-int', false)) { m.receiveShadow = false; grp.add(m); } // 室内不接太阳阴影（阴影图分辨率在室内尺度下是锯齿光斑）
+      if (!intGroup || !intGroup.parent) { intGroup = new THREE.Group(); intGroup.name = 'bldg-int'; world.add(intGroup); } intGroup.add(grp); e = { grp, ms: Math.round(performance.now() - t0) }; interiors.set(b.id, e); state.intBuilt = (state.intBuilt || 0) + 1; requestRender(); return e; }
+    function updateInteriors() { if (!bw || !world) return; const c = w3(camera.position), near = [];
+      for (const b of bw.list) { const dx = Math.max(b.bb[0] - c[0], 0, c[0] - b.bb[2]), dy = Math.max(b.bb[1] - c[1], 0, c[1] - b.bb[3]), d = Math.hypot(dx, dy, Math.max(0, c[2] - b.F[b.F.length - 1].z - 12)); if (d < 45 || (intMode && intMode.b === b)) near.push([d, b]); else if (d > 110 && interiors.has(b.id)) { const e = interiors.get(b.id); intGroup.remove(e.grp); e.grp.traverse(o => o.geometry && o.geometry.dispose()); interiors.delete(b.id); } }
+      near.sort((a, b2) => a[0] - b2[0]); for (const [, b] of near.slice(0, 6)) interiorFor(b); }
+    // B1：室内相机模式——球半径 SPEC.cam.R，碰撞 = 这栋的外壳 + 内部实心盒（BLDG.clearance）；外面的碰撞场不管
+    let intMode = null; const R_INT = () => BLDG.SPEC.cam.R;
+    function enterInterior(id, room) { const b = bw && bw.list[id]; if (!b) return null; if (!b.cams) BLDG.camAudit(site, bw, { only: b.id }); const cams = b.cams || []; const c = (room === undefined ? cams.find(q => q.what === 'toko') || cams[0] : cams.find(q => q.room === room || q.name === room)) || cams[0]; if (!c) return null;
+      interiorFor(b); anim = null; intMode = { b, c }; intLight.intensity = 4; hemi.intensity = 2.6; hemi.color.setHex(0xfff1dc); hemi.groundColor.setHex(0x9a7a58); // 室内：暖色天光（原蓝色天光让白墙发灰发蓝），点光源减弱（近墙处的高光斑） controls.minDistance = 0.3; controls.maxDistance = 8; camera.near = nearFor(camera.fov, camera.aspect) * R_INT() / CAM_R; camera.updateProjectionMatrix();
+      setV(camera.position, c.cam); setV(controls.target, c.tgt); controls.update(); intMode.last = w3(camera.position); requestRender(); return { name: c.name, what: c.what, cam: c.cam, tgt: c.tgt }; }
+    function exitInterior(silent) { if (!intMode) return; intMode = null; intLight.intensity = 0; hemi.intensity = 1.35; hemi.color.setHex(0xd6e4ff); hemi.groundColor.setHex(0x5d5545); controls.minDistance = 3; controls.maxDistance = 3000; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); if (!silent) { lastCam = null; enforce(true); requestRender(); } }
+    function enforceInt() { const c = w3(camera.position), b = intMode.b; if (BLDG.clearance(b, c, R_INT()) >= R_INT() - 1e-3) { intMode.last = c; return false; } setV(camera.position, intMode.last); camera.lookAt(controls.target); return true; }
+
     // ---------- 构建 ----------
-    let site = null, world = null, tenshuProto = null;
+    let site = null, world = null, tenshuProto = null, bw = null; const BLDG = window.CASTLE_BLDG;
     // r6：首次加载时 H 系列审计在第一帧画出来之后再跑（审计只读几何、只标记违规；结果出来后补画违规标记、面板更新）。
     // 之后的重建（换 seed / 现状）照旧同步审计。测试等 __castle.auditResult。
     function buildWorld(opt, deferAudit, pre) {
@@ -326,14 +385,17 @@
       world = new THREE.Group(); world.name = 'world';
       world.add(terrainMesh(site)); world.add(outerGround(site));
       const k = Kit();
-      for (const p of site.parts) { if (p.fam === 'tenshu') continue; const f = FAM[p.fam]; if (f) f(k, p, site);
+      const bkey = BLDG.genKey(SITE.genKey({ seed: P.seed, lost: P.lost, cell: P.cell }), P.roll), tB = performance.now();
+      if (PREB && site.fromPack && state.bpack && state.bpack.key === bkey) { bw = PREB; state.bpack.used = true; } else bw = BLDG.generate(site, { roll: P.roll }); PREB = null; state.bldg = bw; state.bldgMs = Math.round(performance.now() - tB); interiors.clear(); intGroup = null; exitInterior(true); fillBsel(); const byPart = new Set(bw.list.filter(b => b.part !== undefined).map(b => b.part));
+      for (const p of site.parts) { if (p.fam === 'tenshu' || byPart.has(p.id)) continue; const f = FAM[p.fam]; if (f) f(k, p, site);
         if (!p.wall && p.poly && p.zb !== undefined && p.z - p.zb > 0.02 && !SITE.SPEC.found.ishigakiBase.includes(p.fam)) k.prism('stone', p.poly, p.zb - 0.3, p.z); } // r7b：斜面台地上的基础（基壇）：地板 z 到最低地面 zb（再埋 0.3 m）
       roadsMesh(k, site);
       for (const m of k.meshes()) world.add(m);
       const tb = site.parts.find(p => p.fam === 'tenshu');
       if (tb) { if (!tenshuProto) tenshuProto = window.CASTLE_TENSHU.build(THREE, { maxAniso: renderer.capabilities.getMaxAnisotropy() }); const t = tenshuProto; t.position.copy(W(tb.x, tb.y, tb.z)); t.rotation.y = tb.ang; world.add(t); }
-      world.add(treesMesh(site));
-      if (A) world.add(badMarks()); state.signature = site.signature();
+      { const tw = performance.now(); const bg = bldgWorld(bw); world.add(bg); state.bldgSceneMs = Math.round(performance.now() - tw); state.bldgDetail = false; const b0 = bw; requestAnimationFrame(() => setTimeout(() => bldgDetail(bg, b0), 0)); } state.hideTrees = new Set(bw.hideTrees);
+      world.add(treesMesh(site, state.hideTrees));
+      if (A) world.add(badMarks()); state.signature = site.signature() + '|' + BLDG.signature(bw);
       const labels = new THREE.Group(); labels.name = 'labels';
       for (const L of site.labels) { const sp = labelSprite(L.text, L.lost); sp.position.copy(W(L.x, L.y, L.z)); labels.add(sp); }
       labels.visible = P.labels; world.add(labels);
@@ -341,11 +403,11 @@
       let verts = 0, tris = 0; world.traverse(o => { if (o.isMesh && o.geometry) { const g = o.geometry, c = g.attributes.position.count, inst = o.isInstancedMesh ? o.count : 1; verts += c * inst; tris += (g.index ? g.index.count / 3 : c / 3) * inst; } });
       state.site = site; state.stats = { verts, tris: Math.round(tris), buildMs: Math.round(site.ms), sceneMs: Math.round(performance.now() - t0), parts: site.parts.length, trees: site.trees.length, dobei: site.dobei.length, lostPlaced: site.lostPlaced.length, lostSkipped: site.lostSkipped, conform: site.conform && { cells: site.conform.cells, split: site.conform.split, passive: site.conform.passive, dropped: site.conform.dropped, fans: site.conform.fans.length } };
       buildField(); showStats();
-      const s0 = site, doAudit = () => { if (site !== s0) return; const t1 = performance.now(), A2 = A || site.audit(); state.stats.auditMs = A ? null : Math.round(performance.now() - t1); state.auditResult = A2; showAudit(A2); showStats();
-        if (!A && A2.total) { world.add(badMarks()); const tr = world.children.find(o => o.isGroup && o.userData.trees); if (tr && site.trees.some(t => t.bad)) { world.remove(tr); world.add(treesMesh(site)); } requestRender(); } };
+      const s0 = site, b0 = bw, doAudit = () => { if (site !== s0) return; const t1 = performance.now(), A2 = A || site.audit(); state.stats.auditMs = A ? null : Math.round(performance.now() - t1); withBldgAudit(A2, s0, b0, AB => { state.auditResult = AB; showAudit(AB); showStats(); }); 
+        if (!A && A2.total) { world.add(badMarks()); const tr = world.children.find(o => o.isGroup && o.userData.trees); if (tr && site.trees.some(t => t.bad)) { world.remove(tr); world.add(treesMesh(site, state.hideTrees)); } requestRender(); } };
       state.camAudit = null; const doCam = () => setTimeout(() => { if (site === s0) { state.camAudit = cameraAudit(); showCamAudit(state.camAudit); } }, 50), doCamA = () => setTimeout(() => { if (site === s0) cameraAuditAsync({}, R => { if (site !== s0) return; state.camAudit = R; showCamAudit(R); }); }, 50);
       const doAuditW = () => { const t1 = performance.now(); auditInWorker(opt).then(R => { if (site !== s0) return; if (R.sig !== site.signature() || R.total) { state.auditVia = R.total ? 'main (violations)' : 'main (sig mismatch)'; doAudit(); return; }
-          state.auditVia = 'worker'; state.stats.auditMs = Math.round(performance.now() - t1); state.auditResult = { total: R.total, cnt: R.cnt, rules: R.rules, items: R.items, worker: true }; showAudit(state.auditResult); showStats(); },
+          state.auditVia = 'worker'; state.stats.auditMs = Math.round(performance.now() - t1); withBldgAudit({ total: R.total, cnt: R.cnt, rules: R.rules, items: R.items, worker: true }, s0, b0, AB => { state.auditResult = AB; showAudit(AB); showStats(); }); },
         e => { if (site !== s0) return; state.auditVia = 'main (' + (e && e.message || e) + ')'; doAudit(); }); };
       if (A) { doAudit(); doCam(); } else { $('audit').innerHTML = '<div class="ah">硬规则审计：运行中…</div>'; requestAnimationFrame(() => setTimeout(() => { if (site.fromPack && PACK_RAW) { doAuditW(); doCamA(); } else { doAudit(); doCam(); } }, 0)); }
       requestRender();
@@ -381,10 +443,12 @@
       sakura: { ref: { gate: 'sakura', dz: 4 }, az: 47, el: 19, dist: 46, rf: 6 },             // 本丸桜门 + 枡形 + 铁门
       otegate: { walk: 'otemon', at: 'gate', ahead: 10, rf: 0.5 },                     // 站在大手门（高丽门）门洞里、眼高 1.6 m，沿步行路线向枡形里看（规则：H14 步行路线上离门洞中心最近的点）
       bridge: { bridge: 'gokuraku', daz: 35, el: 14, dist: 75, rf: 12 },             // r5：極楽橋侧面（目标 = 跨中桥面下 3 m；方位 = 桥的横向 + 35°），看桥墩/跨度/桥台
+      goten: { ref: { bldg: 'goten' }, az: -150, el: 26, dist: 170, rf: 20 },          // B1：本丸御殿（目标 = 御殿最大殿舍的屋脊高；现状里没有御殿 → 本丸中心）
     };
     function refTarget(ref) {
       const main = name => site.regions.filter(g => g.name === name).sort((a, b) => b.area - a.area)[0];
       if (ref.region) { const g = main(ref.region), P = g.rings[0]; let A = 0, cx = 0, cy = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], k = a[0] * b[1] - b[0] * a[1]; A += k; cx += (a[0] + b[0]) * k; cy += (a[1] + b[1]) * k; } cx /= 3 * A; cy /= 3 * A; return [cx, cy, g.surf.at(cx, cy)]; }
+      if (ref.bldg) { const b = bw && bw.list.find(q => q.type === ref.bldg); if (!b) return refTarget({ region: 'honmaru' }); const k = b.blocks.slice().sort((x, y) => (y.r[2] - y.r[0]) * (y.r[3] - y.r[1]) - (x.r[2] - x.r[0]) * (x.r[3] - x.r[1]))[0], [x, y] = b.fr.w(BLDG.U(b, (k.r[0] + k.r[2]) / 2), BLDG.V(b, (k.r[1] + k.r[3]) / 2)); return [x, y, b.F[0].z + k.h + 3]; }
       if (ref.gate) { const g = gateById(ref.gate); if (!g) return null; const v = g.nin || [-Math.sin(g.ang), Math.cos(g.ang)], b = ref.back || 0; return [g.x + v[0] * b, g.y + v[1] * b, (b ? site.surfaceAt(g.x + v[0] * b, g.y + v[1] * b) : g.z) + (ref.dz || 0)]; }
       if (ref.part) { const p = site.parts.find(q => q.fam === ref.part); return p ? [p.x, p.y, p.z + (ref.dz || 0)] : null; }
       if (ref.edge) { const g = main(ref.edge); let best = null, bv = -1e18; for (const e of g.edges) { if (!e.B || e.low.g) continue; const v = ((e.ax + e.bx) / 2) * ref.dir[0] + ((e.ay + e.by) / 2) * ref.dir[1]; if (e.len > 10 && v > bv) { bv = v; best = e; } } if (!best) return null;
@@ -435,7 +499,7 @@
     const clamp01 = t => t < 0 ? 0 : t > 1 ? 1 : t;
     function buildField() {
       const t0 = performance.now(); F = CAMX.create(site, { R: CAM_R, keepTris: P.camgeo }); world.updateMatrixWorld(true);
-      const skip = new Set(['terrain', 'outer', 'water', 'labels', 'bad']), m4 = new THREE.Matrix4(), mm = new THREE.Matrix4();
+      const skip = new Set(['terrain', 'outer', 'water', 'labels', 'bad', 'bldg', 'bldg-far', 'bldg-int']), m4 = new THREE.Matrix4(), mm = new THREE.Matrix4();
       const walk = o => { if (skip.has(o.name) || o.isSprite) return; if (o.isMesh && o.geometry) { const g = o.geometry, pos = g.attributes.position.array, idx = g.index ? g.index.array : null;
           if (o.isInstancedMesh) { for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); mm.multiplyMatrices(o.matrixWorld, m4); F.addTris(pos, idx, mm.elements, true); } }
           else F.addTris(pos, idx, o.matrixWorld.equals(new THREE.Matrix4()) ? null : o.matrixWorld.elements); }
@@ -452,7 +516,7 @@
     let anim = null;
     const cur = () => ({ cam: w3(camera.position), tgt: w3(controls.target) });
     function setView(name, instant) {
-      if (!VIEWS[name]) name = 'aerial'; const v = PRE[name]; P.view = name; writeHash(P);
+      if (!VIEWS[name]) name = 'aerial'; if (intMode) exitInterior(true); const v = PRE[name]; P.view = name; writeHash(P);
       document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === name));
       if (instant) { anim = null; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); lastCam = v.cam.slice(); enforce(); requestRender(); return; }
       const pth = F.path(cur(), v); anim = { list: [pth], i: 0, pth, s: performance.now() }; requestRender();
@@ -466,6 +530,7 @@
     // web-r4：相机从上一帧合法位置连续运动到期望位置（扫掠 + 接触滑移，防穿薄墙）；瞬移/重建后按“合法且向上开放”落点
     let fixes = 0, lastCam = null;
     function enforce(teleport) {
+      if (intMode) return enforceInt();
       const t = w3(controls.target), fl = F.floorAt(t[0], t[1]); if (t[2] < fl) { t[2] = fl; setV(controls.target, t); }
       const c = w3(camera.position), r = (!lastCam || teleport) ? F.place(c) : F.move(lastCam, c); lastCam = r;
       if (dist3(r, c) > 1e-6) { setV(camera.position, r); camera.lookAt(controls.target); fixes++; return true; } return false;
@@ -485,6 +550,7 @@
         if (k >= 1) { if (anim.i + 1 < anim.list.length) { anim.i++; anim.s = now; anim.pth = anim.list[anim.i]; } else anim = null; } }
       if (controls.update()) moved = true;
       if (enforce()) moved = true; // 约束之后不再 controls.update()（它会按阻尼余量再挪一次相机，绕过约束）；下一帧从新位置继续
+      if (!(now - (state.intT || 0) < 500)) { state.intT = now; updateInteriors(); }
       return moved;
     }
     renderer.setAnimationLoop(now => {
@@ -502,7 +568,7 @@
       { id: 'C6', name: '每座门：眼高 1.6 m 沿 H14 路线穿过门洞，全程清空（失败门数）' },
       { id: 'C7', name: '快速拖动/穿越模糊测试：相邻两帧之间球心不穿过任何几何' },
       { id: 'C8', name: '每座木桥：相机球贴水面从桥下两墩之间横穿，全程清空（失败桥数）' },
-    ];
+    ].concat(BLDG.CRULES);
     // C8（r5）：木桥下的船行通道——在跨中所在的那一跨（两支点之间）中线上，球心离水面 R+0.4，垂直于桥轴横穿桥下；
     // 要求：跨净宽 ≥ 2R+0.6、桥底净空够、两端合法且向上开放、直线扫掠全程合法、逐帧 move() 走完全程不被挡（不滑移）
     function bridgeUnder() {
@@ -552,7 +618,7 @@
     function cameraAudit(o) { const it = camAuditSteps(o); let r = it.next(); while (!r.done) r = it.next(); return r.value; }
     function cameraAuditAsync(o, done) { const it = camAuditSteps(o); const st = () => { const r = it.next(); if (r.done) done(r.value); else setTimeout(st, 0); }; setTimeout(st, 0); }
     function* camAuditSteps(o) { const TS = state.camStages = []; let tS = performance.now(); const lap = n => { const t = performance.now(); TS.push([n, Math.round(t - tS)]); tS = t; };
-      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
+      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
       const pre = {}; for (const k of names) pre[k] = legacy ? { cam: LEGACY[k][0], tgt: LEGACY[k][1] } : PRE[k];
       for (const k of names) { const p = pre[k]; if (k !== names[0]) yield;
         if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机球不合法 ' + p.cam.map(v => v.toFixed(1))); }
@@ -571,8 +637,10 @@
         if (o.geo && F.hasGeo()) for (const g of site.gates) { const r = route(g.spec.id); if (r.pts) for (let k = 0; k < r.pts.length; k += 4) if (F.geoCheck(r.pts[k])) { geo.C6++; break; } }
         tf = tunnelFuzz(o.old ? 'r3' : 'new', o.c7n, o.seed); lap('C7'); yield; cnt.C7 = tf.tun; if (tf.tun) items.push('C7 ' + tf.tun + ' 次两帧之间穿过几何，例 ' + JSON.stringify(tf.ex[0]));
         bu = bridgeUnder(); cnt.C8 = bu.filter(q => !q.ok).length; for (const q of bu) { if (!q.ok) items.push('C8 ' + q.bridge + ' 桥下横穿失败（' + q.why + '）'); geo.C8 += q.geo; } }
-      lap('C8'); const total = Object.values(cnt).reduce((s, v) => s + v, 0);
-      return { total, cnt, items, geo, gates, c7: tf, bridges: bu, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
+      lap('C8'); let bint = null;
+      if (!legacy && !o.old && bw) { bint = { rooms: 0, paths: 0 }; for (const b of bw.list) { yield; const R = BLDG.camAudit(site, bw, { only: b.id }); cnt.C9 += R.cnt.C9; cnt.C10 += R.cnt.C10; bint.rooms += R.rooms; bint.paths += R.paths; for (const it of R.items) items.push(it.rule + ' ' + it.msg); } lap('C9C10'); }
+      const total = Object.values(cnt).reduce((s, v) => s + v, 0);
+      return { total, cnt, items, geo, gates, c7: tf, bridges: bu, interiors: bint, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
     }
     function showCamAudit(A) {
       const el = $('camaudit'); if (!el) return; const ok = A.total === 0;
@@ -582,6 +650,11 @@
     }
     document.querySelectorAll('#views button').forEach(b => b.onclick = () => setView(b.dataset.v));
     if ($('walk')) $('walk').onclick = () => walkThrough('otemon');
+    function fillBsel() { const el = $('bsel'); if (!el || !bw) return; el.innerHTML = bw.list.map(b => `<option value="${b.id}">${b.name}（${b.tier === 'measured' ? '实测外观' : '推定'}·${b.F.length}層·${b.rooms.length}室）</option>`).join('');
+      const by = {}; for (const b of bw.list) { const k = b.type + (b.tier === 'measured' ? '·实测' : '·推定'); by[k] = (by[k] || 0) + 1; } const st = $('bstat'); if (st) st.textContent = '建筑语法 B1：' + Object.entries(by).map(([k, n]) => k + ' ' + n).join(' · ') + ' · ' + bw.list.reduce((a, b) => a + b.rooms.length, 0) + ' 室 · ' + (bw.fromPack ? '读包' : '生成 ' + state.bldgMs + ' ms'); }
+    if ($('benter')) $('benter').onclick = () => { const id = +$('bsel').value; enterInterior(id); updateInteriors(); };
+    if ($('bexit')) $('bexit').onclick = () => exitInterior(false);
+    fillBsel();
     $('labels').checked = P.labels; $('labels').onchange = e => { P.labels = e.target.checked; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels; requestRender(); };
     $('lost').checked = P.lost; $('lost').onchange = e => { P.lost = e.target.checked; writeHash(P); $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状'; buildWorld(P); };
     $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状';
@@ -594,6 +667,8 @@
     state.goView = v => setView(v, false); state.walkThrough = (id, now) => walkThrough(id, now); state.route = route; state.walkAnim = walkAnim; state.enforce = enforce; state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
     state.look = (a, b) => { camera.position.copy(W(...a)); controls.target.copy(W(...b)); controls.update(); renderer.render(scene, camera); };
     state.renderNow = () => { controls.update(); renderer.render(scene, camera); };
+    state.enterInterior = (id, room) => { const r = enterInterior(id, room); updateInteriors(); renderer.render(scene, camera); return r; }; state.exitInterior = () => exitInterior(false); state.intMode = () => intMode && { b: intMode.b.id, name: intMode.b.name };
+    state.interiorFor = id => { const b = bw.list[id]; const e = interiorFor(b); return { ms: e.ms }; }; state.updateInteriors = updateInteriors; state.interiorsBuilt = () => [...interiors.keys()]; state.bldgClear = (id, q) => BLDG.clearance(bw.list[id], q, 1);
     state.rebuild = o => { Object.assign(P, o); writeHash(P); buildWorld(P); };
     state.loadMs = Math.round(performance.now() - T0);
     state.ready = true; $('load').remove();
