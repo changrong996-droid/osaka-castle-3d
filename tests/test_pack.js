@@ -46,5 +46,12 @@ for (const key of keys) {
   // 测试的故障注入：包里的一个高度被改 → 必须被逐位比较抓到
   const C = fresh().build(Object.assign({}, opt, { pack: P })); C.H[12345] += 1e-9; const dc = deepEq(A, C); console.log('  tamper check', dc.length ? 'caught' : 'MISSED'); if (!dc.length) fail++;
 }
+// B1：建筑语法结果包（web/bake/b-*.json.gz）= 在同一 site 上现场生成的结果（JSON 逐字相同）；键 = bldg.js 源码哈希 + site 键
+{ require(path.join(WEB, 'bldg.js')); const BL = globalThis.CASTLE_BLDG, MB = globalThis.CASTLE_BAKE_B || {}; const bk = Object.keys(MB); if (!bk.length) { console.log('no bldg packs'); fail++; }
+  for (const key of bk) { const ent = MB[key], js = zlib.gunzipSync(fs.readFileSync(path.join(WEB, ent.file))).toString(), P = JSON.parse(js), skey = Object.keys(MAN).find(k => MAN[k].file === 'bake/s' + P.seed + '-l' + (P.lost ? 1 : 0) + '.bin.gz');
+    const want = BL.genKey(skey, ''); // 包都在无 roll 时烘焙 if (want !== key) { console.log('BLDG KEY MISMATCH', ent.file, key, 'want', want, '(re-run node tools/bake.js)'); fail++; continue; }
+    const opt = { seed: P.seed, lost: P.lost, cell: SITE.SPEC.grid.cell }, S = SITE.build(opt), t = Date.now(), W = BL.generate(S, {}), tg = Date.now() - t, live = JSON.stringify(BL.packW(W)), W2 = BL.unpackW(P);
+    const same = live === js, sig = BL.signature(W2) === ent.sig && BL.signature(W) === ent.sig; console.log(ent.file, 'gz', ent.bytes, 'gen', tg, 'ms', 'bldgs', W.list.length, same ? 'same as live' : 'DIFFERENT', 'sig', sig ? 'ok' : 'MISMATCH'); if (!same || !sig) fail++;
+    const tam = JSON.parse(js); tam.list[0].F[0].z += 1e-9; const caught = JSON.stringify(BL.packW(BL.unpackW(tam))) !== live; console.log('  bldg tamper check', caught ? 'caught' : 'MISSED'); if (!caught) fail++; } }
 console.log(fail ? 'PACK_FAIL ' + fail : 'PACK_OK');
 process.exit(fail ? 1 : 0);
