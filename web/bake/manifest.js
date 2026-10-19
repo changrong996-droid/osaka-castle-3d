@@ -2,14 +2,30 @@
 (typeof window !== "undefined" ? window : globalThis).CASTLE_BAKE = {
  "k1-620670ef-cddb72d2-s1-l1-c1.5": {
   "file": "bake/s1-l1.bin.gz",
-  "bytes": 938162,
+  "bytes": 938155,
   "raw": 6521688,
   "sig": "2862a389-245-1037"
  },
  "k1-620670ef-cddb72d2-s1-l0-c1.5": {
   "file": "bake/s1-l0.bin.gz",
-  "bytes": 933987,
-  "raw": 6505512,
+  "bytes": 933971,
+  "raw": 6505528,
   "sig": "cf1a5d19-227-1043"
+ }
+};
+(typeof window !== "undefined" ? window : globalThis).CASTLE_BAKE_B = {
+ "b1-3ddcd130-k1-620670ef-cddb72d2-s1-l1-c1.5-r": {
+  "file": "bake/b-s1-l1.json.gz",
+  "bytes": 19180,
+  "raw": 219885,
+  "sig": "d3705824-26",
+  "n": 26
+ },
+ "b1-3ddcd130-k1-620670ef-cddb72d2-s1-l0-c1.5-r": {
+  "file": "bake/b-s1-l0.json.gz",
+  "bytes": 3711,
+  "raw": 24097,
+  "sig": "ac646523-4",
+  "n": 4
  }
 };
