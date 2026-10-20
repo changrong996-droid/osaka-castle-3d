@@ -135,16 +135,18 @@
     const WL = (x, y) => S.wzAt ? S.wzAt(x, y) : S.WZ;
     // web-r10（B2）：网格外的地面 = **渲染出来的地面**（opt.outerZ：app.js 外圈 4 m 粗网格 + ±700 m 以外大环的同一组三角形插值）与曲轮拟合面取大。
     // r4–r9 只用拟合面：±700 m 以外渲染的大环是从内圈角点取高的平面，拟合平面外推后比它低（最多数米）→ 相机球能沉到渲染地面以下、看见大环底面。
-    const OZ = opt.outerZ || null, OT = opt.outerTris || null; // OT(x0,y0,x1,y1, fn(k, o))：与盒相交的渲染外圈地面三角形（9 个数一组）
+    const OZ = opt.outerZ || null, OT = opt.outerTris || null;
+    // web-r15（C1）：城下町的房屋（app.js/look.js 规则生成，在细网格外）按柱体进相机：CAN(x, y, r) = 半径 r 圆盘内最高屋顶（4 m 格，保守）。相机球不会进入房屋。
+    let CAN = opt.canopy || null; // 可在创建后设置（setCanopy：城下町在首帧之后生成） // OT(x0,y0,x1,y1, fn(k, o))：与盒相交的渲染外圈地面三角形（9 个数一组）
     // 网格外的柱状场（充分条件）：半径 R 的圆盘内渲染地面的上界 = 每个相交三角形所在平面在圆心的值 + R·|坡度|（r9 只取圆心一点：陡处球会蹭进坡面）
-    function outNeedTop(x, y) { let m = outTop(x, y); if (OT) OT(x - R, y - R, x + R, y + R, (k, o) => { const ax = k[o], ay = k[o + 1], az = k[o + 2], ux = k[o + 3] - ax, uy = k[o + 4] - ay, uz = k[o + 5] - az, vx = k[o + 6] - ax, vy = k[o + 7] - ay, vz = k[o + 8] - az, nz = ux * vy - uy * vx; if (Math.abs(nz) < 1e-12) { m = Math.max(m, az, k[o + 5], k[o + 8]); return; }
+    function outNeedTop(x, y) { let m = outTop(x, y); if (CAN) { const cv = CAN(x, y, R); if (cv > m) m = cv; } if (OT) OT(x - R, y - R, x + R, y + R, (k, o) => { const ax = k[o], ay = k[o + 1], az = k[o + 2], ux = k[o + 3] - ax, uy = k[o + 4] - ay, uz = k[o + 5] - az, vx = k[o + 6] - ax, vy = k[o + 7] - ay, vz = k[o + 8] - az, nz = ux * vy - uy * vx; if (Math.abs(nz) < 1e-12) { m = Math.max(m, az, k[o + 5], k[o + 8]); return; }
       const gx = -(uy * vz - uz * vy) / nz, gy = -(uz * vx - ux * vz) / nz, zc = az + gx * (x - ax) + gy * (y - ay) + R * Math.hypot(gx, gy); if (zc > m) m = Math.min(zc, Math.max(az, k[o + 5], k[o + 8])); }); return m; }
     const outTop = (x, y) => { const g = S.regionAt ? S.regionAt(x, y) : null, h = g ? (g.surf ? g.surf.at(x, y) : g.z) : S.BED; let r = Math.max(h, WL(x, y)); if (OZ) { const o = OZ(x, y); if (o > r) r = o; } return r; };
-    const top = (x, y) => { const i = ci(x), j = cj(y); return (i < 0 || j < 0 || i >= NXc || j >= NYc) ? outTop(x, y) : T[j * NXc + i]; };
+    const top = (x, y) => { const i = ci(x), j = cj(y); return (i < 0 || j < 0 || i >= NXc || j >= NYc) ? (CAN ? Math.max(outTop(x, y), CAN(x, y, 0)) : outTop(x, y)) : T[j * NXc + i]; };
     const need = (x, y) => { const i = ci(x), j = cj(y); return (i < K || j < K || i >= NXc - K || j >= NYc - K) ? Math.max(outNeedTop(x, y) + R, i >= -K && j >= -K && i < NXc + K && j < NYc + K ? (() => { let m = -1e9; for (let b = j - K; b <= j + K; b++) for (let a = i - K; a <= i + K; a++) if (a >= 0 && b >= 0 && a < NXc && b < NYc) m = Math.max(m, T[b * NXc + a]); return m + R; })() : -1e9) : C[j * NXc + i]; };
     const above = (p, m) => p[2] >= need(p[0], p[1]) + (m || 0); // 柱状场：充分条件（在一切几何之上 ≥R）
     const inGrid = (x, y) => x >= gs.x0 && y >= gs.y0 && x <= gs.x0 + NXc * c && y <= gs.y0 + NYc * c;
-    const terrZ = (x, y) => inGrid(x, y) ? S.heightAt(x, y) : outTop(x, y);
+    const terrZ = (x, y) => inGrid(x, y) ? S.heightAt(x, y) : (CAN ? Math.max(outTop(x, y), CAN(x, y, 0)) : outTop(x, y));
     // ---- 精确间隙 ----
     const NRM = [0, 0, 1], TK = new Float32Array(9);
     function clearance(p, cap) {
@@ -162,7 +164,7 @@
           tk[3] = X1; tk[4] = Y1; tk[5] = H[a + NX + 1]; tk[6] = X0; tk[7] = Y1; tk[8] = H[a + NX];
           d2 = ptTri2(px, py, pz, tk, 0); if (d2 < d * d) { d = Math.sqrt(d2); nx = px - CP[0]; ny = py - CP[1]; nz = pz - CP[2]; } }
       }
-      if (!fullIn) { const o = Math.max(outTop(px, py), outTop(px + cap, py), outTop(px - cap, py), outTop(px, py + cap), outTop(px, py - cap), tz); if (pz - o < d) { d = pz - o; nx = 0; ny = 0; nz = 1; }
+      if (!fullIn) { const o = Math.max(outTop(px, py), outTop(px + cap, py), outTop(px - cap, py), outTop(px, py + cap), outTop(px, py - cap), tz, CAN ? CAN(px, py, cap) : -1e9); if (pz - o < d) { d = pz - o; nx = 0; ny = 0; nz = 1; }
         if (OT && d > 0) OT(px - cap, py - cap, px + cap, py + cap, (k, o2) => { const d2 = ptTri2(px, py, pz, k, o2); if (d2 < d * d) { d = Math.sqrt(d2); nx = px - CP[0]; ny = py - CP[1]; nz = pz - CP[2]; } }); } // B2：网格外 = 渲染外圈地面三角形的精确距离
       // 树柱
       for (let b = Math.floor((py - cap) / HB); b <= Math.floor((py + cap) / HB); b++) for (let a = Math.floor((px - cap) / HB); a <= Math.floor((px + cap) / HB); a++) { const L = TBH.get(a * 100003 + b); if (L) for (const k of L) {
@@ -239,7 +241,7 @@
     }
     const floorAt = (x, y) => Math.max(S.surfaceAt ? S.surfaceAt(x, y) : top(x, y), WL(x, y));
     // ---- 视角预设（规则 → 相机；不合法/被挡则按代价搜索）----
-    function fromRule(r, f, del, daz) { const el = clamp(r.el + del, 1, 89.95) * Math.PI / 180, az = (r.az + daz) * Math.PI / 180, d = r.dist * f; return [r.target[0] + Math.cos(az) * Math.cos(el) * d, r.target[1] + Math.sin(az) * Math.cos(el) * d, r.target[2] + Math.sin(el) * d]; }
+    function fromRule(r, f, del, daz) { const el = clamp(r.el + del, Math.min(1, r.el), 89.95) * Math.PI / 180, az = (r.az + daz) * Math.PI / 180, d = r.dist * f; return [r.target[0] + Math.cos(az) * Math.cos(el) * d, r.target[1] + Math.sin(az) * Math.cos(el) * d, r.target[2] + Math.sin(el) * d]; }
     let CANDS = null;
     function fixPreset(r) {
       if (!CANDS) { CANDS = []; for (const f of [1, 0.92, 0.85, 0.78, 0.7, 0.62, 0.55, 0.48, 1.1, 1.2, 1.35, 1.5]) for (let del = 0; del <= 60; del += 4) for (const daz of [0, 8, -8, 16, -16, 24, -24, 32, -32, 45, -45]) CANDS.push({ f, del, daz, cost: Math.abs(Math.log(f)) * 2 + del / 30 + Math.abs(daz) / 30 }); CANDS.sort((a, b) => a.cost - b.cost); }
@@ -352,7 +354,7 @@
       for (let a = 0; a < 8; a++) for (const el of [0, 30]) { const e = el * Math.PI / 180, d = [Math.cos(a * Math.PI / 4) * Math.cos(e), Math.sin(a * Math.PI / 4) * Math.cos(e), Math.sin(e)]; if (!rayBlocked(p, d, 60)) return null; }
       return 'enclosed';
     }
-    return { R, K, EYE, cell: c, addTris, finish, top, need, above, clear, valid, clearance, normal: () => NRM.slice(), segFree, openUp, move, lastMove: () => LM, place, segHit, los, resolveLegacy, clearOld, floorAt, fromRule, fixPreset, escape, envelope, polyPath, path, pathLegacy, linear, pathBad,
+    return { setCanopy: fn => { CAN = fn || null; ESC.clear(); }, R, K, EYE, cell: c, addTris, finish, top, need, above, clear, valid, clearance, normal: () => NRM.slice(), segFree, openUp, move, lastMove: () => LM, place, segHit, los, resolveLegacy, clearOld, floorAt, fromRule, fixPreset, escape, envelope, polyPath, path, pathLegacy, linear, pathBad,
       walkPoint, walkRoute, walkSmooth, geoCheck, stats: () => ({ tris, samples, fieldTris: nT, treeBoxes: TB.length / 6, hashItems: HIT ? HIT.length : 0, queries: nQ, fast: nFast }), hasGeo: () => !!keep };
   }
   root.CASTLE_CAMERA = { create, ease };
