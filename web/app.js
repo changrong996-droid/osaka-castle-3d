@@ -11,9 +11,9 @@
   // ---------- URL 参数（#seed=1&lost=1&view=aerial&labels=1&cell=1.5）----------
   function readHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0', roll: p.get('roll') || '' };
+    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', lmode: p.get('labels') === '0' ? 0 : p.get('labels') === '2' ? 2 : 1, cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0', roll: p.get('roll') || '' };
   }
-  function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? 1 : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : '') + (o.roll ? '&roll=' + o.roll : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
+  function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? (o.lmode === 2 ? 2 : 1) : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : '') + (o.roll ? '&roll=' + o.roll : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
 
   // r8a：预构建结果包（web/bake/，tools/bake.js 生成）。键 = site.js 源码哈希 + 数据哈希 + 选项，与清单（bake/manifest.js）里的一致才下载；
   // 下载与 three.js 的加载并行；任何一步失败（file://、没有 DecompressionStream、键不符、解码出错）都退回现场生成，结果相同。
@@ -380,6 +380,42 @@
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true })); sp.renderOrder = 10; sp.userData.aspect = cv.width / cv.height; sp.scale.set(0.026 * sp.userData.aspect, 0.026, 1); sp.material.sizeAttenuation = false; return sp;
     }
 
+    // ---------- B4：外景建筑标注——分级 + 屏幕空间避让 + 按投影大小/距离显隐 + 渐变（迟滞：已显示的同级标注优先，不闪）----------
+    // 级别：0 = 天守、主要城门、现存（实测）橹/多門櫓；1 = 推定（失传）橹、櫓門、推定门、本丸御殿；2 = 蔵、番所、井戸屋形、神社/茶室/资料馆等。
+    // 模式（网址 labels=0/1/2）：0 关；1 重要（只标 0 级，默认）；2 全部（0–2 级，避让）。悬停的建筑总是标出来。
+    const LB = { list: [], key: '', cap: 12, hpx: 19, t: 0, shown: [], serial: 0, oi: 0, occTimer: 0 };
+    const LB_SHOW = [6, 22, 30], LB_HIDE = 0.72; // 投影尺寸阈值（px，按级别）；已显示的降到阈值 × 0.72 才隐藏（迟滞）
+    function labelTier(fam, text, lost, type) { if (type === 'goten') return 1; if (type === 'bansho' || type === 'kura') return 2;
+      if (fam === 'tenshu') return 0; if (fam === 'gate') return /推定/.test(text) ? 1 : 0; if (fam === 'yagura2' || fam === 'yagura3' || fam === 'tamon') return lost ? 1 : 0; if (fam === 'yaguramon') return 1; return 2; }
+    function labelsBuild(site, bw) { const grp = new THREE.Group(); grp.name = 'labels'; LB.list = []; LB.key = ''; LB.shown = [];
+      const pk = new Map(); for (const p of site.parts) if (p.name) pk.set(p.fam + '|' + p.name, p); const bp = new Map(); for (const b of (bw ? bw.list : [])) if (b.part !== undefined) bp.set(b.part, b);
+      const add = (text, lost, x, y, z, tier, size, bid, z0) => { const sp = labelSprite(text, lost); sp.position.copy(W(x, y, z)); sp.material.opacity = 0; sp.visible = false; grp.add(sp); LB.list.push({ sp, text, tier, size, bid, op: 0, tgt: 0, on: false, rect: null, tw: [x, y, z0 + (z - z0) * 0.6], rf: size / 2 + 3, occ: false, occK: -1, cand: false }); };
+      for (const L of site.labels) { const p = pk.get(L.fam + '|' + L.text), b = p && bp.get(p.id); add(L.text, L.lost, L.x, L.y, L.z, labelTier(L.fam, L.text, L.lost), Math.max(p && p.w || 8, p && p.d || 6, p ? (L.z - p.z) * 0.8 : 8), b ? b.id : null, p ? p.z : L.z - 10); }
+      for (const b of (bw ? bw.list : [])) { if (b.part !== undefined) continue; const su = b.nu * b.cs, sv = b.nv * b.cs, [x, y] = b.fr.w(BLDG.U(b, b.nu / 2), BLDG.V(b, b.nv / 2)); add(b.name, false, x, y, b.F[b.F.length - 1].z + (b.type === 'goten' ? 14 : 8), labelTier(null, b.name, false, b.type), Math.max(su, sv) * (b.type === 'goten' ? 0.5 : 1), b.id, b.F[0].z); } // 包围盒用格网近似（不为标注去算外壳）
+      return grp; }
+    const _lv = new THREE.Vector3();
+    function labelsPlace() { const H = renderer.domElement.clientHeight || innerHeight, Wd = renderer.domElement.clientWidth || innerWidth, P11 = camera.projectionMatrix.elements[5], fpx = P11 * H / 2, sy = 2 * LB.hpx / (P11 * H), maxT = P.lmode === 2 ? 2 : 0, cp = camera.position, hid = hover ? hover.id : null, cand = [];
+      camera.updateMatrixWorld();
+      LB.serial++; for (const L of LB.list) { L.tgt = 0; L.rect = null; L.cand = false; const hov = hid !== null && L.bid === hid; if (L.tier > maxT && !hov) continue; _lv.copy(L.sp.position).project(camera); if (_lv.z > 1 || _lv.z < -1 || Math.abs(_lv.x) > 1.05 || Math.abs(_lv.y) > 1.05) continue;
+        const d = Math.max(1, L.sp.position.distanceTo(cp)), sz = L.size * fpx / d, th = LB_SHOW[L.tier] * (L.on ? LB_HIDE : 1); if (!hov && (sz < th || d > 1600)) continue; L.cand = true; if (!hov && L.occ) continue; // 被地形/城墙/别的建筑挡住：不标
+        const h = LB.hpx, w = h * L.sp.userData.aspect, x = (_lv.x + 1) / 2 * Wd, y = (1 - _lv.y) / 2 * H; cand.push({ L, hov, sz, r: [x - w / 2, y - h / 2, x + w / 2, y + h / 2] }); L.sp.scale.set(sy * L.sp.userData.aspect, sy, 1); }
+      cand.sort((a, b) => (b.hov - a.hov) || (a.L.tier - b.L.tier) || (b.L.on - a.L.on) || (b.sz - a.sz)); const placed = [], pad = 4;
+      for (const c of cand) { const r = c.r; if (!c.hov && placed.length >= LB.cap) break; if (!c.hov && (r[0] < 2 || r[1] < 2 || r[2] > Wd - 2 || r[3] > H - 2)) continue;
+        if (placed.some(p => r[0] < p[2] + pad && r[2] > p[0] - pad && r[1] < p[3] + pad && r[3] > p[1] - pad)) continue; placed.push(r); c.L.tgt = 1; c.L.rect = r; }
+      for (const L of LB.list) L.on = L.tgt === 1; LB.shown = LB.list.filter(L => L.on).map(L => ({ text: L.text, tier: L.tier, bid: L.bid, rect: L.rect.map(v => Math.round(v * 10) / 10) })); }
+    function labelsOcc(all) { // 遮挡：相机到建筑 60% 高处的视线（F.los，本栋水平半径内不算）。在渲染循环之外分片算（每片 ≤4 ms），结果变了才重排 + 重画；instant = 全部同步算完
+      if (!F || !world) return; const c = w3(camera.position), t0 = performance.now(), n = LB.list.length; let changed = false;
+      for (let it = 0; it < n; it++) { const k = (LB.oi + it) % n, L = LB.list[k]; if (!L.cand || L.occK === LB.serial) continue; if (!all && performance.now() - t0 > 4) { LB.oi = k; LB.occTimer = setTimeout(() => { LB.occTimer = 0; labelsOcc(false); }, 16); break; }
+        const occ = !F.los(c, L.tw, L.rf).ok; L.occK = LB.serial; if (occ !== L.occ) { L.occ = occ; changed = true; } }
+      if (changed) { LB.key = ''; if (all) labelsTick(performance.now(), true); else requestRender(); } }
+    function labelsTick(now, instant) { const grp = world && world.getObjectByName('labels'); if (!grp || !grp.visible || !LB.list.length) return false;
+      let anim = false; const e = camera.matrixWorld.elements, key = [camera.position.x, camera.position.y, camera.position.z, camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w].map(v => v.toFixed(3)).join(',') + '|' + (hover ? hover.id : '-') + '|' + innerWidth + 'x' + innerHeight + '|' + P.lmode + '|' + camera.fov; void e;
+      if (key !== LB.key) { LB.key = key; labelsPlace(); }
+      if (instant) labelsOcc(true); else if (!LB.occTimer && LB.list.some(L => L.cand && L.occK !== LB.serial)) LB.occTimer = setTimeout(() => { LB.occTimer = 0; labelsOcc(false); }, 40);
+      const dt = LB.t ? Math.min(100, Math.max(0, now - LB.t)) : 16; LB.t = now;
+      for (const L of LB.list) { if (instant) L.op = L.tgt; else if (L.op !== L.tgt) { L.op = L.tgt > L.op ? Math.min(L.tgt, L.op + dt / 160) : Math.max(L.tgt, L.op - dt / 160); anim = true; } L.sp.visible = L.op > 0.01; L.sp.material.opacity = L.op; }
+      return anim; }
+
     // ---------- B1：建筑（web/bldg.js 生成规格 + 几何；这里只做坐标轴换算与网格）----------
     function accMeshes(accs, name, shadow, mats) { const out = []; for (const [m, a] of Object.entries(accs)) { if (m.endsWith('@uv')) continue; const n = a.length, f = new Float32Array(n); for (let i = 0; i < n; i += 3) { f[i] = a[i]; f[i + 1] = a[i + 2]; f[i + 2] = -a[i + 1]; }
         const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(f, 3)); const uv = accs[m + '@uv']; if (uv && uv.length * 3 === n * 2) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2)); fastNormals(g);
@@ -484,44 +520,107 @@
       if (e.code === 'Escape') { exitInterior(false); return; } if (/^(Arrow|Key[WASDQE]$|Shift)/.test(e.code)) { KEYS.add(e.code); e.preventDefault(); requestRender(); } });
     addEventListener('keyup', e => { KEYS.delete(e.code); });
     addEventListener('blur', () => KEYS.clear());
-    // ---------- B2：室内平面小地图（当前楼层：格属性、墙、门、階段、房间名；相机位置 + 视锥；点房间 = 跳到该房间的 C9/C10 机位）----------
-    const MM = { cv: $('mmcv'), f: -1, manual: null, view: null };
+    // ---------- B4：室内小地图——简单明了（web-r12 重做）----------
+    // 默认「跟随」：以人为中心、固定比例（约 20 m 见方），北朝上（按建筑轴取最接近真北的 90° 朝向，墙线保持横平竖直；右上角指北针指真北）。
+    // 只画：几种平涂底色（畳 / 板敷 / 廊下·入側 / 土間 / 階段）、墙线（外墙金色、内隔断深色）、门 = 墙上的缺口、階段图标、人 + 视野扇形。
+    // 默认不标房间名：当前房间写在标题栏；「全图」模式只标放得下、互不重叠的短名（御殿先标殿名），悬停显示房间名，点房间 = 跳过去。
+    const MM = { cv: $('mmcv'), f: -1, manual: null, view: null, mode: 'local', span: 20, rooms: [], labels: [], cache: null };
     const camFloor = b => { const z = w3(camera.position)[2] - EYE_I(); let f = 0; for (let k = 0; k < b.F.length; k++) if (b.F[k].z <= z + 0.6) f = k; return f; };
-    const MMC = { 1: '#cdbf86', 2: '#a8865c', 3: '#a8865c', 4: '#7d746a', 5: '#5c4630', 6: '#55504a', 7: '#d9a63a', 8: '#1d1a17' }; // ROOM 畳 / IRI / ROUKA / DOMA / STAIR / ISHI / TOKO / VOID
-    function drawMinimap() { const cv = MM.cv; if (!cv || !intMode) return; const b = intMode.b, cf = camFloor(b); if (MM.cf !== cf) { MM.cf = cf; MM.manual = null; } const f = MM.manual === null ? cf : MM.manual, Fl = b.F[f], nu = b.nu, nv = b.nv;
-      const dpr = Math.min(devicePixelRatio || 1, 2), W = 260, H = 240; if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; } const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-      const pad = 10, su = BLDG.U(b, nu) - BLDG.U(b, 0), sv = BLDG.V(b, nv) - BLDG.V(b, 0), s = Math.min((W - 2 * pad) / su, (H - 2 * pad) / sv), ox = (W - su * s) / 2, oy = (H - sv * s) / 2;
-      const X = u => ox + (u - BLDG.U(b, 0)) * s, Y = v => oy + (BLDG.V(b, nv) - v) * s; MM.view = { b: b.id, f, X, Y, s, ox, oy };
-      const A = BLDG.A, oe = BLDG.openEdgeSet(b);
-      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = Fl.a[j * nu + i]; if (a === A.OUT) continue; let col = MMC[a] || '#888'; if (a === A.ROOM) { const rm = b.rooms[Fl.r[j * nu + i]]; col = rm && rm.kind === 'board' ? '#b89a6c' : rm && rm.kind === 'doma' ? '#7d746a' : '#cdbf86'; }
-        g.fillStyle = col; g.fillRect(X(BLDG.U(b, i)), Y(BLDG.V(b, j + 1)), s * b.cs + 0.5, s * b.cs + 0.5);
-        if (a === A.STAIR) { g.strokeStyle = 'rgba(255,240,200,.55)'; g.lineWidth = 1; g.beginPath(); const x0 = X(BLDG.U(b, i)), y0 = Y(BLDG.V(b, j + 1)), w = s * b.cs; for (let k = 0; k <= 2; k++) { g.moveTo(x0 + w * k / 2, y0); g.lineTo(x0 + w * k / 2, y0 + w); } g.stroke(); } }
-      const lab = (i, j) => (i < 0 || j < 0 || i >= nu || j >= nv || Fl.a[j * nu + i] === A.OUT) ? -1 : Fl.r[j * nu + i];
-      g.lineCap = 'square';
-      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const la = lab(i, j); if (la < 0 && Fl.a[j * nu + i] === A.OUT) { /* 外部格只画与内部格的边（由内部格那侧画）*/ }
-        for (let sd = 0; sd < 4; sd++) { const [di, dj] = BLDG.NB[sd], lb = lab(i + di, j + dj); if (la < 0 || la === lb) continue; if (lb >= 0 && (sd === 1 || sd === 3)) continue; // 内部隔断只画一次
-          const open = oe.has(BLDG.edgeKey(f, i, j, sd)), u0 = BLDG.U(b, sd === 0 ? i + 1 : i), u1 = BLDG.U(b, sd === 1 ? i : i + 1), v0 = BLDG.V(b, sd === 2 ? j + 1 : j), v1 = BLDG.V(b, sd === 3 ? j : j + 1);
-          const xa = X(sd < 2 ? u0 : BLDG.U(b, i)), xb = X(sd < 2 ? u0 : BLDG.U(b, i + 1)), ya = Y(sd < 2 ? BLDG.V(b, j) : v0), yb = Y(sd < 2 ? BLDG.V(b, j + 1) : v0); void u1; void v1;
-          g.strokeStyle = open ? (lb < 0 ? '#ff9a3c' : 'rgba(255,214,120,.9)') : (lb < 0 ? '#1a1410' : '#3a2c1c'); g.lineWidth = open ? (lb < 0 ? 3 : 1) : (lb < 0 ? 2.5 : 1.4); if (open && lb >= 0) g.setLineDash([2, 2]); else g.setLineDash([]);
-          g.beginPath(); g.moveTo(xa, ya); g.lineTo(xb, yb); g.stroke(); } }
-      g.setLineDash([]); MM.rooms = [];
-      g.font = '10px "PingFang SC","Noto Sans CJK SC",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      for (const rm of b.rooms) { if (rm.f !== f) continue; let su2 = 0, sv2 = 0, n = 0; for (let j = rm.rect[1]; j < rm.rect[3]; j++) for (let i = rm.rect[0]; i < rm.rect[2]; i++) { const q = j * nu + i; if (Fl.r[q] === rm.id && BLDG.WALKABLE(Fl.a[q]) && Fl.a[q] !== A.STAIR) { su2 += i + 0.5; sv2 += j + 0.5; n++; } } if (!n) continue;
-        let ci = su2 / n, cj = sv2 / n; { let bd = 1e9, bi = ci, bj = cj; for (let j = rm.rect[1]; j < rm.rect[3]; j++) for (let i = rm.rect[0]; i < rm.rect[2]; i++) { const q = j * nu + i; if (Fl.r[q] !== rm.id || !BLDG.WALKABLE(Fl.a[q]) || Fl.a[q] === A.STAIR) continue; const d = Math.hypot(i + 0.5 - ci, j + 0.5 - cj); if (d < bd) { bd = d; bi = i + 0.5; bj = j + 0.5; } } ci = bi; cj = bj; } // 标注点落在房间自己的格上（L 形/回字形房间）
-        const px = X(BLDG.U(b, ci)), py = Y(BLDG.V(b, cj)), nm = rm.name.split('·').pop(); MM.rooms.push({ id: rm.id, name: rm.name, px, py, f });
-        g.fillStyle = 'rgba(20,14,8,.72)'; const tw = g.measureText(nm).width + 6; g.fillRect(px - tw / 2, py - 7, tw, 14); g.fillStyle = '#f3e6c4'; g.fillText(nm, px, py + 0.5); }
-      if (f === cf) { const c = w3(camera.position), [u, v] = b.fr.l(c[0], c[1]), x = X(u), y = Y(v), a = look.yaw - b.fr.ang, hf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect), L = 5 * s;
-        g.fillStyle = 'rgba(255,220,90,.28)'; g.beginPath(); g.moveTo(x, y); g.arc(x, y, L, -(a + hf), -(a - hf)); g.closePath(); g.fill(); g.strokeStyle = 'rgba(255,220,90,.8)'; g.lineWidth = 1; g.stroke();
-        g.fillStyle = '#ff5a36'; g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); MM.cam = { x, y, a }; } else MM.cam = null;
-      const fb = $('mmf'); if (fb) { if (fb.dataset.b !== String(b.id) || fb.children.length !== b.F.length) { fb.dataset.b = b.id; fb.innerHTML = b.F.map((_, k) => `<button data-f="${k}">${k + 1}F</button>`).join(''); fb.querySelectorAll('button').forEach(bt => bt.onclick = e => { e.stopPropagation(); MM.manual = +bt.dataset.f === camFloor(b) ? null : +bt.dataset.f; drawMinimap(); }); }
+    const MMT = { tatami: '#dacd96', board: '#bb8d58', corr: '#7b6f61', doma: '#62656a', stair: '#4e3b29', toko: '#5a4632', void: '#1c1813' };
+    const MMFONT = '"PingFang SC","Hiragino Sans","Noto Sans CJK SC","Microsoft YaHei",sans-serif';
+    function mmTone(b, Fl, q) { const A = BLDG.A, a = Fl.a[q]; if (a === A.OUT) return null; if (a === A.ROOM) { const rm = b.rooms[Fl.r[q]]; return rm && rm.kind === 'board' ? MMT.board : rm && rm.kind === 'doma' ? MMT.doma : MMT.tatami; }
+      return a === A.IRI || a === A.ROUKA ? MMT.corr : a === A.DOMA || a === A.ISHI ? MMT.doma : a === A.STAIR ? MMT.stair : a === A.TOKO ? MMT.toko : MMT.void; }
+    const mmShort = rm => { const p = rm.name.split('·'); return p[p.length - 1].replace(/\d+$/, ''); }; // 次之間7 → 次之間，内室2 → 内室，廊下3 → 廊下
+    const mmHallOf = (b, rm) => b.type === 'goten' && rm.kind !== 'rouka' && rm.name.includes('·') ? rm.name.split('·')[0] : null;
+    const mmFull = (b, rm) => { const h = mmHallOf(b, rm), s = mmShort(rm); return h ? h + ' · ' + s : s; };
+    function mmInfo(b, f) { // 每层：房间（锚点格、包围盒、格数）+ 御殿的殿（同一殿的房间合起来）；缓存在建筑上
+      const key = '_mm' + f; if (b[key]) return b[key]; const A = BLDG.A, Fl = b.F[f], nu = b.nu, R = new Map();
+      for (let j = 0; j < b.nv; j++) for (let i = 0; i < nu; i++) { const q = j * nu + i; if (Fl.a[q] === A.OUT) continue; const id = Fl.r[q]; if (id < 0) continue; let o = R.get(id); if (!o) R.set(id, o = { id, bb: [i, j, i + 1, j + 1], n: 0, su: 0, sv: 0, cells: [] });
+        o.bb[0] = Math.min(o.bb[0], i); o.bb[1] = Math.min(o.bb[1], j); o.bb[2] = Math.max(o.bb[2], i + 1); o.bb[3] = Math.max(o.bb[3], j + 1); if (BLDG.WALKABLE(Fl.a[q]) && Fl.a[q] !== A.STAIR) { o.n++; o.su += i + 0.5; o.sv += j + 0.5; o.cells.push(q); } }
+      const rooms = []; for (const o of R.values()) { const rm = b.rooms[o.id]; if (!rm || !o.n) continue; let ci = o.su / o.n, cj = o.sv / o.n, bd = 1e9, bi = ci, bj = cj; for (const q of o.cells) { const i = q % nu, j = (q - i) / nu, d = Math.hypot(i + 0.5 - ci, j + 0.5 - cj); if (d < bd) { bd = d; bi = i + 0.5; bj = j + 0.5; } } // 锚点落在房间自己的格上（L 形/回字形）
+        rooms.push({ id: o.id, rm, ci: bi, cj: bj, bb: o.bb, n: o.n, kind: rm.kind, short: mmShort(rm), full: mmFull(b, rm), hall: mmHallOf(b, rm) }); }
+      const halls = new Map(); for (const r of rooms) { if (!r.hall) continue; let h = halls.get(r.hall); if (!h) halls.set(r.hall, h = { name: r.hall, bb: r.bb.slice(), n: 0 }); h.bb[0] = Math.min(h.bb[0], r.bb[0]); h.bb[1] = Math.min(h.bb[1], r.bb[1]); h.bb[2] = Math.max(h.bb[2], r.bb[2]); h.bb[3] = Math.max(h.bb[3], r.bb[3]); h.n += r.n; }
+      let ext = [1e9, 1e9, -1e9, -1e9]; for (let q = 0; q < Fl.a.length; q++) if (Fl.a[q] !== A.OUT) { const i = q % nu, j = (q - i) / nu; ext = [Math.min(ext[0], i), Math.min(ext[1], j), Math.max(ext[2], i + 1), Math.max(ext[3], j + 1)]; }
+      const info = { rooms, halls: [...halls.values()], ext }; Object.defineProperty(b, key, { value: info, enumerable: false, configurable: true }); return info; }
+    function mmXf(b, cu, cv, s, W, H, dpr) { // 平面 (u,v) → 画布设备像素；k = 最接近北朝上的 90° 旋转
+      const k = ((Math.round(b.fr.ang / (Math.PI / 2)) % 4) + 4) % 4, S = s * dpr, cx = W * dpr / 2, cy = H * dpr / 2;
+      const rot = (x, y, kk) => kk === 0 ? [x, y] : kk === 1 ? [-y, x] : kk === 2 ? [-x, -y] : [y, -x];
+      const X = (u, v) => { const [rx, ry] = rot(u - cu, v - cv, k); return [cx + S * rx, cy - S * ry]; };
+      const inv = (x, y) => { const [du, dv] = rot((x - cx) / S, -(y - cy) / S, (4 - k) % 4); return [cu + du, cv + dv]; };
+      return { X, inv, k, s, S, dpr, W, H, cu, cv, north: Math.PI / 2 - b.fr.ang + k * Math.PI / 2 }; }
+    function mmCellRect(b, T, i0, j0, i1, j1) { const [xa, ya] = T.X(BLDG.U(b, i0), BLDG.V(b, j0)), [xb, yb] = T.X(BLDG.U(b, i1), BLDG.V(b, j1)); const x0 = Math.round(Math.min(xa, xb)), y0 = Math.round(Math.min(ya, yb)); return [x0, y0, Math.round(Math.max(xa, xb)) - x0, Math.round(Math.max(ya, yb)) - y0]; }
+    function mmBase(g, b, f, T, win) { // 底色 + 墙 + 門缺口 + 階段图标；win = 只画这个格范围（跟随模式）
+      const A = BLDG.A, Fl = b.F[f], nu = b.nu, nv = b.nv, [I0, J0, I1, J1] = win || [0, 0, nu, nv], dpr = T.dpr, small = T.s < 5;
+      for (let j = J0; j < J1; j++) { let i = I0; while (i < I1) { const t = mmTone(b, Fl, j * nu + i); if (!t) { i++; continue; } let e = i + 1; while (e < I1 && mmTone(b, Fl, j * nu + e) === t) e++; const r = mmCellRect(b, T, i, j, e, j + 1); g.fillStyle = t; g.fillRect(r[0], r[1], r[2], r[3]); i = e; } }
+      for (const st of b.stairs) { if (st.f !== f) continue; const [i0, j0, i1, j1] = st.rect; if (i1 <= I0 || i0 >= I1 || j1 <= J0 || j0 >= J1) continue; const d = BLDG.NB[st.dir], L = st.dir < 2 ? i1 - i0 : j1 - j0, n = small ? 2 : Math.max(3, Math.round(L * 1.4));
+        g.strokeStyle = 'rgba(255,236,190,.75)'; g.lineWidth = Math.max(1, dpr * (small ? 0.8 : 1.1)); g.beginPath();
+        for (let k = 1; k < n; k++) { const t = k / n; let a, c; if (st.dir < 2) { const u = BLDG.U(b, i0 + (i1 - i0) * t); a = T.X(u, BLDG.V(b, j0)); c = T.X(u, BLDG.V(b, j1)); } else { const v = BLDG.V(b, j0 + (j1 - j0) * t); a = T.X(BLDG.U(b, i0), v); c = T.X(BLDG.U(b, i1), v); } g.moveTo(a[0], a[1]); g.lineTo(c[0], c[1]); } g.stroke();
+        if (!small) { const cu = BLDG.U(b, (i0 + i1) / 2), cv = BLDG.V(b, (j0 + j1) / 2), hl = L * b.cs * 0.32, p0 = T.X(cu - d[0] * hl, cv - d[1] * hl), p1 = T.X(cu + d[0] * hl, cv + d[1] * hl), an = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]), ah = 5 * dpr; // 箭头 = 上楼方向
+          g.strokeStyle = '#fff3cf'; g.lineWidth = 1.6 * dpr; g.beginPath(); g.moveTo(p0[0], p0[1]); g.lineTo(p1[0], p1[1]); g.moveTo(p1[0] - ah * Math.cos(an - 0.5), p1[1] - ah * Math.sin(an - 0.5)); g.lineTo(p1[0], p1[1]); g.lineTo(p1[0] - ah * Math.cos(an + 0.5), p1[1] - ah * Math.sin(an + 0.5)); g.stroke(); } }
+      const oe = BLDG.openEdgeSet(b), lab = (i, j) => (i < 0 || j < 0 || i >= nu || j >= nv || Fl.a[j * nu + i] === A.OUT) ? -1 : Fl.r[j * nu + i], ext = new Path2D(), int = new Path2D(), door = new Path2D(), soft = new Path2D();
+      for (let j = Math.max(0, J0 - 1); j < Math.min(nv, J1 + 1); j++) for (let i = Math.max(0, I0 - 1); i < Math.min(nu, I1 + 1); i++) { const la = lab(i, j); if (la < 0 && Fl.a[j * nu + i] === A.OUT) continue;
+        for (let sd = 0; sd < 4; sd++) { const [di, dj] = BLDG.NB[sd], lb = lab(i + di, j + dj); if (la === lb) continue; if (lb >= 0 && (sd === 1 || sd === 3)) continue; // 内部隔断只画一次
+          const open = oe.has(BLDG.edgeKey(f, i, j, sd));
+          const p = sd === 0 ? [i + 1, j, i + 1, j + 1] : sd === 1 ? [i, j, i, j + 1] : sd === 2 ? [i, j + 1, i + 1, j + 1] : [i, j, i + 1, j], a = T.X(BLDG.U(b, p[0]), BLDG.V(b, p[1])), c = T.X(BLDG.U(b, p[2]), BLDG.V(b, p[3])), P = open ? (lb < 0 ? door : soft) : lb < 0 ? ext : int; P.moveTo(a[0], a[1]); P.lineTo(c[0], c[1]); } }
+      g.lineCap = 'butt'; g.strokeStyle = 'rgba(60,44,28,.28)'; g.lineWidth = Math.max(1, dpr * 0.8); g.stroke(soft); // 室内门（襖/障子开口）= 淡线，墙 = 实线
+      g.lineCap = 'square'; g.strokeStyle = 'rgba(38,27,17,.9)'; g.lineWidth = Math.max(1, dpr * (small ? 0.7 : 1.5)); g.stroke(int);
+      g.strokeStyle = '#e2b955'; g.lineWidth = dpr * (small ? 1.6 : 2.6); g.stroke(ext);
+      g.lineCap = 'butt'; g.strokeStyle = 'rgba(255,170,90,.55)'; g.lineWidth = dpr * (small ? 1 : 1.3); g.setLineDash([2 * dpr, 2 * dpr]); g.stroke(door); g.setLineDash([]); } // 出入口 = 外墙缺口（虚线示意）
+    function mmPlaceLabels(g, b, f, T) { // 全图模式：只标放得下且互不重叠的短名；同名只标一次；入側/廊下/武者走り 不标
+      const info = mmInfo(b, f), dpr = T.dpr, Wd = T.W * dpr, Hd = T.H * dpr, placed = [], out = [], seen = new Set(), pad = 3 * dpr;
+      const box = bb => { const r = mmCellRect(b, T, bb[0], bb[1], bb[2], bb[3]); return [r[0], r[1], r[0] + r[2], r[1] + r[3]]; };
+      const cand = [];
+      for (const h of info.halls) { const [cu, cv] = [BLDG.U(b, (h.bb[0] + h.bb[2]) / 2), BLDG.V(b, (h.bb[1] + h.bb[3]) / 2)]; cand.push({ text: h.name, at: T.X(cu, cv), reg: box(h.bb), fs: 12.5, w: 700, pr: 0, area: h.n }); }
+      for (const r of info.rooms) { if (r.kind === 'iri' || r.kind === 'rouka') continue; cand.push({ text: r.short, at: T.X(BLDG.U(b, r.ci), BLDG.V(b, r.cj)), reg: box(r.bb), fs: 11, w: 500, pr: 1, area: r.n, id: r.id }); }
+      cand.sort((p, q) => p.pr - q.pr || q.area - p.area);
+      for (const c of cand) { if (seen.has(c.text)) continue; g.font = `${c.w} ${c.fs * dpr}px ${MMFONT}`; const tw = g.measureText(c.text).width, th = c.fs * dpr * 1.15, x0 = c.at[0] - tw / 2, y0 = c.at[1] - th / 2, x1 = x0 + tw, y1 = y0 + th;
+        if (x0 < c.reg[0] + dpr || x1 > c.reg[2] - dpr || y0 < c.reg[1] + dpr || y1 > c.reg[3] - dpr) continue; // 必须放进自己的房间/殿
+        if (x0 < 2 * dpr || y0 < 2 * dpr || x1 > Wd - 2 * dpr || y1 > Hd - 2 * dpr) continue;
+        if (placed.some(p => x0 < p[2] + pad && x1 > p[0] - pad && y0 < p[3] + pad && y1 > p[1] - pad)) continue; // 碰撞测试
+        placed.push([x0, y0, x1, y1]); seen.add(c.text); out.push({ text: c.text, x0: x0 / dpr, y0: y0 / dpr, x1: x1 / dpr, y1: y1 / dpr, hall: c.pr === 0 });
+        g.lineJoin = 'round'; g.lineWidth = 3 * dpr; g.strokeStyle = 'rgba(18,12,6,.82)'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.strokeText(c.text, c.at[0], c.at[1]); g.fillStyle = c.pr === 0 ? '#ffe7a6' : '#fff6e2'; g.fillText(c.text, c.at[0], c.at[1]); }
+      return out; }
+    function mmCurRoom(b, f) { const A = BLDG.A, c = w3(camera.position), [u, v] = b.fr.l(c[0], c[1]), i = Math.floor((u - BLDG.U(b, 0)) / b.cs), j = Math.floor((v - BLDG.V(b, 0)) / b.cs); if (i < 0 || j < 0 || i >= b.nu || j >= b.nv) return null; const Fl = b.F[f], q = j * b.nu + i;
+      if (Fl.a[q] === A.STAIR) return { name: '階段', id: -1 }; if (Fl.a[q] === A.OUT || Fl.r[q] < 0) return null; const rm = b.rooms[Fl.r[q]]; return rm ? { name: mmFull(b, rm), id: rm.id } : null; }
+    function drawMinimap() { const cv = MM.cv, el = $('minimap'); if (!cv || !intMode) return; const b = intMode.b, cf = camFloor(b); if (MM.cf !== cf) { MM.cf = cf; MM.manual = null; } const f = MM.manual === null ? cf : MM.manual, info = mmInfo(b, f);
+      const dpr = Math.min(Math.max(devicePixelRatio || 1, 1), 3), c = w3(camera.position), [pu, pv] = b.fr.l(c[0], c[1]), local = MM.mode === 'local', k = ((Math.round(b.fr.ang / (Math.PI / 2)) % 4) + 4) % 4;
+      const eu = BLDG.U(b, info.ext[2]) - BLDG.U(b, info.ext[0]), ev = BLDG.V(b, info.ext[3]) - BLDG.V(b, info.ext[1]), pw = k % 2 ? ev : eu, ph = k % 2 ? eu : ev;
+      const W = 248, H = local ? 248 : Math.max(170, Math.min(340, Math.round((W - 24) * ph / pw + 24))), s = local ? Math.min(W, H) / MM.span : Math.min((W - 24) / pw, (H - 24) / ph);
+      if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; MM.cache = null; }
+      const T = local ? mmXf(b, pu, pv, s, W, H, dpr) : mmXf(b, (BLDG.U(b, info.ext[0]) + BLDG.U(b, info.ext[2])) / 2, (BLDG.V(b, info.ext[1]) + BLDG.V(b, info.ext[3])) / 2, s, W, H, dpr), g = cv.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+      if (local) { const r = MM.span * 0.75, i0 = Math.max(0, Math.floor((pu - r - BLDG.U(b, 0)) / b.cs)), i1 = Math.min(b.nu, Math.ceil((pu + r - BLDG.U(b, 0)) / b.cs)), j0 = Math.max(0, Math.floor((pv - r - BLDG.V(b, 0)) / b.cs)), j1 = Math.min(b.nv, Math.ceil((pv + r - BLDG.V(b, 0)) / b.cs)); mmBase(g, b, f, T, [i0, j0, i1, j1]); MM.labels = []; }
+      else { const ck = b.id + '|' + f + '|' + W + 'x' + H + '|' + dpr; if (!MM.cache || MM.cache.k !== ck) { const oc = document.createElement('canvas'); oc.width = cv.width; oc.height = cv.height; const og = oc.getContext('2d'); mmBase(og, b, f, T); MM.cache = { k: ck, cv: oc, labels: mmPlaceLabels(og, b, f, T) }; } g.drawImage(MM.cache.cv, 0, 0); MM.labels = MM.cache.labels; }
+      MM.view = { b: b.id, f, T, s, mode: MM.mode }; MM.rooms = [];
+      for (const r of info.rooms) { const [x, y] = T.X(BLDG.U(b, r.ci), BLDG.V(b, r.cj)), px = x / dpr, py = y / dpr; if (px > 6 && py > 6 && px < W - 6 && py < H - 6) MM.rooms.push({ id: r.id, name: r.rm.name, short: r.full, px, py, f }); }
+      const cur = f === cf ? mmCurRoom(b, f) : null; MM.curPx = null;
+      if (cur && cur.id >= 0) { const r = info.rooms.find(q => q.id === cur.id); if (r) { const rr = mmCellRect(b, T, r.bb[0], r.bb[1], r.bb[2], r.bb[3]); MM.curPx = { w: rr[2] / dpr, h: rr[3] / dpr }; } }
+      if (f === cf) { const [x, y] = T.X(pu, pv), a = look.yaw - b.fr.ang + k * Math.PI / 2, hf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect), L = Math.max(26 * dpr, Math.min(64 * dpr, 4 * T.S));
+        const gr = g.createRadialGradient(x, y, 0, x, y, L); gr.addColorStop(0, 'rgba(255,120,40,.62)'); gr.addColorStop(1, 'rgba(255,120,40,0.04)'); g.fillStyle = gr; g.beginPath(); g.moveTo(x, y); g.arc(x, y, L, -(a + hf), -(a - hf)); g.closePath(); g.fill();
+        g.fillStyle = '#ff5a36'; g.beginPath(); g.arc(x, y, 4.5 * dpr, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.6 * dpr; g.stroke(); MM.cam = { x: x / dpr, y: y / dpr, a }; } else MM.cam = null;
+      { const R = 10 * dpr, cx = W * dpr - R - 6 * dpr, cy = R + 6 * dpr, n = T.north, dx = Math.cos(n), dy = -Math.sin(n); // 指北针
+        g.fillStyle = 'rgba(15,11,7,.7)'; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill(); g.fillStyle = '#ff6a4a'; g.beginPath(); g.moveTo(cx + dx * R * 0.85, cy + dy * R * 0.85); g.lineTo(cx - dy * R * 0.32, cy + dx * R * 0.32); g.lineTo(cx + dy * R * 0.32, cy - dx * R * 0.32); g.closePath(); g.fill();
+        g.fillStyle = '#e9dcbc'; g.beginPath(); g.moveTo(cx - dx * R * 0.85, cy - dy * R * 0.85); g.lineTo(cx - dy * R * 0.32, cy + dx * R * 0.32); g.lineTo(cx + dy * R * 0.32, cy - dx * R * 0.32); g.closePath(); g.fill();
+        g.font = `700 ${8 * dpr}px ${MMFONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffd0c4'; g.fillText('N', cx + dx * (R + 0.1), cy + dy * (R + 0.1) - 0.5); }
+      if (local) { const sb = 5 * T.S, x0 = 8 * dpr, y0 = H * dpr - 9 * dpr; g.fillStyle = 'rgba(15,11,7,.72)'; g.fillRect(x0 - 4 * dpr, y0 - 11 * dpr, sb + 38 * dpr, 16 * dpr); g.strokeStyle = 'rgba(255,240,200,.8)'; g.lineWidth = 1.5 * dpr; g.beginPath(); g.moveTo(x0, y0 - 3 * dpr); g.lineTo(x0, y0); g.lineTo(x0 + sb, y0); g.lineTo(x0 + sb, y0 - 3 * dpr); g.stroke(); g.font = `${9.5 * dpr}px ${MMFONT}`; g.textAlign = 'left'; g.textBaseline = 'bottom'; g.fillStyle = 'rgba(255,240,200,.85)'; g.fillText('5 m', x0 + sb + 4 * dpr, y0 + 2 * dpr); } // 比例尺
+      const fb = $('mmf'); if (fb) { if (fb.dataset.b !== String(b.id) || fb.children.length !== b.F.length) { fb.dataset.b = b.id; fb.innerHTML = b.F.length > 1 ? b.F.map((_, kk) => `<button data-f="${kk}">${kk + 1}F</button>`).join('') : ''; fb.querySelectorAll('button').forEach(bt => bt.onclick = e => { e.stopPropagation(); MM.manual = +bt.dataset.f === camFloor(b) ? null : +bt.dataset.f; drawMinimap(); }); }
         fb.querySelectorAll('button').forEach(bt => bt.classList.toggle('on', +bt.dataset.f === f)); }
-      const tt = $('mmt'); if (tt) tt.textContent = b.name + ' · ' + (f + 1) + '階' + (f === cf ? '' : '（查看中）'); MM.t = performance.now(); }
+      const tt = $('mmt'); if (tt) tt.textContent = b.name + ' · ' + (f + 1) + '階';
+      const tr = $('mmr'); if (tr) tr.textContent = f === cf ? (cur ? cur.name : '—') : '查看 ' + (f + 1) + '階（你在 ' + (cf + 1) + '階）';
+      const tm = $('mmm'); if (tm) { tm.textContent = local ? '全图' : '跟随'; tm.title = local ? '看整栋（M）' : '回到跟随视图（M）'; }
+      MM.t = performance.now(); }
+    const mmRoomAt = (x, y) => { const V = MM.view; if (!intMode || !V) return null; const b = intMode.b, [u, v] = V.T.inv(x * V.T.dpr, y * V.T.dpr), i = Math.floor((u - BLDG.U(b, 0)) / b.cs), j = Math.floor((v - BLDG.V(b, 0)) / b.cs); if (i < 0 || j < 0 || i >= b.nu || j >= b.nv) return null; const Fl = b.F[V.f], q = j * b.nu + i; if (Fl.a[q] === BLDG.A.OUT || Fl.r[q] < 0) return null; return b.rooms[Fl.r[q]] || null; };
     function mmJump(roomId) { if (!intMode) return false; const b = intMode.b, c = camsOf(b).find(q => q.room === roomId); if (!c) return false; teleportInt(c.cam, c.tgt); MM.manual = null; drawMinimap(); requestRender(); state.mmJumps = (state.mmJumps || 0) + 1; return { name: c.name, cam: c.cam }; }
-    if (MM.cv) MM.cv.addEventListener('click', e => { if (!intMode || !MM.view) return; const r = MM.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, V = MM.view, b = intMode.b;
-      const u = BLDG.U(b, 0) + (x - V.ox) / V.s, v = BLDG.V(b, b.nv) - (y - V.oy) / V.s, i = Math.floor((u - BLDG.U(b, 0)) / b.cs), j = Math.floor((v - BLDG.V(b, 0)) / b.cs); if (i < 0 || j < 0 || i >= b.nu || j >= b.nv) return;
-      const Fl = b.F[V.f], q = j * b.nu + i; if (Fl.a[q] === BLDG.A.OUT) return; mmJump(Fl.r[q]); });
+    function mmSetMode(m) { MM.mode = m === 'overview' || m === 'local' ? m : (MM.mode === 'local' ? 'overview' : 'local'); MM.cache = null; drawMinimap(); }
+    if (MM.cv) { MM.cv.addEventListener('click', e => { const r = MM.cv.getBoundingClientRect(), rm = mmRoomAt(e.clientX - r.left, e.clientY - r.top); if (rm) mmJump(rm.id); });
+      MM.cv.addEventListener('mousemove', e => { const r = MM.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, rm = mmRoomAt(x, y), tip = $('mmtip'); MM.cv.style.cursor = rm ? 'pointer' : 'default'; if (!tip) return;
+        if (!rm) { tip.style.display = 'none'; return; } tip.textContent = mmFull(intMode.b, rm); tip.style.display = 'block'; const pr = $('minimap').getBoundingClientRect(); tip.style.left = (e.clientX - pr.left + 12) + 'px'; tip.style.top = (e.clientY - pr.top - 24) + 'px'; });
+      MM.cv.addEventListener('mouseleave', () => { const tip = $('mmtip'); if (tip) tip.style.display = 'none'; }); }
+    if ($('mmm')) $('mmm').onclick = e => { e.stopPropagation(); mmSetMode(); };
+    if ($('mmc')) $('mmc').onclick = e => { e.stopPropagation(); const m = $('minimap'); m.classList.toggle('min'); $('mmc').textContent = m.classList.contains('min') ? '+' : '–'; if (!m.classList.contains('min')) drawMinimap(); };
+    addEventListener('keydown', e => { const tg = e.target && e.target.tagName; if (tg === 'INPUT' || tg === 'SELECT' || tg === 'TEXTAREA' || !intMode) return; if (e.code === 'KeyM') mmSetMode(); });
     function uiInterior(on) { const lb = world && world.getObjectByName('labels'); if (lb) lb.visible = on ? false : P.labels; // 室内：外景建筑标注隐藏，出来再按开关恢复
-      for (const id of ['minimap', 'khint']) { const el = $(id); if (el) el.style.display = on ? 'block' : 'none'; } const h = $('hint'); if (h) h.style.display = on ? 'none' : ''; if (on) { MM.manual = null; MM.cf = -1; drawMinimap(); } }
+      for (const id of ['minimap', 'khint']) { const el = $(id); if (el) el.style.display = on ? 'block' : 'none'; } const h = $('hint'); if (h) h.style.display = on ? 'none' : ''; if (on) { MM.manual = null; MM.cf = -1; MM.cache = null; drawMinimap(); } }
     // ---------- B2：外景里选建筑——悬停高亮（半透明体 + 边框 + 名称），单击进入（入口机位 = C9 门槛点，看向进门路线）----------
     const HL = new THREE.Group(); HL.name = 'bldg-hl'; HL.visible = false; HL.renderOrder = 5;
     { const bg = new THREE.BoxGeometry(1, 1, 1); HL.add(new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ color: 0xffc640, transparent: true, opacity: 0.28, depthWrite: false })), new THREE.LineSegments(new THREE.EdgesGeometry(bg), new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.95 }))); } scene.add(HL);
@@ -568,8 +667,7 @@
       { const tw = performance.now(); const bg = bldgWorld(bw); world.add(bg); state.bldgSceneMs = Math.round(performance.now() - tw); state.bldgDetail = false; const b0 = bw; requestAnimationFrame(() => setTimeout(() => bldgDetail(bg, b0), 0)); } state.hideTrees = new Set(bw.hideTrees);
       world.add(treesMesh(site, state.hideTrees));
       if (A) world.add(badMarks()); state.signature = site.signature() + '|' + BLDG.signature(bw);
-      const labels = new THREE.Group(); labels.name = 'labels';
-      for (const L of site.labels) { const sp = labelSprite(L.text, L.lost); sp.position.copy(W(L.x, L.y, L.z)); labels.add(sp); }
+      const labels = labelsBuild(site, bw); // B4：分级 + 避让（labelsTick 每帧按相机放置）
       labels.visible = P.labels; world.add(labels);
       scene.add(world);
       let verts = 0, tris = 0; world.traverse(o => { if (o.isMesh && o.geometry) { const g = o.geometry, c = g.attributes.position.count, inst = o.isInstancedMesh ? o.count : 1; verts += c * inst; tris += (g.index ? g.index.count / 3 : c / 3) * inst; } });
@@ -728,6 +826,7 @@
     }
     renderer.setAnimationLoop(now => {
       if (step(now)) need = true;
+      if (labelsTick(now)) need = true;
       if (need) { renderer.render(scene, camera); need = false; state.frames = (state.frames || 0) + 1; }
     });
 
@@ -913,7 +1012,7 @@
     if ($('benter')) $('benter').onclick = () => { const id = +$('bsel').value; enterInterior(id); updateInteriors(); };
     if ($('bexit')) $('bexit').onclick = () => exitInterior(false);
     fillBsel();
-    $('labels').checked = P.labels; $('labels').onchange = e => { P.labels = e.target.checked; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels && !intMode; requestRender(); };
+    $('lmode').value = String(P.lmode); $('lmode').onchange = e => { P.lmode = +e.target.value; P.labels = P.lmode > 0; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels && !intMode; LB.key = ''; requestRender(); };
     $('lost').checked = P.lost; $('lost').onchange = e => { P.lost = e.target.checked; writeHash(P); $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状'; buildWorld(P); };
     $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状';
     $('seed').value = P.seed; $('seed').onchange = e => { P.seed = Math.max(1, +e.target.value | 0); writeHash(P); buildWorld(P); };
@@ -923,13 +1022,17 @@
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
     state.goView = v => setView(v, false); state.walkThrough = (id, now) => walkThrough(id, now); state.route = route; state.walkAnim = walkAnim; state.enforce = enforce; state.step = now => step(now); state.anim = () => anim && { s: anim.s, dur: anim.pth.dur, maxLift: anim.pth.maxLift }; state.cameraAudit = cameraAudit; state.cur = cur; state.VIEWS = VIEWS;
-    state.look = (a, b) => { camera.position.copy(W(...a)); controls.target.copy(W(...b)); controls.update(); renderer.render(scene, camera); };
-    state.renderNow = () => { controls.update(); renderer.render(scene, camera); };
+    state.look = (a, b) => { camera.position.copy(W(...a)); controls.target.copy(W(...b)); controls.update(); labelsTick(performance.now(), true); renderer.render(scene, camera); };
+    state.renderNow = () => { controls.update(); labelsTick(performance.now(), true); renderer.render(scene, camera); };
+    state.labelInfo = () => { labelsTick(performance.now(), true); const gv = !!(world.getObjectByName('labels') || {}).visible, vis = gv ? LB.list.filter(L => L.sp.visible && L.op > 0.01).length : 0; return { mode: P.lmode, cap: LB.cap, total: LB.list.length, shown: LB.shown, visible: vis, groupVisible: !!(world.getObjectByName('labels') || {}).visible }; };
+    state.setLabelMode = m => { P.lmode = m; P.labels = m > 0; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels && !intMode; LB.key = ''; const s = $('lmode'); if (s) s.value = String(m); requestRender(); return P.lmode; };
+    state.setHoverId = id => { if (id === null) setHover(null); else { hover = null; setHover(bw.list[id], -999, -999); } LB.key = ''; return hover && hover.id; };
     state.enterInterior = (id, room) => { const r = enterInterior(id, room); updateInteriors(); renderer.render(scene, camera); return r; }; state.exitInterior = () => exitInterior(false); state.intMode = () => intMode && { b: intMode.b.id, name: intMode.b.name };
     state.interiorFor = id => { const b = bw.list[id]; const e = interiorFor(b); return { ms: e.ms }; }; state.updateInteriors = updateInteriors; state.interiorsBuilt = () => [...interiors.keys()]; state.bldgClear = (id, q) => BLDG.clearance(bw.list[id], q, 1);
     // B2：测试钩子
     state.keys = KEYS; state.walkUpdate = now => walkUpdate(now); state.walkMove = (dx, dy, dt) => walkMove(dx, dy, dt); state.lookYP = look; state.applyLook = applyLook; state.intValid = p => intValid(p);
-    state.minimap = () => { const el = $('minimap'); return { visible: !!(el && el.style.display === 'block' && el.offsetWidth > 0), floor: MM.view && MM.view.f, camFloor: intMode ? camFloor(intMode.b) : null, rooms: (MM.rooms || []).map(r => ({ id: r.id, name: r.name, px: r.px, py: r.py })), cam: MM.cam, rect: el && MM.cv.getBoundingClientRect().toJSON() }; };
+    state.minimap = () => { const el = $('minimap'); return { visible: !!(el && el.style.display === 'block' && el.offsetWidth > 0), floor: MM.view && MM.view.f, camFloor: intMode ? camFloor(intMode.b) : null, mode: MM.mode, s: MM.view && MM.view.s, rooms: (MM.rooms || []).map(r => ({ id: r.id, name: r.name, px: r.px, py: r.py })), labels: MM.labels || [], curPx: MM.curPx, cur: ($('mmr') || {}).textContent, title: ($('mmt') || {}).textContent, cam: MM.cam, rect: el && MM.cv.getBoundingClientRect().toJSON() }; };
+    state.mmMode = m => { mmSetMode(m); return MM.mode; }; state.mmFloor = f => { MM.manual = f; MM.cache = null; drawMinimap(); };
     state.stairWalk = (id, si) => stairWalk(bw.list[id], si || 0); state.windowRays = id => windowRays(bw.list[id]); state.poseInt = (cam, tgt) => { if (!intMode) return false; teleportInt(cam, tgt); renderer.render(scene, camera); return true; }; state.bMats = () => !!bMats();
     state.mmJump = id => mmJump(id); state.drawMinimap = () => drawMinimap();
     state.hover = () => hover && hover.id; state.hlVisible = () => HL.visible; state.pick = (x, y) => { const b = pickBldg(x, y); return b ? b.id : null; };
