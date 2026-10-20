@@ -8,3 +8,5 @@ web/shots/*
 !web/shots/report.json
 !web/shots/ext_hover.png
 !web/shots/int_minimap.png
+!web/shots/mm_goten_overview.png
+!web/shots/ext_labels.png
