@@ -2,14 +2,14 @@
 (typeof window !== "undefined" ? window : globalThis).CASTLE_BAKE = {
  "k1-c4fb186b-01ae13a6-s1-l1-c1.5": {
   "file": "bake/s1-l1.bin.gz",
-  "bytes": 938016,
-  "raw": 6521168,
+  "bytes": 937976,
+  "raw": 6521176,
   "sig": "4af20d46-244-1037"
  },
  "k1-c4fb186b-01ae13a6-s1-l0-c1.5": {
   "file": "bake/s1-l0.bin.gz",
-  "bytes": 933970,
-  "raw": 6505528,
+  "bytes": 933982,
+  "raw": 6505520,
   "sig": "cf1a5d19-227-1043"
  }
 };
