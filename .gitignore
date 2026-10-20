@@ -6,3 +6,5 @@ web/shots/*
 !web/shots/aerial.png
 !web/shots/top.png
 !web/shots/report.json
+!web/shots/ext_hover.png
+!web/shots/int_minimap.png
