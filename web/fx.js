@@ -25,10 +25,10 @@ float fxRow(float k, float seed, float RH, float u) { return k * RH + (fxH(vec2(
 float fxJnt(float c, float r, float seed) { return c + (fxH(vec2(c, r + seed * 7.0)) - 0.5) * 0.5; }
 // 一块石头：q = (沿墙水平 m, 高 m)；返回反照率，bump = 切向法线偏移（沿 u、沿上坡）
 vec3 fxStone(vec2 q, float foot, float seed, out vec2 bump) {
-  const float RH = 0.82;
+  const float RH = 1.1; // r15：石块放大（0.82 → 1.1 m 层高、石长 1.4–3.2 m）：近景石垣更“巨石”
   float k = floor(q.y / RH), r = k, Yk = fxRow(k, seed, RH, q.x), Y1 = fxRow(k + 1.0, seed, RH, q.x), yb = Yk, yt = Y1;
   if (q.y < Yk) { r = k - 1.0; yt = Yk; yb = fxRow(r, seed, RH, q.x); } else if (q.y >= Y1) { r = k + 1.0; yb = Y1; yt = fxRow(k + 2.0, seed, RH, q.x); }
-  float L = 1.0 + 1.2 * fxH(vec2(r, seed + 1.7)), x = q.x / L + fxH(vec2(r, seed + 9.2)) * 17.0, c = floor(x), s = c;
+  float L = 1.4 + 1.8 * fxH(vec2(r, seed + 1.7)), x = q.x / L + fxH(vec2(r, seed + 9.2)) * 17.0, c = floor(x), s = c;
   float Jc = fxJnt(c, r, seed), J1 = fxJnt(c + 1.0, r, seed), xa = Jc, xb = J1;
   if (x < Jc) { s = c - 1.0; xb = Jc; xa = fxJnt(s, r, seed); } else if (x >= J1) { s = c + 1.0; xa = J1; xb = fxJnt(c + 2.0, r, seed); }
   float h1 = fxH(vec2(s, r + seed)), h2 = fxH(vec2(s + 31.7, r - 11.3)), h3 = fxH(vec2(r + 5.1, s * 1.3));
@@ -111,7 +111,17 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
       diffuseColor.rgb = g1; fxNW = nW; fxNk = 1.0;
 #endif
     }`,
-    ground: `{ diffuseColor.rgb *= 0.84 + 0.32 * fxN(vWP.xz * 0.03); }`,
+    // r15：大环地面 = 城下土色；町家实例以外（r > 2.55 km）画“瓦海”：街区（127×88 m，街路 9 m）+ 沿街屋根列（深灰瓦、浅色墙线），按像素足迹淡出成平均色
+    ground: `{ diffuseColor.rgb *= 0.84 + 0.32 * fxN(vWP.xz * 0.03); float rr = length(vWP.xz); diffuseColor.rgb *= mix(vec3(1.0), vec3(0.5, 0.52, 0.42), smoothstep(700.0, 900.0, rr) * (0.7 + 0.3 * fxN(vWP.xz * 0.004)));
+      #if FX_Q == 0
+      float tk = smoothstep(1150.0, 1300.0, length(vWP.xz - cameraPosition.xz)) * smoothstep(760.0, 820.0, rr) * (1.0 - smoothstep(6500.0, 8800.0, rr)); // 低画质：町家只画相机 1.25 km 以内，以外地面瓦海
+#else
+      float tk = smoothstep(2450.0, 2700.0, rr) * (1.0 - smoothstep(6500.0, 8800.0, rr));
+#endif
+      if (tk > 0.0) { vec2 p = vWP.xz; vec2 b = mod(p, vec2(127.0, 88.0)); float st = max(1.0 - step(9.0, b.x), 1.0 - step(9.0, b.y));
+        float row = fract((b.y - 9.0) / 19.75), lot = fxH(floor(vec2(p.x / 7.0, (p.y - 9.0) / 19.75))); vec3 roof = vec3(0.075, 0.075, 0.085) * (0.7 + 0.7 * lot), wall = vec3(0.42, 0.36, 0.30);
+        vec3 c = mix(mix(roof, wall, step(0.86, row)), vec3(0.30, 0.26, 0.21), st); vec3 avg = vec3(0.13, 0.12, 0.12); c = mix(c, avg, smoothstep(0.6, 3.0, fxFoot));
+        diffuseColor.rgb = mix(diffuseColor.rgb, c, tk); } }`,
     road: `{ float fineK = 1.0 - smoothstep(0.02, 0.08, fxFoot), midK = 1.0 - smoothstep(0.1, 0.4, fxFoot); diffuseColor.rgb *= 0.86 + 0.28 * fxF(vWP.xz * 0.08);
 #if FX_Q > 0
       if (midK > 0.0) diffuseColor.rgb *= mix(1.0, 0.94 + 0.12 * fxN(vWP.xz * 1.3), midK); if (fineK > 0.0) diffuseColor.rgb *= mix(1.0, 0.86 + 0.28 * fxH(floor(vWP.xz * 17.0)), fineK);
@@ -203,9 +213,19 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
     FX.setQ = q => { FX.q = q; for (const m of FX.mats) { m.defines.FX_Q = q; m.defines.FX_BUMP = q > 0 ? '1.0' : '0.0'; m.needsUpdate = true; } };
     // 时段预设（太阳高度/方位 度；天空/环境/雾的颜色是线性值；fog 是屏幕 sRGB 值——three r160 的雾在色彩空间转换之后混合）
     FX.TOD = {
-      m: { name: '朝', el: 18, az: 112, sun: [1.0, 0.86, 0.70], I: 3.0, sky: [3.5, 2.2, 0.006, 0.8], zen: [0.15, 0.24, 0.45], hor: [0.58, 0.55, 0.53], gnd: [0.14, 0.125, 0.10], glow: [0.5, 0.36, 0.24], fog: [0.84, 0.81, 0.78], exp: 0.92 },
-      d: { name: '昼', el: 34.38, az: 215, sun: [1.0, 0.93, 0.84], I: 3.3, sky: [6, 1.5, 0.005, 0.8], zen: [0.13, 0.24, 0.50], hor: [0.48, 0.55, 0.64], gnd: [0.16, 0.15, 0.12], glow: [0.35, 0.3, 0.24], fog: [0.80, 0.85, 0.89], exp: 0.78 },
-      e: { name: '夕', el: 10, az: 252, sun: [1.0, 0.72, 0.48], I: 2.7, sky: [7, 2.6, 0.007, 0.84], zen: [0.12, 0.16, 0.33], hor: [0.60, 0.48, 0.40], gnd: [0.12, 0.10, 0.08], glow: [0.7, 0.4, 0.2], fog: [0.86, 0.77, 0.68], exp: 0.98 },
+      m: { name: '朝', el: 18, az: 112, sun: [1.0, 0.86, 0.70], I: 3.0, sky: [3.5, 2.2, 0.006, 0.8], zen: [0.15, 0.24, 0.45], hor: [0.58, 0.55, 0.53], gnd: [0.14, 0.125, 0.10], glow: [0.5, 0.36, 0.24], fog: [0.84, 0.81, 0.78], exp: 0.92,
+        skyZ: [0.16, 0.30, 0.62], skyH: [0.95, 0.88, 0.80], disc: 25, cloud: 0.45, cTint: [1.0, 0.92, 0.85], mtn: [[0.34, 0.36, 0.42], [0.72, 0.72, 0.74]],
+        post: { tm: 1, exp: 1.0, thr: 1.6, bloom: 0.10, god: 0.35, sat: 1.05, warm: [1.03, 1.0, 0.96], cool: [0.97, 1.0, 1.04], vig: 0.25, fogA: 0.00028, fogH: 70, fogC: [0.62, 0.64, 0.68], mistA: 0.035, mistY: 3, mistH: 6 } },
+      d: { name: '昼', el: 34.38, az: 215, sun: [1.0, 0.93, 0.84], I: 3.3, sky: [6, 1.5, 0.005, 0.8], zen: [0.13, 0.24, 0.50], hor: [0.48, 0.55, 0.64], gnd: [0.16, 0.15, 0.12], glow: [0.35, 0.3, 0.24], fog: [0.80, 0.85, 0.89], exp: 0.78,
+        skyZ: [0.10, 0.24, 0.62], skyH: [0.72, 0.82, 0.95], disc: 20, cloud: 0.4, cTint: [1.0, 1.0, 1.0], mtn: [[0.30, 0.36, 0.44], [0.66, 0.74, 0.84]],
+        post: { tm: 1, exp: 0.95, thr: 1.8, bloom: 0.08, god: 0.2, sat: 1.03, warm: [1.02, 1.0, 0.98], cool: [0.98, 1.0, 1.02], vig: 0.22, fogA: 0.00022, fogH: 90, fogC: [0.52, 0.60, 0.72], mistA: 0.0, mistY: 3, mistH: 4 } },
+      e: { name: '夕', el: 10, az: 252, sun: [1.0, 0.72, 0.48], I: 2.7, sky: [7, 2.6, 0.007, 0.84], zen: [0.12, 0.16, 0.33], hor: [0.60, 0.48, 0.40], gnd: [0.12, 0.10, 0.08], glow: [0.7, 0.4, 0.2], fog: [0.86, 0.77, 0.68], exp: 0.98,
+        skyZ: [0.10, 0.17, 0.40], skyH: [1.25, 0.78, 0.50], disc: 30, cloud: 0.5, cTint: [1.0, 0.75, 0.55], mtn: [[0.30, 0.25, 0.27], [0.95, 0.70, 0.52]],
+        post: { tm: 1, exp: 1.0, thr: 1.4, bloom: 0.13, god: 0.5, sat: 1.08, warm: [1.06, 1.0, 0.92], cool: [0.94, 0.98, 1.06], vig: 0.3, fogA: 0.0003, fogH: 70, fogC: [0.60, 0.44, 0.33], mistA: 0.006, mistY: 3, mistH: 5 } },
+      // web-r15（C1）：黄金时刻（默认）：太阳低（7.5°）、偏西南；天空上蓝下金，云底被照亮；暖逆光 + 冷阴影
+      g: { name: '黄金时刻', el: 7.5, az: 238, sun: [1.0, 0.66, 0.38], I: 3.6, sky: [7, 2.6, 0.007, 0.84], zen: [0.10, 0.17, 0.36], hor: [0.68, 0.50, 0.38], gnd: [0.12, 0.10, 0.08], glow: [0.9, 0.5, 0.22], fog: [0.88, 0.74, 0.60], exp: 0.95,
+        skyZ: [0.05, 0.15, 0.48], skyH: [1.15, 0.72, 0.42], disc: 40, cloud: 0.55, cTint: [1.0, 0.78, 0.55], mtn: [[0.24, 0.22, 0.27], [0.98, 0.74, 0.55]],
+        post: { tm: 1, exp: 0.8, thr: 1.3, bloom: 0.16, god: 0.6, sat: 1.12, con: 0.35, warm: [1.07, 1.0, 0.9], cool: [0.93, 0.98, 1.08], vig: 0.32, fogA: 0.00016, fogH: 80, fogC: [0.50, 0.36, 0.26], mistA: 0.008, mistY: 3, mistH: 5 } },
     };
     // 程序环境图：一个球 + 渐变着色器 → PMREM（立方体 UV 贴图，同尺寸 → 换室内/外景不重编译着色器）
     const envMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, depthTest: false,
