@@ -1,0 +1,4872 @@
+{
+ "version": "web-r14 (from b5a-proposed-1)",
+ "date": "2026-10-20",
+ "coords": "model: x east, y north, metres (castle_layout origin lat 34.68737 lon 135.52585 = tenshu)",
+ "georef": {
+  "image": "work/b5a/m2_rot.jpg",
+  "cps": "work/b5a/cps_m2.json",
+  "n": 21,
+  "similarity": {
+   "m_per_px_6650": 0.08126,
+   "rot_deg": -0.92,
+   "rms": 6.13,
+   "max": 11.41
+  },
+  "affine": {
+   "rms": 5.37,
+   "max": 10.13
+  },
+  "tps": {
+   "lam": 0.05,
+   "rms": 0.57,
+   "loo_rms": 4.82,
+   "loo_max": 11.23
+  },
+  "per_cp": [
+   {
+    "name": "C1 本丸西北隅（多聞外角）",
+    "px": [
+     1144,
+     741
+    ],
+    "model": [
+     -48.51,
+     51.46
+    ],
+    "ref": "crest9",
+    "res_similarity": 2.51,
+    "res_affine": 3.75,
+    "tps_loo": 2.67
+   },
+   {
+    "name": "C2 本丸东北隅櫓 外角",
+    "px": [
+     3372,
+     709
+    ],
+    "model": [
+     137.63,
+     49.6
+    ],
+    "ref": "crest30",
+    "res_similarity": 7.76,
+    "res_affine": 4.59,
+    "tps_loo": 4.08
+   },
+   {
+    "name": "C3a 东面折れ 入角",
+    "px": [
+     3348,
+     1268
+    ],
+    "model": [
+     133.61,
+     3.22
+    ],
+    "ref": "crest31",
+    "res_similarity": 7.03,
+    "res_affine": 5.16,
+    "tps_loo": 1.17
+   },
+   {
+    "name": "C3b 东面折れ 出角",
+    "px": [
+     3402,
+     1277
+    ],
+    "model": [
+     137.38,
+     2.57
+    ],
+    "ref": "crest32",
+    "res_similarity": 6.44,
+    "res_affine": 4.77,
+    "tps_loo": 0.74
+   },
+   {
+    "name": "C4a 东面櫓 东南角",
+    "px": [
+     3284,
+     2238
+    ],
+    "model": [
+     122.33,
+     -68.17
+    ],
+    "ref": "crest33",
+    "res_similarity": 3.61,
+    "res_affine": 2.2,
+    "tps_loo": 2.34
+   },
+   {
+    "name": "C4b 东面折れ 入角",
+    "px": [
+     3212,
+     2232
+    ],
+    "model": [
+     114.15,
+     -66.04
+    ],
+    "ref": "crest34",
+    "res_similarity": 5.17,
+    "res_affine": 4.82,
+    "tps_loo": 2.89
+   },
+   {
+    "name": "C5a 东面櫓 东南角",
+    "px": [
+     3185,
+     3122
+    ],
+    "model": [
+     111.92,
+     -144.28
+    ],
+    "ref": "crest35",
+    "res_similarity": 0.97,
+    "res_affine": 3.44,
+    "tps_loo": 0.88
+   },
+   {
+    "name": "C5b 东面折れ 入角",
+    "px": [
+     3130,
+     3124
+    ],
+    "model": [
+     107.68,
+     -144.35
+    ],
+    "ref": "crest36",
+    "res_similarity": 0.94,
+    "res_affine": 3.24,
+    "tps_loo": 0.43
+   },
+   {
+    "name": "C6 东南隅櫓 东南角",
+    "px": [
+     3098,
+     4020
+    ],
+    "model": [
+     105.64,
+     -204.91
+    ],
+    "ref": "crest37",
+    "res_similarity": 11.41,
+    "res_affine": 8.15,
+    "tps_loo": 10.18
+   },
+   {
+    "name": "C6b 南面东端 出角",
+    "px": [
+     2975,
+     4230
+    ],
+    "model": [
+     88.12,
+     -228.88
+    ],
+    "ref": "crest41",
+    "res_similarity": 6.89,
+    "res_affine": 5.09,
+    "tps_loo": 8.27
+   },
+   {
+    "name": "C7a 南面折れ 入角",
+    "px": [
+     2440,
+     4212
+    ],
+    "model": [
+     48.36,
+     -227.73
+    ],
+    "ref": "crest42",
+    "res_similarity": 3.65,
+    "res_affine": 1.24,
+    "tps_loo": 1.74
+   },
+   {
+    "name": "C7b 南面折れ 出角",
+    "px": [
+     2440,
+     4297
+    ],
+    "model": [
+     44.88,
+     -234.09
+    ],
+    "ref": "crest44",
+    "res_similarity": 6.36,
+    "res_affine": 4.33,
+    "tps_loo": 2.43
+   },
+   {
+    "name": "C8a 桜門枡形 西北外角",
+    "px": [
+     1365,
+     3848
+    ],
+    "model": [
+     -35.7,
+     -203.9
+    ],
+    "ref": "OSM rw 1323775954/55",
+    "res_similarity": 4.09,
+    "res_affine": 4.47,
+    "tps_loo": 1.34
+   },
+   {
+    "name": "C8b 桜門枡形 东北外角",
+    "px": [
+     1880,
+     3852
+    ],
+    "model": [
+     11.5,
+     -204.4
+    ],
+    "ref": "OSM rw 1323775954",
+    "res_similarity": 7.27,
+    "res_affine": 8.61,
+    "tps_loo": 5.15
+   },
+   {
+    "name": "C9 桜門 门心",
+    "px": [
+     1645,
+     4275
+    ],
+    "model": [
+     -13.8,
+     -237.4
+    ],
+    "ref": "OSM heritage 303446367",
+    "res_similarity": 2.51,
+    "res_affine": 4.03,
+    "tps_loo": 1.9
+   },
+   {
+    "name": "C10a 西南隅櫓 西南角",
+    "px": [
+     828,
+     4325
+    ],
+    "model": [
+     -82.45,
+     -235.74
+    ],
+    "ref": "crest50",
+    "res_similarity": 2.69,
+    "res_affine": 3.36,
+    "tps_loo": 3.94
+   },
+   {
+    "name": "C10b 西南 入角",
+    "px": [
+     828,
+     3826
+    ],
+    "model": [
+     -82.4,
+     -199.6
+    ],
+    "ref": "crest51/52",
+    "res_similarity": 2.98,
+    "res_affine": 0.63,
+    "tps_loo": 0.91
+   },
+   {
+    "name": "C10c 西面南端櫓 西南角",
+    "px": [
+     484,
+     3826
+    ],
+    "model": [
+     -110.13,
+     -198.97
+    ],
+    "ref": "crest53",
+    "res_similarity": 2.69,
+    "res_affine": 0.74,
+    "tps_loo": 0.36
+   },
+   {
+    "name": "C11 西面隅櫓 西北角",
+    "px": [
+     370,
+     2418
+    ],
+    "model": [
+     -115.19,
+     -93.67
+    ],
+    "ref": "crest54",
+    "res_similarity": 11.22,
+    "res_affine": 7.14,
+    "tps_loo": 11.23
+   },
+   {
+    "name": "C12 西面折れ（斜面起点）",
+    "px": [
+     1175,
+     2050
+    ],
+    "model": [
+     -59.5,
+     -53.3
+    ],
+    "ref": "crest60/61",
+    "res_similarity": 9.68,
+    "res_affine": 10.13,
+    "tps_loo": 8.8
+   },
+   {
+    "name": "TEN 天守台中心",
+    "px": [
+     1823,
+     1443
+    ],
+    "model": [
+     0.5,
+     0.3
+    ],
+    "ref": "OSM heritage 34619038 centroid",
+    "res_similarity": 6.26,
+    "res_affine": 9.08,
+    "tps_loo": 3.73
+   }
+  ]
+ },
+ "crosscheck": "work/b5a/cps_m1.json + extract_m1.json (NDL 1286202, independent georef: affine RMS 6.66 m)",
+ "elements": [
+  {
+   "id": "goten.大広間",
+   "name": "大広間",
+   "label_on_plan": "御大廣間",
+   "kind": "hall",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -72.62,
+     -149.33
+    ],
+    [
+     -72.68,
+     -152.87
+    ],
+    [
+     -72.11,
+     -153.2
+    ],
+    [
+     -73.03,
+     -175.05
+    ],
+    [
+     -36.67,
+     -175.63
+    ],
+    [
+     -36.26,
+     -149.91
+    ]
+   ],
+   "mrr": {
+    "cx": -54.65,
+    "cy": -162.48,
+    "w": 36.36,
+    "d": 25.72,
+    "w_ken": 18.5,
+    "d_ken": 13.1,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 929.0,
+   "polygon_tps": [
+    [
+     -73.42,
+     -149.96
+    ],
+    [
+     -73.37,
+     -153.39
+    ],
+    [
+     -72.8,
+     -153.7
+    ],
+    [
+     -73.37,
+     -174.6
+    ],
+    [
+     -34.51,
+     -175.23
+    ],
+    [
+     -35.91,
+     -149.11
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      858.0,
+      3143.0
+     ],
+     [
+      858.0,
+      3230.0
+     ],
+     [
+      872.0,
+      3238.0
+     ],
+     [
+      858.0,
+      3776.0
+     ],
+     [
+      1753.0,
+      3776.0
+     ],
+     [
+      1753.0,
+      3143.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 7.4,
+    "dx": 5.36,
+    "dy": 5.1,
+    "w": 33.23,
+    "d": 23.99
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.小広間",
+   "name": "小広間",
+   "label_on_plan": "御小廣間",
+   "kind": "hall",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -71.91,
+     -112.54
+    ],
+    [
+     -71.96,
+     -115.46
+    ],
+    [
+     -71.27,
+     -115.84
+    ],
+    [
+     -72.24,
+     -133.3
+    ],
+    [
+     -47.34,
+     -133.7
+    ],
+    [
+     -47.01,
+     -112.94
+    ]
+   ],
+   "mrr": {
+    "cx": -59.62,
+    "cy": -123.12,
+    "w": 24.91,
+    "d": 20.76,
+    "w_ken": 12.6,
+    "d_ken": 10.5,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 511.0,
+   "polygon_tps": [
+    [
+     -72.3,
+     -113.09
+    ],
+    [
+     -72.13,
+     -116.09
+    ],
+    [
+     -71.46,
+     -116.41
+    ],
+    [
+     -71.29,
+     -134.13
+    ],
+    [
+     -46.37,
+     -132.92
+    ],
+    [
+     -48.17,
+     -111.12
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      922.0,
+      2240.0
+     ],
+     [
+      922.0,
+      2312.0
+     ],
+     [
+      939.0,
+      2321.0
+     ],
+     [
+      922.0,
+      2751.0
+     ],
+     [
+      1535.0,
+      2751.0
+     ],
+     [
+      1535.0,
+      2240.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 5.63,
+    "dx": 3.93,
+    "dy": 4.03,
+    "w": 20.65,
+    "d": 19.33
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御成廊下",
+   "name": "御成廊下",
+   "label_on_plan": "御成廊下",
+   "kind": "corridor",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -77.24,
+     -129.59
+    ],
+    [
+     -77.57,
+     -149.98
+    ],
+    [
+     -74.81,
+     -150.11
+    ],
+    [
+     -74.48,
+     -152.39
+    ],
+    [
+     -72.2,
+     -152.43
+    ],
+    [
+     -71.84,
+     -129.68
+    ]
+   ],
+   "mrr": {
+    "cx": -74.72,
+    "cy": -141.01,
+    "w": 22.75,
+    "d": 5.4,
+    "w_ken": 11.5,
+    "d_ken": 2.7,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 116.1,
+   "polygon_tps": [
+    [
+     -77.72,
+     -130.03
+    ],
+    [
+     -77.3,
+     -150.03
+    ],
+    [
+     -74.55,
+     -150.03
+    ],
+    [
+     -74.16,
+     -152.23
+    ],
+    [
+     -71.88,
+     -152.17
+    ],
+    [
+     -72.53,
+     -129.68
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      762.0,
+      2640.0
+     ],
+     [
+      762.0,
+      3142.0
+     ],
+     [
+      830.0,
+      3144.0
+     ],
+     [
+      839.0,
+      3200.0
+     ],
+     [
+      895.0,
+      3200.0
+     ],
+     [
+      895.0,
+      2640.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 8.9,
+    "dx": 0.07,
+    "dy": 8.9,
+    "w": 20.37,
+    "d": 3.45
+   },
+   "confidence": "measured-from-plan",
+   "use": "corridor"
+  },
+  {
+   "id": "goten.式台",
+   "name": "式台",
+   "label_on_plan": "…敷臺（御式台）",
+   "kind": "hall",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     -33.3,
+     -161.74
+    ],
+    [
+     -33.45,
+     -170.8
+    ],
+    [
+     -0.75,
+     -171.32
+    ],
+    [
+     -0.6,
+     -162.26
+    ]
+   ],
+   "mrr": {
+    "cx": -17.03,
+    "cy": -166.53,
+    "w": 32.71,
+    "d": 9.06,
+    "w_ken": 16.6,
+    "d_ken": 4.6,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 296.4,
+   "polygon_tps": [
+    [
+     -35.03,
+     -162.17
+    ],
+    [
+     -34.6,
+     -171.32
+    ],
+    [
+     1.19,
+     -170.99
+    ],
+    [
+     0.34,
+     -161.64
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      1754.0,
+      3457.0
+     ],
+     [
+      1754.0,
+      3680.0
+     ],
+     [
+      2559.0,
+      3680.0
+     ],
+     [
+      2559.0,
+      3457.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 7.74,
+    "dx": -6.06,
+    "dy": 4.82,
+    "w": 30.96,
+    "d": 7.63
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.遠侍",
+   "name": "遠侍",
+   "label_on_plan": "遠侍・殿上間",
+   "kind": "hall",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     1.98,
+     -160.54
+    ],
+    [
+     1.65,
+     -181.13
+    ],
+    [
+     20.34,
+     -181.6
+    ],
+    [
+     20.69,
+     -182.54
+    ],
+    [
+     30.48,
+     -182.69
+    ],
+    [
+     30.82,
+     -161.0
+    ],
+    [
+     24.41,
+     -160.9
+    ],
+    [
+     24.15,
+     -161.54
+    ]
+   ],
+   "mrr": {
+    "cx": 16.23,
+    "cy": -171.62,
+    "w": 28.85,
+    "d": 21.7,
+    "w_ken": 14.6,
+    "d_ken": 11.0,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 599.5,
+   "polygon_tps": [
+    [
+     0.35,
+     -161.34
+    ],
+    [
+     2.09,
+     -182.48
+    ],
+    [
+     21.52,
+     -181.72
+    ],
+    [
+     21.93,
+     -182.63
+    ],
+    [
+     31.52,
+     -181.91
+    ],
+    [
+     30.06,
+     -160.2
+    ],
+    [
+     23.62,
+     -160.49
+    ],
+    [
+     23.43,
+     -161.17
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2560.0,
+      3450.0
+     ],
+     [
+      2560.0,
+      3957.0
+     ],
+     [
+      3020.0,
+      3961.0
+     ],
+     [
+      3029.0,
+      3984.0
+     ],
+     [
+      3270.0,
+      3984.0
+     ],
+     [
+      3270.0,
+      3450.0
+     ],
+     [
+      3112.0,
+      3450.0
+     ],
+     [
+      3106.0,
+      3466.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 12.05,
+    "dx": -11.57,
+    "dy": 3.36,
+    "w": 29.02,
+    "d": 19.96
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.玄関",
+   "name": "玄関",
+   "label_on_plan": "御玄関（车寄，唐破風）",
+   "kind": "porch",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     21.9,
+     -182.24
+    ],
+    [
+     21.8,
+     -188.82
+    ],
+    [
+     22.97,
+     -188.96
+    ],
+    [
+     25.22,
+     -190.7
+    ],
+    [
+     28.03,
+     -190.75
+    ],
+    [
+     31.76,
+     -188.69
+    ],
+    [
+     31.86,
+     -182.4
+    ]
+   ],
+   "mrr": {
+    "cx": 26.81,
+    "cy": -186.52,
+    "w": 9.95,
+    "d": 8.41,
+    "w_ken": 5.1,
+    "d_ken": 4.3,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 75.8,
+   "polygon_tps": [
+    [
+     21.77,
+     -182.68
+    ],
+    [
+     22.0,
+     -189.24
+    ],
+    [
+     23.16,
+     -189.27
+    ],
+    [
+     25.39,
+     -190.77
+    ],
+    [
+     28.08,
+     -190.52
+    ],
+    [
+     31.62,
+     -188.13
+    ],
+    [
+     31.52,
+     -181.95
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      3025.0,
+      3985.0
+     ],
+     [
+      3025.0,
+      4147.0
+     ],
+     [
+      3054.0,
+      4150.0
+     ],
+     [
+      3110.0,
+      4192.0
+     ],
+     [
+      3179.0,
+      4192.0
+     ],
+     [
+      3270.0,
+      4140.0
+     ],
+     [
+      3270.0,
+      3985.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 9.06,
+    "dx": -7.98,
+    "dy": 4.28,
+    "w": 8.65,
+    "d": 6.89
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御伺公間・御使者間",
+   "name": "御伺公間・御使者間",
+   "label_on_plan": "御伺公間 / 御使者間",
+   "kind": "hall",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -15.7,
+     -128.06
+    ],
+    [
+     -15.75,
+     -131.03
+    ],
+    [
+     -15.06,
+     -131.2
+    ],
+    [
+     -15.18,
+     -135.67
+    ],
+    [
+     -15.83,
+     -135.86
+    ],
+    [
+     -16.22,
+     -160.28
+    ],
+    [
+     -8.46,
+     -160.4
+    ],
+    [
+     -8.0,
+     -131.8
+    ],
+    [
+     -8.89,
+     -131.46
+    ],
+    [
+     -8.81,
+     -128.7
+    ],
+    [
+     -7.94,
+     -128.18
+    ]
+   ],
+   "mrr": {
+    "cx": -12.08,
+    "cy": -144.23,
+    "w": 32.22,
+    "d": 7.76,
+    "w_ken": 16.4,
+    "d_ken": 3.9,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 244.1,
+   "polygon_tps": [
+    [
+     -16.93,
+     -127.75
+    ],
+    [
+     -16.6,
+     -130.91
+    ],
+    [
+     -15.86,
+     -131.06
+    ],
+    [
+     -15.41,
+     -135.81
+    ],
+    [
+     -16.08,
+     -136.04
+    ],
+    [
+     -13.63,
+     -161.61
+    ],
+    [
+     -5.26,
+     -161.44
+    ],
+    [
+     -8.36,
+     -131.36
+    ],
+    [
+     -9.34,
+     -131.04
+    ],
+    [
+     -9.61,
+     -128.09
+    ],
+    [
+     -8.78,
+     -127.5
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2240.0,
+      2656.0
+     ],
+     [
+      2240.0,
+      2729.0
+     ],
+     [
+      2257.0,
+      2733.0
+     ],
+     [
+      2256.0,
+      2843.0
+     ],
+     [
+      2240.0,
+      2848.0
+     ],
+     [
+      2240.0,
+      3449.0
+     ],
+     [
+      2431.0,
+      3449.0
+     ],
+     [
+      2431.0,
+      2745.0
+     ],
+     [
+      2409.0,
+      2737.0
+     ],
+     [
+      2410.0,
+      2669.0
+     ],
+     [
+      2431.0,
+      2656.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 5.11,
+    "dx": -4.93,
+    "dy": 1.34,
+    "w": 31.57,
+    "d": 6.3
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御対面所",
+   "name": "御対面所",
+   "label_on_plan": "御対面所",
+   "kind": "hall",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     -37.34,
+     -116.19
+    ],
+    [
+     -37.53,
+     -127.85
+    ],
+    [
+     -18.07,
+     -128.16
+    ],
+    [
+     -17.88,
+     -116.5
+    ]
+   ],
+   "mrr": {
+    "cx": -27.71,
+    "cy": -122.17,
+    "w": 19.46,
+    "d": 11.66,
+    "w_ken": 9.9,
+    "d_ken": 5.9,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 227.0,
+   "polygon_tps": [
+    [
+     -38.39,
+     -116.4
+    ],
+    [
+     -37.27,
+     -128.75
+    ],
+    [
+     -16.95,
+     -128.01
+    ],
+    [
+     -18.22,
+     -115.52
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      1760.0,
+      2375.0
+     ],
+     [
+      1760.0,
+      2662.0
+     ],
+     [
+      2239.0,
+      2662.0
+     ],
+     [
+      2239.0,
+      2375.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 6.19,
+    "dx": -5.19,
+    "dy": 3.37,
+    "w": 17.91,
+    "d": 10.34
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御右筆部屋",
+   "name": "御右筆部屋",
+   "label_on_plan": "御右筆部屋（推读）",
+   "kind": "room",
+   "label_confidence": "low",
+   "polygon": [
+    [
+     -17.41,
+     -99.72
+    ],
+    [
+     -17.75,
+     -121.13
+    ],
+    [
+     -10.64,
+     -121.24
+    ],
+    [
+     -10.57,
+     -116.81
+    ],
+    [
+     -11.71,
+     -116.67
+    ],
+    [
+     -11.49,
+     -110.91
+    ],
+    [
+     -12.47,
+     -110.73
+    ],
+    [
+     -12.41,
+     -109.51
+    ],
+    [
+     -10.46,
+     -109.54
+    ],
+    [
+     -10.3,
+     -99.83
+    ]
+   ],
+   "mrr": {
+    "cx": -14.03,
+    "cy": -110.48,
+    "w": 21.41,
+    "d": 7.11,
+    "w_ken": 10.9,
+    "d_ken": 3.6,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 143.3,
+   "polygon_tps": [
+    [
+     -19.05,
+     -99.03
+    ],
+    [
+     -16.82,
+     -122.13
+    ],
+    [
+     -9.37,
+     -121.89
+    ],
+    [
+     -9.86,
+     -117.13
+    ],
+    [
+     -11.06,
+     -117.03
+    ],
+    [
+     -11.55,
+     -110.81
+    ],
+    [
+     -12.59,
+     -110.67
+    ],
+    [
+     -12.68,
+     -109.35
+    ],
+    [
+     -10.63,
+     -109.28
+    ],
+    [
+     -11.59,
+     -98.76
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2256.0,
+      2000.0
+     ],
+     [
+      2256.0,
+      2527.0
+     ],
+     [
+      2431.0,
+      2527.0
+     ],
+     [
+      2431.0,
+      2418.0
+     ],
+     [
+      2403.0,
+      2415.0
+     ],
+     [
+      2406.0,
+      2273.0
+     ],
+     [
+      2382.0,
+      2269.0
+     ],
+     [
+      2383.0,
+      2239.0
+     ],
+     [
+      2431.0,
+      2239.0
+     ],
+     [
+      2431.0,
+      2000.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 7.31,
+    "dx": -6.83,
+    "dy": 2.59,
+    "w": 19.31,
+    "d": 5.68
+   },
+   "confidence": "measured-from-plan (label uncertain)",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御黒書院",
+   "name": "御黒書院",
+   "label_on_plan": "御黒書院",
+   "kind": "hall",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -36.8,
+     -86.82
+    ],
+    [
+     -36.81,
+     -87.67
+    ],
+    [
+     -35.76,
+     -87.77
+    ],
+    [
+     -35.89,
+     -98.62
+    ],
+    [
+     -36.99,
+     -98.96
+    ],
+    [
+     -37.04,
+     -101.73
+    ],
+    [
+     -22.13,
+     -101.97
+    ],
+    [
+     -21.89,
+     -87.06
+    ]
+   ],
+   "mrr": {
+    "cx": -29.46,
+    "cy": -94.39,
+    "w": 14.91,
+    "d": 14.91,
+    "w_ken": 7.6,
+    "d_ken": 7.6,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 210.4,
+   "polygon_tps": [
+    [
+     -37.69,
+     -86.53
+    ],
+    [
+     -37.62,
+     -87.45
+    ],
+    [
+     -36.53,
+     -87.47
+    ],
+    [
+     -35.5,
+     -99.21
+    ],
+    [
+     -36.59,
+     -99.67
+    ],
+    [
+     -36.32,
+     -102.65
+    ],
+    [
+     -20.88,
+     -101.89
+    ],
+    [
+     -22.19,
+     -85.71
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      1840.0,
+      1696.0
+     ],
+     [
+      1840.0,
+      1717.0
+     ],
+     [
+      1866.0,
+      1719.0
+     ],
+     [
+      1867.0,
+      1986.0
+     ],
+     [
+      1840.0,
+      1995.0
+     ],
+     [
+      1840.0,
+      2063.0
+     ],
+     [
+      2207.0,
+      2063.0
+     ],
+     [
+      2207.0,
+      1696.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 1.8,
+    "dx": -1.06,
+    "dy": 1.45,
+    "w": 14.31,
+    "d": 13.25
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御料理間",
+   "name": "御料理間",
+   "label_on_plan": "御料理間",
+   "kind": "room",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -51.63,
+     -86.5
+    ],
+    [
+     -51.91,
+     -104.01
+    ],
+    [
+     -43.78,
+     -103.65
+    ],
+    [
+     -43.51,
+     -86.63
+    ]
+   ],
+   "mrr": {
+    "cx": -47.71,
+    "cy": -95.32,
+    "w": 17.51,
+    "d": 8.13,
+    "w_ken": 8.9,
+    "d_ken": 4.1,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 140.3,
+   "polygon_tps": [
+    [
+     -52.53,
+     -86.25
+    ],
+    [
+     -50.97,
+     -105.02
+    ],
+    [
+     -42.89,
+     -103.93
+    ],
+    [
+     -44.45,
+     -85.58
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      1479.0,
+      1664.0
+     ],
+     [
+      1479.0,
+      2095.0
+     ],
+     [
+      1679.0,
+      2083.0
+     ],
+     [
+      1679.0,
+      1664.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 3.93,
+    "dx": -3.34,
+    "dy": 2.07,
+    "w": 16.65,
+    "d": 6.11
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御座間",
+   "name": "御座間",
+   "label_on_plan": "御座間（御座之間）",
+   "kind": "hall",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -7.85,
+     -69.47
+    ],
+    [
+     -8.12,
+     -86.33
+    ],
+    [
+     16.58,
+     -86.73
+    ],
+    [
+     17.22,
+     -69.87
+    ],
+    [
+     7.51,
+     -69.72
+    ],
+    [
+     7.4,
+     -71.42
+    ],
+    [
+     -5.56,
+     -71.09
+    ],
+    [
+     -5.81,
+     -69.5
+    ]
+   ],
+   "mrr": {
+    "cx": 4.55,
+    "cy": -78.1,
+    "w": 25.07,
+    "d": 16.86,
+    "w_ken": 12.7,
+    "d_ken": 8.6,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 398.0,
+   "polygon_tps": [
+    [
+     -8.82,
+     -69.47
+    ],
+    [
+     -7.95,
+     -87.73
+    ],
+    [
+     18.11,
+     -87.23
+    ],
+    [
+     17.89,
+     -69.05
+    ],
+    [
+     7.58,
+     -69.15
+    ],
+    [
+     7.53,
+     -70.98
+    ],
+    [
+     -6.3,
+     -71.11
+    ],
+    [
+     -6.65,
+     -69.41
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2535.0,
+      1338.0
+     ],
+     [
+      2535.0,
+      1753.0
+     ],
+     [
+      3143.0,
+      1753.0
+     ],
+     [
+      3152.0,
+      1338.0
+     ],
+     [
+      2913.0,
+      1338.0
+     ],
+     [
+      2911.0,
+      1380.0
+     ],
+     [
+      2592.0,
+      1377.0
+     ],
+     [
+      2585.0,
+      1338.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 3.58,
+    "dx": -1.59,
+    "dy": -3.2,
+    "w": 25.63,
+    "d": 14.83
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御納戸(北)",
+   "name": "御納戸(北)",
+   "label_on_plan": "…御納戸",
+   "kind": "room",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     -32.58,
+     -65.96
+    ],
+    [
+     -32.71,
+     -73.96
+    ],
+    [
+     -12.84,
+     -74.28
+    ],
+    [
+     -12.71,
+     -66.28
+    ]
+   ],
+   "mrr": {
+    "cx": -22.71,
+    "cy": -70.12,
+    "w": 19.87,
+    "d": 8.0,
+    "w_ken": 10.1,
+    "d_ken": 4.1,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 159.0,
+   "polygon_tps": [
+    [
+     -33.43,
+     -66.24
+    ],
+    [
+     -33.06,
+     -74.89
+    ],
+    [
+     -12.05,
+     -74.0
+    ],
+    [
+     -12.3,
+     -65.36
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      1968.0,
+      1242.0
+     ],
+     [
+      1968.0,
+      1439.0
+     ],
+     [
+      2457.0,
+      1439.0
+     ],
+     [
+      2457.0,
+      1242.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 2.7,
+    "dx": -2.61,
+    "dy": -0.7,
+    "w": 19.04,
+    "d": 5.2
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御納戸",
+   "name": "御納戸",
+   "label_on_plan": "御納戸",
+   "kind": "room",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     -2.64,
+     -115.36
+    ],
+    [
+     -2.82,
+     -126.13
+    ],
+    [
+     22.9,
+     -126.54
+    ],
+    [
+     23.07,
+     -115.77
+    ]
+   ],
+   "mrr": {
+    "cx": 10.13,
+    "cy": -120.95,
+    "w": 25.72,
+    "d": 10.77,
+    "w_ken": 13.1,
+    "d_ken": 5.5,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 276.9,
+   "polygon_tps": [
+    [
+     -3.83,
+     -115.46
+    ],
+    [
+     -2.63,
+     -127.02
+    ],
+    [
+     24.05,
+     -126.42
+    ],
+    [
+     22.93,
+     -114.9
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2576.0,
+      2384.0
+     ],
+     [
+      2576.0,
+      2649.0
+     ],
+     [
+      3209.0,
+      2649.0
+     ],
+     [
+      3209.0,
+      2384.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 7.22,
+    "dx": -7.0,
+    "dy": 1.76,
+    "w": 25.43,
+    "d": 9.5
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御老中部屋",
+   "name": "御老中部屋",
+   "label_on_plan": "御老中部屋",
+   "kind": "room",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     -7.13,
+     -139.08
+    ],
+    [
+     22.69,
+     -139.55
+    ],
+    [
+     22.56,
+     -134.68
+    ],
+    [
+     24.15,
+     -134.7
+    ],
+    [
+     24.2,
+     -131.53
+    ],
+    [
+     -7.0,
+     -131.03
+    ]
+   ],
+   "mrr": {
+    "cx": 8.53,
+    "cy": -135.3,
+    "w": 31.2,
+    "d": 8.04,
+    "w_ken": 15.8,
+    "d_ken": 4.1,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 243.8,
+   "polygon_tps": [
+    [
+     -7.37,
+     -140.2
+    ],
+    [
+     23.63,
+     -139.37
+    ],
+    [
+     22.87,
+     -134.25
+    ],
+    [
+     24.49,
+     -134.21
+    ],
+    [
+     24.13,
+     -130.87
+    ],
+    [
+     -8.29,
+     -131.66
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2432.0,
+      2950.0
+     ],
+     [
+      3166.0,
+      2950.0
+     ],
+     [
+      3161.0,
+      2830.0
+     ],
+     [
+      3200.0,
+      2830.0
+     ],
+     [
+      3200.0,
+      2752.0
+     ],
+     [
+      2432.0,
+      2752.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 8.01,
+    "dx": -7.69,
+    "dy": 2.25,
+    "w": 30.13,
+    "d": 6.64
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.坊主部屋",
+   "name": "坊主部屋",
+   "label_on_plan": "坊主部屋",
+   "kind": "room",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     -5.07,
+     -149.76
+    ],
+    [
+     -5.17,
+     -155.57
+    ],
+    [
+     -4.67,
+     -154.89
+    ],
+    [
+     31.48,
+     -155.71
+    ],
+    [
+     31.88,
+     -156.17
+    ],
+    [
+     31.98,
+     -150.36
+    ],
+    [
+     31.76,
+     -150.96
+    ],
+    [
+     30.51,
+     -150.33
+    ],
+    [
+     30.42,
+     -151.31
+    ],
+    [
+     28.76,
+     -151.0
+    ],
+    [
+     28.69,
+     -150.3
+    ]
+   ],
+   "mrr": {
+    "cx": 13.4,
+    "cy": -152.96,
+    "w": 37.06,
+    "d": 5.81,
+    "w_ken": 18.8,
+    "d_ken": 2.9,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 192.6,
+   "polygon_tps": [
+    [
+     -6.25,
+     -150.94
+    ],
+    [
+     -5.64,
+     -157.01
+    ],
+    [
+     -5.19,
+     -156.28
+    ],
+    [
+     32.19,
+     -155.25
+    ],
+    [
+     32.64,
+     -155.69
+    ],
+    [
+     32.05,
+     -149.76
+    ],
+    [
+     31.91,
+     -150.39
+    ],
+    [
+     30.59,
+     -149.8
+    ],
+    [
+     30.61,
+     -150.81
+    ],
+    [
+     28.9,
+     -150.57
+    ],
+    [
+     28.75,
+     -149.86
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2432.0,
+      3201.0
+     ],
+     [
+      2432.0,
+      3344.0
+     ],
+     [
+      2444.0,
+      3327.0
+     ],
+     [
+      3334.0,
+      3333.0
+     ],
+     [
+      3344.0,
+      3344.0
+     ],
+     [
+      3344.0,
+      3201.0
+     ],
+     [
+      3339.0,
+      3216.0
+     ],
+     [
+      3308.0,
+      3201.0
+     ],
+     [
+      3306.0,
+      3225.0
+     ],
+     [
+      3265.0,
+      3218.0
+     ],
+     [
+      3263.0,
+      3201.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 15.74,
+    "dx": -15.6,
+    "dy": 2.15,
+    "w": 36.16,
+    "d": 4.4
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御書院(東)",
+   "name": "御書院(東)",
+   "label_on_plan": "御書院（推读）",
+   "kind": "hall",
+   "label_confidence": "low",
+   "polygon": [
+    [
+     28.82,
+     -131.93
+    ],
+    [
+     28.79,
+     -134.12
+    ],
+    [
+     31.59,
+     -134.16
+    ],
+    [
+     31.57,
+     -137.66
+    ],
+    [
+     28.73,
+     -137.9
+    ],
+    [
+     28.66,
+     -141.92
+    ],
+    [
+     53.97,
+     -142.32
+    ],
+    [
+     54.13,
+     -132.33
+    ]
+   ],
+   "mrr": {
+    "cx": 41.4,
+    "cy": -137.12,
+    "w": 25.31,
+    "d": 10.0,
+    "w_ken": 12.8,
+    "d_ken": 5.1,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 242.7,
+   "polygon_tps": [
+    [
+     28.26,
+     -131.91
+    ],
+    [
+     28.5,
+     -134.22
+    ],
+    [
+     31.34,
+     -134.17
+    ],
+    [
+     31.76,
+     -137.83
+    ],
+    [
+     28.92,
+     -138.18
+    ],
+    [
+     29.36,
+     -142.38
+    ],
+    [
+     54.5,
+     -141.95
+    ],
+    [
+     53.61,
+     -131.71
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      3297.0,
+      2778.0
+     ],
+     [
+      3297.0,
+      2832.0
+     ],
+     [
+      3366.0,
+      2832.0
+     ],
+     [
+      3367.0,
+      2918.0
+     ],
+     [
+      3297.0,
+      2925.0
+     ],
+     [
+      3297.0,
+      3024.0
+     ],
+     [
+      3920.0,
+      3024.0
+     ],
+     [
+      3920.0,
+      2778.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 7.05,
+    "dx": -6.89,
+    "dy": 1.46,
+    "w": 25.3,
+    "d": 8.52
+   },
+   "confidence": "measured-from-plan (label uncertain)",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御下台所",
+   "name": "御下台所",
+   "label_on_plan": "御下臺所",
+   "kind": "kitchen",
+   "label_confidence": "high",
+   "polygon": [
+    [
+     45.78,
+     -147.14
+    ],
+    [
+     45.5,
+     -164.69
+    ],
+    [
+     57.36,
+     -165.01
+    ],
+    [
+     57.46,
+     -168.5
+    ],
+    [
+     70.1,
+     -168.71
+    ],
+    [
+     70.46,
+     -146.0
+    ],
+    [
+     52.87,
+     -145.71
+    ],
+    [
+     52.6,
+     -147.29
+    ],
+    [
+     51.67,
+     -147.2
+    ],
+    [
+     51.65,
+     -145.69
+    ],
+    [
+     49.17,
+     -145.65
+    ],
+    [
+     48.99,
+     -147.28
+    ]
+   ],
+   "mrr": {
+    "cx": 57.95,
+    "cy": -157.15,
+    "w": 24.66,
+    "d": 22.71,
+    "w_ken": 12.5,
+    "d_ken": 11.5,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 510.8,
+   "polygon_tps": [
+    [
+     45.47,
+     -147.63
+    ],
+    [
+     46.89,
+     -165.08
+    ],
+    [
+     58.34,
+     -164.59
+    ],
+    [
+     58.66,
+     -167.9
+    ],
+    [
+     70.83,
+     -167.24
+    ],
+    [
+     69.4,
+     -145.89
+    ],
+    [
+     52.27,
+     -145.94
+    ],
+    [
+     52.17,
+     -147.54
+    ],
+    [
+     51.25,
+     -147.47
+    ],
+    [
+     51.07,
+     -145.96
+    ],
+    [
+     48.64,
+     -146.0
+    ],
+    [
+     48.63,
+     -147.64
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      3681.0,
+      3159.0
+     ],
+     [
+      3681.0,
+      3591.0
+     ],
+     [
+      3973.0,
+      3594.0
+     ],
+     [
+      3977.0,
+      3680.0
+     ],
+     [
+      4288.0,
+      3680.0
+     ],
+     [
+      4288.0,
+      3121.0
+     ],
+     [
+      3855.0,
+      3121.0
+     ],
+     [
+      3849.0,
+      3160.0
+     ],
+     [
+      3826.0,
+      3158.0
+     ],
+     [
+      3825.0,
+      3121.0
+     ],
+     [
+      3764.0,
+      3121.0
+     ],
+     [
+      3760.0,
+      3161.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 6.37,
+    "dx": -6.31,
+    "dy": 0.9,
+    "w": 25.44,
+    "d": 20.47
+   },
+   "confidence": "measured-from-plan",
+   "use": "hall"
+  },
+  {
+   "id": "goten.台所衆部屋",
+   "name": "台所衆部屋",
+   "label_on_plan": "臺所衆部屋",
+   "kind": "kitchen_tan",
+   "label_confidence": "medium",
+   "polygon": [
+    [
+     34.73,
+     -162.88
+    ],
+    [
+     43.18,
+     -163.02
+    ],
+    [
+     43.1,
+     -168.22
+    ],
+    [
+     71.05,
+     -168.67
+    ],
+    [
+     70.85,
+     -181.02
+    ],
+    [
+     34.45,
+     -180.44
+    ]
+   ],
+   "mrr": {
+    "cx": 52.79,
+    "cy": -171.95,
+    "w": 36.41,
+    "d": 17.56,
+    "w_ken": 18.5,
+    "d_ken": 8.9,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 493.8,
+   "polygon_tps": [
+    [
+     34.72,
+     -164.19
+    ],
+    [
+     42.99,
+     -163.75
+    ],
+    [
+     43.32,
+     -168.87
+    ],
+    [
+     70.23,
+     -167.3
+    ],
+    [
+     70.41,
+     -178.54
+    ],
+    [
+     35.69,
+     -181.59
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      3376.6,
+      3552.6
+     ],
+     [
+      3584.6,
+      3552.6
+     ],
+     [
+      3584.6,
+      3680.7
+     ],
+     [
+      4272.8,
+      3680.7
+     ],
+     [
+      4272.8,
+      3984.7
+     ],
+     [
+      3376.6,
+      3984.7
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": null,
+   "confidence": "hand-traced from plan (low)",
+   "use": "hall"
+  },
+  {
+   "id": "goten.御金蔵",
+   "name": "御金蔵",
+   "label_on_plan": "御金蔵（推读，栅围）",
+   "kind": "kura",
+   "label_confidence": "low",
+   "polygon": [
+    [
+     26.25,
+     -59.7
+    ],
+    [
+     26.15,
+     -65.8
+    ],
+    [
+     44.07,
+     -66.08
+    ],
+    [
+     44.17,
+     -59.99
+    ]
+   ],
+   "mrr": {
+    "cx": 35.16,
+    "cy": -62.89,
+    "w": 17.92,
+    "d": 6.09,
+    "w_ken": 9.1,
+    "d_ken": 3.1,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 109.2,
+   "polygon_tps": [
+    [
+     25.76,
+     -59.61
+    ],
+    [
+     25.73,
+     -66.08
+    ],
+    [
+     44.53,
+     -66.14
+    ],
+    [
+     44.62,
+     -59.74
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      3335.0,
+      1120.0
+     ],
+     [
+      3335.0,
+      1270.0
+     ],
+     [
+      3776.0,
+      1270.0
+     ],
+     [
+      3776.0,
+      1120.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 3.25,
+    "dx": -2.6,
+    "dy": -1.94,
+    "w": 18.84,
+    "d": 4.59
+   },
+   "confidence": "measured-from-plan (label uncertain)",
+   "use": "kura"
+  },
+  {
+   "id": "goten.北东小屋",
+   "name": "北东小屋",
+   "label_on_plan": "名称未读",
+   "kind": "room",
+   "label_confidence": "low",
+   "polygon": [
+    [
+     17.49,
+     -43.03
+    ],
+    [
+     17.03,
+     -51.32
+    ],
+    [
+     24.39,
+     -51.43
+    ],
+    [
+     24.51,
+     -43.63
+    ],
+    [
+     22.72,
+     -43.6
+    ],
+    [
+     22.65,
+     -45.68
+    ],
+    [
+     20.25,
+     -45.6
+    ],
+    [
+     18.81,
+     -44.52
+    ],
+    [
+     18.83,
+     -43.05
+    ]
+   ],
+   "mrr": {
+    "cx": 20.78,
+    "cy": -47.23,
+    "w": 8.29,
+    "d": 7.35,
+    "w_ken": 4.2,
+    "d_ken": 3.7,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 49.7,
+   "polygon_tps": [
+    [
+     17.34,
+     -42.94
+    ],
+    [
+     16.67,
+     -51.62
+    ],
+    [
+     24.5,
+     -51.65
+    ],
+    [
+     24.81,
+     -43.52
+    ],
+    [
+     22.91,
+     -43.49
+    ],
+    [
+     22.77,
+     -45.65
+    ],
+    [
+     20.21,
+     -45.58
+    ],
+    [
+     18.7,
+     -44.47
+    ],
+    [
+     18.77,
+     -42.95
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      3129.0,
+      730.0
+     ],
+     [
+      3121.0,
+      934.0
+     ],
+     [
+      3302.0,
+      934.0
+     ],
+     [
+      3302.0,
+      742.0
+     ],
+     [
+      3258.0,
+      742.0
+     ],
+     [
+      3257.0,
+      793.0
+     ],
+     [
+      3198.0,
+      792.0
+     ],
+     [
+      3162.0,
+      766.0
+     ],
+     [
+      3162.0,
+      730.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 3.65,
+    "dx": -1.63,
+    "dy": -3.26,
+    "w": 7.2,
+    "d": 5.68
+   },
+   "confidence": "measured-from-plan (label uncertain)",
+   "use": "mask"
+  },
+  {
+   "id": "goten.西北小屋",
+   "name": "西北小屋",
+   "label_on_plan": "御□蔵?（未确定）",
+   "kind": "room",
+   "label_confidence": "low",
+   "polygon": [
+    [
+     -60.54,
+     -73.75
+    ],
+    [
+     -60.63,
+     -79.15
+    ],
+    [
+     -50.63,
+     -78.9
+    ],
+    [
+     -50.55,
+     -73.91
+    ]
+   ],
+   "mrr": {
+    "cx": -55.59,
+    "cy": -76.53,
+    "w": 10.0,
+    "d": 5.4,
+    "w_ken": 5.1,
+    "d_ken": 2.7,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 52.0,
+   "polygon_tps": [
+    [
+     -60.62,
+     -74.12
+    ],
+    [
+     -60.23,
+     -79.94
+    ],
+    [
+     -50.57,
+     -78.52
+    ],
+    [
+     -50.93,
+     -73.12
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      1296.0,
+      1370.0
+     ],
+     [
+      1296.0,
+      1503.0
+     ],
+     [
+      1542.0,
+      1493.0
+     ],
+     [
+      1542.0,
+      1370.0
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": {
+    "doc": "NDL 大坂御城図 (pid 1286202)",
+    "centroid_diff_m": 3.42,
+    "dx": -2.69,
+    "dy": 2.12,
+    "w": 7.53,
+    "d": 4.01
+   },
+   "confidence": "measured-from-plan (label uncertain)",
+   "use": "mask"
+  },
+  {
+   "id": "goten.奥向附属(黄)",
+   "name": "奥向附属(黄)",
+   "label_on_plan": "名称未读（御用所?）",
+   "kind": "service_tan",
+   "label_confidence": "low",
+   "polygon": [
+    [
+     -0.52,
+     -88.73
+    ],
+    [
+     2.08,
+     -88.77
+    ],
+    [
+     1.8,
+     -106.33
+    ],
+    [
+     20.0,
+     -106.62
+    ],
+    [
+     20.54,
+     -72.81
+    ],
+    [
+     26.4,
+     -72.91
+    ],
+    [
+     25.75,
+     -113.21
+    ],
+    [
+     -0.91,
+     -112.79
+    ]
+   ],
+   "mrr": {
+    "cx": 12.74,
+    "cy": -92.85,
+    "w": 40.31,
+    "d": 26.66,
+    "w_ken": 20.5,
+    "d_ken": 13.5,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 416.9,
+   "polygon_tps": [
+    [
+     -1.98,
+     -88.6
+    ],
+    [
+     0.77,
+     -88.53
+    ],
+    [
+     2.26,
+     -107.57
+    ],
+    [
+     21.23,
+     -107.23
+    ],
+    [
+     19.32,
+     -70.71
+    ],
+    [
+     25.49,
+     -70.69
+    ],
+    [
+     27.86,
+     -114.17
+    ],
+    [
+     0.2,
+     -114.67
+    ]
+   ],
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "pixel_frame": "m2g_rot.jpg (full-res IIIF region 6200,3500,4800,4500 rotated -90°)",
+    "poly_px": [
+     [
+      2672.5,
+      1776.3
+     ],
+     [
+      2736.5,
+      1776.3
+     ],
+     [
+      2736.5,
+      2208.4
+     ],
+     [
+      3184.6,
+      2208.4
+     ],
+     [
+      3184.6,
+      1376.2
+     ],
+     [
+      3328.6,
+      1376.2
+     ],
+     [
+      3328.6,
+      2368.4
+     ],
+     [
+      2672.5,
+      2368.4
+     ]
+    ],
+    "transform": "shape: global similarity (0.0813 m/px@6650, rot -0.92°); position: TPS λ=0.05 centroid",
+    "transform_residual_m": {
+     "cp_rms_similarity": 6.13,
+     "cp_rms_affine": 5.37,
+     "cp_rms_tps": 0.57,
+     "tps_loo_rms": 4.82
+    }
+   },
+   "crosscheck_map1": null,
+   "confidence": "hand-traced from plan (low)",
+   "use": "mask"
+  },
+  {
+   "id": "goten.廊下/附属1",
+   "name": "廊下/附属1",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -8.86,
+     -71.07
+    ],
+    [
+     -11.95,
+     -71.02
+    ],
+    [
+     -11.99,
+     -73.87
+    ],
+    [
+     -13.06,
+     -74.3
+    ],
+    [
+     -8.91,
+     -74.16
+    ]
+   ],
+   "mrr": {
+    "cx": -10.96,
+    "cy": -72.68,
+    "w": 4.14,
+    "d": 3.29,
+    "w_ken": 2.1,
+    "d_ken": 1.7,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 10.0,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      2534.0,
+      1369.0
+     ],
+     [
+      2458.0,
+      1369.0
+     ],
+     [
+      2458.0,
+      1439.0
+     ],
+     [
+      2432.0,
+      1450.0
+     ],
+     [
+      2534.0,
+      1445.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属2",
+   "name": "廊下/附属2",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -60.01,
+     -79.63
+    ],
+    [
+     -60.07,
+     -85.8
+    ],
+    [
+     -47.81,
+     -86.28
+    ],
+    [
+     -47.88,
+     -85.84
+    ],
+    [
+     -50.11,
+     -85.72
+    ],
+    [
+     -50.45,
+     -83.88
+    ],
+    [
+     -58.13,
+     -83.88
+    ],
+    [
+     -58.1,
+     -79.66
+    ]
+   ],
+   "mrr": {
+    "cx": -53.91,
+    "cy": -82.93,
+    "w": 12.46,
+    "d": 6.22,
+    "w_ken": 6.3,
+    "d_ken": 3.2,
+    "long_axis_deg": 177.8
+   },
+   "area_m2": 29.9,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      1296.0,
+      1504.0
+     ],
+     [
+      1297.0,
+      1656.0
+     ],
+     [
+      1599.0,
+      1663.0
+     ],
+     [
+      1597.0,
+      1652.0
+     ],
+     [
+      1542.0,
+      1650.0
+     ],
+     [
+      1533.0,
+      1605.0
+     ],
+     [
+      1344.0,
+      1608.0
+     ],
+     [
+      1343.0,
+      1504.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属3",
+   "name": "廊下/附属3",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -41.21,
+     -85.01
+    ],
+    [
+     -41.25,
+     -87.32
+    ],
+    [
+     -37.47,
+     -87.34
+    ],
+    [
+     -36.24,
+     -86.63
+    ],
+    [
+     -36.21,
+     -87.36
+    ],
+    [
+     -35.16,
+     -87.5
+    ],
+    [
+     -34.74,
+     -86.57
+    ],
+    [
+     -19.79,
+     -86.85
+    ],
+    [
+     -20.03,
+     -101.76
+    ],
+    [
+     -21.0,
+     -101.79
+    ],
+    [
+     -20.56,
+     -102.24
+    ],
+    [
+     -21.12,
+     -114.02
+    ],
+    [
+     -18.93,
+     -114.46
+    ],
+    [
+     -19.11,
+     -125.83
+    ],
+    [
+     -11.35,
+     -125.96
+    ],
+    [
+     -11.32,
+     -126.41
+    ],
+    [
+     -8.76,
+     -126.57
+    ],
+    [
+     -8.9,
+     -129.9
+    ],
+    [
+     -3.61,
+     -129.98
+    ],
+    [
+     -3.26,
+     -125.89
+    ],
+    [
+     -5.5,
+     -125.81
+    ],
+    [
+     -5.34,
+     -116.14
+    ],
+    [
+     -11.16,
+     -116.33
+    ],
+    [
+     -11.27,
+     -120.8
+    ],
+    [
+     -18.42,
+     -120.64
+    ],
+    [
+     -18.08,
+     -99.23
+    ],
+    [
+     -17.43,
+     -99.2
+    ],
+    [
+     -17.12,
+     -90.23
+    ],
+    [
+     -10.5,
+     -90.54
+    ],
+    [
+     -11.04,
+     -108.98
+    ],
+    [
+     -5.36,
+     -109.27
+    ],
+    [
+     -5.33,
+     -115.0
+    ],
+    [
+     6.87,
+     -114.79
+    ],
+    [
+     -2.96,
+     -114.23
+    ],
+    [
+     -2.68,
+     -99.64
+    ],
+    [
+     -8.52,
+     -99.1
+    ],
+    [
+     -8.35,
+     -90.82
+    ],
+    [
+     15.38,
+     -90.87
+    ],
+    [
+     15.52,
+     -92.05
+    ],
+    [
+     18.16,
+     -92.05
+    ],
+    [
+     18.12,
+     -89.82
+    ],
+    [
+     -6.54,
+     -89.42
+    ],
+    [
+     -6.53,
+     -86.42
+    ]
+   ],
+   "mrr": {
+    "cx": -14.11,
+    "cy": -107.28,
+    "w": 59.78,
+    "d": 43.4,
+    "w_ken": 30.3,
+    "d_ken": 22.0,
+    "long_axis_deg": 172.1
+   },
+   "area_m2": 423.1,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      1680.0,
+      1659.0
+     ],
+     [
+      1680.0,
+      1716.0
+     ],
+     [
+      1773.0,
+      1715.0
+     ],
+     [
+      1803.0,
+      1697.0
+     ],
+     [
+      1804.0,
+      1715.0
+     ],
+     [
+      1830.0,
+      1718.0
+     ],
+     [
+      1840.0,
+      1695.0
+     ],
+     [
+      2208.0,
+      1696.0
+     ],
+     [
+      2208.0,
+      2063.0
+     ],
+     [
+      2184.0,
+      2064.0
+     ],
+     [
+      2195.0,
+      2075.0
+     ],
+     [
+      2186.0,
+      2365.0
+     ],
+     [
+      2240.0,
+      2375.0
+     ],
+     [
+      2240.0,
+      2655.0
+     ],
+     [
+      2431.0,
+      2655.0
+     ],
+     [
+      2432.0,
+      2666.0
+     ],
+     [
+      2495.0,
+      2669.0
+     ],
+     [
+      2493.0,
+      2751.0
+     ],
+     [
+      2623.0,
+      2751.0
+     ],
+     [
+      2630.0,
+      2650.0
+     ],
+     [
+      2575.0,
+      2649.0
+     ],
+     [
+      2575.0,
+      2411.0
+     ],
+     [
+      2432.0,
+      2418.0
+     ],
+     [
+      2431.0,
+      2528.0
+     ],
+     [
+      2255.0,
+      2527.0
+     ],
+     [
+      2255.0,
+      2000.0
+     ],
+     [
+      2271.0,
+      1999.0
+     ],
+     [
+      2275.0,
+      1778.0
+     ],
+     [
+      2438.0,
+      1783.0
+     ],
+     [
+      2432.0,
+      2237.0
+     ],
+     [
+      2572.0,
+      2242.0
+     ],
+     [
+      2575.0,
+      2383.0
+     ],
+     [
+      2875.0,
+      2373.0
+     ],
+     [
+      2633.0,
+      2363.0
+     ],
+     [
+      2634.0,
+      2004.0
+     ],
+     [
+      2490.0,
+      1993.0
+     ],
+     [
+      2491.0,
+      1789.0
+     ],
+     [
+      3075.0,
+      1781.0
+     ],
+     [
+      3079.0,
+      1810.0
+     ],
+     [
+      3144.0,
+      1809.0
+     ],
+     [
+      3142.0,
+      1754.0
+     ],
+     [
+      2535.0,
+      1754.0
+     ],
+     [
+      2534.0,
+      1680.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属4",
+   "name": "廊下/附属4",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -50.4,
+     -104.76
+    ],
+    [
+     -50.38,
+     -106.14
+    ],
+    [
+     -48.76,
+     -106.53
+    ],
+    [
+     -48.99,
+     -110.55
+    ],
+    [
+     -48.17,
+     -110.61
+    ],
+    [
+     -48.21,
+     -112.96
+    ],
+    [
+     -39.11,
+     -113.11
+    ],
+    [
+     -39.12,
+     -116.2
+    ],
+    [
+     -30.14,
+     -116.34
+    ],
+    [
+     -30.46,
+     -113.37
+    ],
+    [
+     -35.74,
+     -113.04
+    ],
+    [
+     -35.7,
+     -100.85
+    ],
+    [
+     -38.71,
+     -101.04
+    ],
+    [
+     -39.16,
+     -110.91
+    ],
+    [
+     -46.07,
+     -110.96
+    ],
+    [
+     -46.72,
+     -108.64
+    ],
+    [
+     -46.37,
+     -104.78
+    ]
+   ],
+   "mrr": {
+    "cx": -40.18,
+    "cy": -110.52,
+    "w": 17.17,
+    "d": 16.8,
+    "w_ken": 8.7,
+    "d_ken": 8.5,
+    "long_axis_deg": 107.6
+   },
+   "area_m2": 102.6,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      1479.0,
+      2097.0
+     ],
+     [
+      1480.0,
+      2131.0
+     ],
+     [
+      1520.0,
+      2140.0
+     ],
+     [
+      1516.0,
+      2239.0
+     ],
+     [
+      1536.0,
+      2240.0
+     ],
+     [
+      1536.0,
+      2298.0
+     ],
+     [
+      1760.0,
+      2298.0
+     ],
+     [
+      1761.0,
+      2374.0
+     ],
+     [
+      1982.0,
+      2374.0
+     ],
+     [
+      1973.0,
+      2301.0
+     ],
+     [
+      1843.0,
+      2295.0
+     ],
+     [
+      1839.0,
+      1995.0
+     ],
+     [
+      1765.0,
+      2001.0
+     ],
+     [
+      1758.0,
+      2244.0
+     ],
+     [
+      1588.0,
+      2248.0
+     ],
+     [
+      1571.0,
+      2191.0
+     ],
+     [
+      1578.0,
+      2096.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属5",
+   "name": "廊下/附属5",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -44.84,
+     -124.97
+    ],
+    [
+     -44.96,
+     -132.65
+    ],
+    [
+     -45.53,
+     -132.68
+    ],
+    [
+     -45.56,
+     -134.02
+    ],
+    [
+     -41.95,
+     -134.69
+    ],
+    [
+     -42.1,
+     -146.71
+    ],
+    [
+     -42.96,
+     -147.06
+    ],
+    [
+     -42.99,
+     -148.57
+    ],
+    [
+     -36.32,
+     -148.67
+    ],
+    [
+     -36.08,
+     -140.96
+    ],
+    [
+     -24.46,
+     -141.18
+    ],
+    [
+     -24.58,
+     -143.42
+    ],
+    [
+     -34.16,
+     -143.3
+    ],
+    [
+     -34.28,
+     -148.18
+    ],
+    [
+     -22.75,
+     -148.45
+    ],
+    [
+     -22.63,
+     -140.97
+    ],
+    [
+     -18.93,
+     -141.19
+    ],
+    [
+     -19.42,
+     -161.71
+    ],
+    [
+     -16.86,
+     -161.75
+    ],
+    [
+     -16.47,
+     -137.01
+    ],
+    [
+     -33.81,
+     -136.52
+    ],
+    [
+     -34.2,
+     -135.5
+    ],
+    [
+     -36.07,
+     -135.39
+    ],
+    [
+     -35.78,
+     -125.11
+    ]
+   ],
+   "mrr": {
+    "cx": -30.1,
+    "cy": -142.01,
+    "w": 42.35,
+    "d": 23.99,
+    "w_ken": 21.5,
+    "d_ken": 12.2,
+    "long_axis_deg": 150.9
+   },
+   "area_m2": 370.1,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      1536.0,
+      2562.0
+     ],
+     [
+      1536.0,
+      2751.0
+     ],
+     [
+      1522.0,
+      2752.0
+     ],
+     [
+      1522.0,
+      2785.0
+     ],
+     [
+      1611.0,
+      2800.0
+     ],
+     [
+      1612.0,
+      3096.0
+     ],
+     [
+      1591.0,
+      3105.0
+     ],
+     [
+      1591.0,
+      3142.0
+     ],
+     [
+      1755.0,
+      3142.0
+     ],
+     [
+      1758.0,
+      2952.0
+     ],
+     [
+      2044.0,
+      2953.0
+     ],
+     [
+      2042.0,
+      3008.0
+     ],
+     [
+      1806.0,
+      3009.0
+     ],
+     [
+      1805.0,
+      3129.0
+     ],
+     [
+      2089.0,
+      3131.0
+     ],
+     [
+      2089.0,
+      2947.0
+     ],
+     [
+      2180.0,
+      2951.0
+     ],
+     [
+      2176.0,
+      3456.0
+     ],
+     [
+      2239.0,
+      3456.0
+     ],
+     [
+      2239.0,
+      2847.0
+     ],
+     [
+      1812.0,
+      2842.0
+     ],
+     [
+      1802.0,
+      2817.0
+     ],
+     [
+      1756.0,
+      2815.0
+     ],
+     [
+      1759.0,
+      2562.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属6",
+   "name": "廊下/附属6",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     19.64,
+     -126.64
+    ],
+    [
+     19.53,
+     -130.75
+    ],
+    [
+     24.12,
+     -130.82
+    ],
+    [
+     24.15,
+     -134.11
+    ],
+    [
+     27.97,
+     -134.17
+    ],
+    [
+     28.0,
+     -131.98
+    ],
+    [
+     24.8,
+     -131.48
+    ],
+    [
+     24.63,
+     -126.72
+    ]
+   ],
+   "mrr": {
+    "cx": 23.78,
+    "cy": -130.41,
+    "w": 8.49,
+    "d": 7.39,
+    "w_ken": 4.3,
+    "d_ken": 3.8,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 30.9,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      3088.0,
+      2650.0
+     ],
+     [
+      3087.0,
+      2751.0
+     ],
+     [
+      3200.0,
+      2751.0
+     ],
+     [
+      3202.0,
+      2832.0
+     ],
+     [
+      3296.0,
+      2832.0
+     ],
+     [
+      3296.0,
+      2778.0
+     ],
+     [
+      3217.0,
+      2767.0
+     ],
+     [
+      3211.0,
+      2650.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属7",
+   "name": "廊下/附属7",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     65.46,
+     -134.21
+    ],
+    [
+     65.29,
+     -140.18
+    ],
+    [
+     67.84,
+     -140.51
+    ],
+    [
+     67.98,
+     -134.21
+    ]
+   ],
+   "mrr": {
+    "cx": 66.63,
+    "cy": -137.33,
+    "w": 6.3,
+    "d": 2.56,
+    "w_ken": 3.2,
+    "d_ken": 1.3,
+    "long_axis_deg": 88.7
+   },
+   "area_m2": 15.6,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      4205.0,
+      2834.0
+     ],
+     [
+      4203.0,
+      2981.0
+     ],
+     [
+      4266.0,
+      2988.0
+     ],
+     [
+      4267.0,
+      2833.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属8",
+   "name": "廊下/附属8",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -2.39,
+     -140.48
+    ],
+    [
+     -6.74,
+     -140.41
+    ],
+    [
+     -6.9,
+     -150.52
+    ],
+    [
+     -6.41,
+     -150.53
+    ],
+    [
+     -6.25,
+     -143.14
+    ],
+    [
+     -2.68,
+     -143.19
+    ]
+   ],
+   "mrr": {
+    "cx": -4.65,
+    "cy": -145.5,
+    "w": 10.12,
+    "d": 4.35,
+    "w_ken": 5.1,
+    "d_ken": 2.2,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 15.3,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      2539.0,
+      2951.0
+     ],
+     [
+      2432.0,
+      2951.0
+     ],
+     [
+      2432.0,
+      3200.0
+     ],
+     [
+      2444.0,
+      3200.0
+     ],
+     [
+      2445.0,
+      3018.0
+     ],
+     [
+      2533.0,
+      3018.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属9",
+   "name": "廊下/附属9",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     19.7,
+     -139.28
+    ],
+    [
+     19.66,
+     -149.4
+    ],
+    [
+     29.09,
+     -149.55
+    ],
+    [
+     30.28,
+     -148.88
+    ],
+    [
+     30.71,
+     -149.53
+    ],
+    [
+     33.68,
+     -149.62
+    ],
+    [
+     33.62,
+     -150.51
+    ],
+    [
+     32.4,
+     -150.45
+    ],
+    [
+     31.96,
+     -160.12
+    ],
+    [
+     32.36,
+     -160.65
+    ],
+    [
+     35.0,
+     -160.66
+    ],
+    [
+     34.95,
+     -164.19
+    ],
+    [
+     41.77,
+     -164.46
+    ],
+    [
+     41.95,
+     -161.09
+    ],
+    [
+     45.28,
+     -161.19
+    ],
+    [
+     45.81,
+     -163.55
+    ],
+    [
+     45.94,
+     -155.26
+    ],
+    [
+     36.31,
+     -155.11
+    ],
+    [
+     36.17,
+     -151.25
+    ],
+    [
+     36.39,
+     -150.27
+    ],
+    [
+     46.02,
+     -150.35
+    ],
+    [
+     46.05,
+     -148.19
+    ],
+    [
+     25.01,
+     -147.94
+    ],
+    [
+     25.31,
+     -139.37
+    ]
+   ],
+   "mrr": {
+    "cx": 32.22,
+    "cy": -152.67,
+    "w": 33.52,
+    "d": 19.07,
+    "w_ken": 17.0,
+    "d_ken": 9.7,
+    "long_axis_deg": 157.0
+   },
+   "area_m2": 217.7,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      3028.0,
+      2951.0
+     ],
+     [
+      3031.0,
+      3200.0
+     ],
+     [
+      3263.0,
+      3200.0
+     ],
+     [
+      3292.0,
+      3183.0
+     ],
+     [
+      3303.0,
+      3199.0
+     ],
+     [
+      3376.0,
+      3200.0
+     ],
+     [
+      3375.0,
+      3222.0
+     ],
+     [
+      3345.0,
+      3221.0
+     ],
+     [
+      3338.0,
+      3459.0
+     ],
+     [
+      3348.0,
+      3472.0
+     ],
+     [
+      3413.0,
+      3471.0
+     ],
+     [
+      3413.0,
+      3558.0
+     ],
+     [
+      3581.0,
+      3562.0
+     ],
+     [
+      3584.0,
+      3479.0
+     ],
+     [
+      3666.0,
+      3480.0
+     ],
+     [
+      3680.0,
+      3538.0
+     ],
+     [
+      3680.0,
+      3334.0
+     ],
+     [
+      3443.0,
+      3334.0
+     ],
+     [
+      3438.0,
+      3239.0
+     ],
+     [
+      3443.0,
+      3215.0
+     ],
+     [
+      3680.0,
+      3213.0
+     ],
+     [
+      3680.0,
+      3160.0
+     ],
+     [
+      3162.0,
+      3162.0
+     ],
+     [
+      3166.0,
+      2951.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属10",
+   "name": "廊下/附属10",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     48.79,
+     -142.04
+    ],
+    [
+     48.4,
+     -145.89
+    ],
+    [
+     50.84,
+     -145.93
+    ],
+    [
+     51.1,
+     -142.07
+    ]
+   ],
+   "mrr": {
+    "cx": 49.75,
+    "cy": -143.98,
+    "w": 3.99,
+    "d": 2.43,
+    "w_ken": 2.0,
+    "d_ken": 1.2,
+    "long_axis_deg": 86.1
+   },
+   "area_m2": 9.2,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      3772.0,
+      3025.0
+     ],
+     [
+      3764.0,
+      3120.0
+     ],
+     [
+      3824.0,
+      3120.0
+     ],
+     [
+      3829.0,
+      3025.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属11",
+   "name": "廊下/附属11",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -71.89,
+     -145.86
+    ],
+    [
+     -71.95,
+     -149.84
+    ],
+    [
+     -68.78,
+     -149.89
+    ],
+    [
+     -68.68,
+     -146.15
+    ]
+   ],
+   "mrr": {
+    "cx": -70.31,
+    "cy": -147.88,
+    "w": 3.98,
+    "d": 3.21,
+    "w_ken": 2.0,
+    "d_ken": 1.6,
+    "long_axis_deg": 89.1
+   },
+   "area_m2": 12.3,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      896.0,
+      3044.0
+     ],
+     [
+      896.0,
+      3142.0
+     ],
+     [
+      974.0,
+      3142.0
+     ],
+     [
+      975.0,
+      3050.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属12",
+   "name": "廊下/附属12",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -5.06,
+     -158.68
+    ],
+    [
+     -5.11,
+     -161.52
+    ],
+    [
+     2.33,
+     -161.35
+    ],
+    [
+     2.21,
+     -159.04
+    ]
+   ],
+   "mrr": {
+    "cx": -1.37,
+    "cy": -160.16,
+    "w": 7.44,
+    "d": 2.84,
+    "w_ken": 3.8,
+    "d_ken": 1.4,
+    "long_axis_deg": 179.1
+   },
+   "area_m2": 19.0,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      2432.0,
+      3386.0
+     ],
+     [
+      2432.0,
+      3456.0
+     ],
+     [
+      2615.0,
+      3449.0
+     ],
+     [
+      2611.0,
+      3392.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  },
+  {
+   "id": "goten.廊下/附属13",
+   "name": "廊下/附属13",
+   "kind": "corridor_or_annex",
+   "label_on_plan": "（廊下・附属：图上多数标「御廊下」，未逐段读）",
+   "polygon": [
+    [
+     -77.17,
+     -172.56
+    ],
+    [
+     -77.15,
+     -176.18
+    ],
+    [
+     -73.33,
+     -176.16
+    ],
+    [
+     -73.43,
+     -172.38
+    ]
+   ],
+   "mrr": {
+    "cx": -75.29,
+    "cy": -174.32,
+    "w": 3.82,
+    "d": 3.78,
+    "w_ken": 1.9,
+    "d_ken": 1.9,
+    "long_axis_deg": 1.5
+   },
+   "area_m2": 14.0,
+   "source": {
+    "doc": "NDL 大坂御城御本丸并御殿絵図 (info:ndljp/pid/1286170, DOI 10.11501/1286170), 1 frame (R0000001)",
+    "frame": 1,
+    "poly_px": [
+     [
+      765.0,
+      3727.0
+     ],
+     [
+      767.0,
+      3816.0
+     ],
+     [
+      861.0,
+      3814.0
+     ],
+     [
+      857.0,
+      3721.0
+     ]
+    ]
+   },
+   "confidence": "measured-from-plan (geometry); name not read",
+   "use": "skip"
+  }
+ ],
+ "not_extracted": [
+  "本丸多聞・櫓・门的逐栋多边形（色带相连成环，未逐栋拆分；控制点处的隅櫓位置见 georef.per_cp）",
+  "房间分割与畳数（图2/图1 室内线可见但无畳数注记可读，未数字化）",
+  "能舞台・茶室（鎖之間）：本次未在图上定位"
+ ],
+ "provenance": {
+  "source": "国立国会図書館「大坂御城御本丸并御殿絵図」（江戸前期，写，寄別12-18）",
+  "ndl_pid": "1286170",
+  "doi": "10.11501/1286170",
+  "iiif": "https://dl.ndl.go.jp/api/iiif/1286170/manifest.json",
+  "license": "PDM (public domain mark, NDL)",
+  "crosscheck": "NDL「大坂御城図」pid 1286202（独立配准，仿射 RMS 6.66 m；殿舍中心两图差 中位 6.4 m）",
+  "method": "21 控制点（本丸石垣顶线拐角 17、桜門枡形 2、桜門门心 1、天守台中心 1）→ 形状 = 全局相似变换（0.08126 m/px@6650，旋转 −0.92°），位置 = TPS(λ=0.05) 质心；mrr = 最小外接矩形",
+  "transform_residual_m": {
+   "similarity_rms": 6.13,
+   "similarity_max": 11.41,
+   "affine_rms": 5.37,
+   "affine_max": 10.13,
+   "tps_rms": 0.57,
+   "tps_loo_rms": 4.82,
+   "tps_loo_max": 11.23
+  },
+  "absolute_accuracy": "殿舍绝对位置约 ±5 m（控制点留一 RMS 4.82 m）；相对位置/尺寸更好（同一相似变换，尺寸两图差 ≤3 m）",
+  "tolerance": {
+   "center_m": 1.0,
+   "size_ken": 0.5,
+   "note": "H30：模型殿舍（吸附 0.5 間格后）相对本文件 mrr 的中心偏差/尺寸偏差上限"
+  },
+  "use": "hall = 殿舍（拟合放置）；corridor = 绘图上可读的廊下（拟合放置）；kura = 単独の蔵（拟合放置）；mask = 占用掩膜（不建，只挡番所/蔵/道路）；skip = 不用（未逐段读名的廊下/附属块，廊下改按拓扑规则生成）",
+  "by": "work/b5a（2026-10-20），见 docs/BUILDINGS.md §2.4"
+ }
+}
