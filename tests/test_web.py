@@ -4,7 +4,7 @@ Run:  python3 tests/test_web.py            (or: pytest tests/test_web.py)
 Needs: pip install playwright && python3 -m playwright install chromium
        (in the Hark sandbox:  . ../work/setup_pw.sh  provides a persistent Chromium + missing libs)
 
-Asserts: (B2/web-r10) C11 never-see-underground fuzz (exterior from 80+ start points incl. grid/outer/ring edges, ishigaki, moat banks, building bases; interior walking/looking in every building) == 0 and its fault injection (ring, intnear) is caught; hover-highlight + click-to-enter, label hiding, minimap + click-to-jump, keyboard walking without penetration + stairs. (r6) camera collision uses the conforming (split) terrain · H1–H21 all 0 · node fault injection (tests/test_faults.js: every H15–H21 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
+Asserts: (B3/web-r11) H28 stairs + H29 windows == 0 in the page audit; C12 keyboard stair walk up+down for every stair == 0 and its fault (stairgap) is caught; every window aperture is see-through (three.js ray from inside through a lattice gap reaches beyond the wall: terrain/other buildings/sky); a shot from inside 千貫櫓 looking out through a lattice window (int_window_out.png) is neither black nor blown out. (B2/web-r10) C11 never-see-underground fuzz (exterior from 80+ start points incl. grid/outer/ring edges, ishigaki, moat banks, building bases; interior walking/looking in every building) == 0 and its fault injection (ring, intnear) is caught; hover-highlight + click-to-enter, label hiding, minimap + click-to-jump, keyboard walking without penetration + stairs. (r6) camera collision uses the conforming (split) terrain · H1–H21 all 0 · node fault injection (tests/test_faults.js: every H15–H21 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
 C7 fast-drag tunneling fuzz), per-frame walk-through-Otemon animation clear + tunnel-free + actually under the gate lintel, extra fuzz,
 per-frame animated transitions clear, independent triangle-exact check, real mouse wheel/drag input never leaves the camera inside solids · URL hash reproducible
 (same hash -> same signature, other seed -> different) · writes one screenshot per view (incl. inside the Otemon gate opening) to web/shots/.
@@ -76,6 +76,18 @@ def run(shots=True):
         rep['cam_legacy'] = pg.evaluate('__castle.cameraAudit({legacy:true}).cnt')
         rep['cam_old_r3'] = pg.evaluate('__castle.cameraAudit({old:true}).cnt')  # web-r3 逻辑（柱状场 + 抬升）下的 C6/C7
         rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']; rep['cam_interiors'] = ca.get('interiors'); rep['c11'] = ca.get('c11')
+        rep['c12'] = ca.get('c12')
+        # B3：窓通视（three.js 射线对场景所有可见网格）+ 从室内看窓外的截图（千貫櫓 1 階 城外侧的格子窓，看得见石垣/堀/远处）
+        rep['win_rays'] = pg.evaluate("""() => { const C = __castle, out = { n: 0, ok: 0, sky: 0, ex: [], bldgs: 0 }; for (const b of C.bldg.list) { C.enterInterior(b.id); const r = C.windowRays(b.id); out.n += r.n; out.ok += r.ok; out.sky += r.sky; out.bldgs++; for (const e of r.ex) if (out.ex.length < 6) out.ex.push(b.name + ' ' + e); } C.exitInterior(); return out; }""")
+        rep['win_view'] = pg.evaluate("""() => { const C = __castle, B = window.CASTLE_BLDG, b = C.bldg.list.find(q => q.name === '千貫櫓'), G = B.geoOf(b), w = G.ext.wa.find(q => q.o.kind === 'window' && q.o.f === 0 && b.outSides.includes(q.o.side)); if (!w) return null; const a = w.ap, o = B.outerOf(b, a.sd, a.line), P = (s2, d, z) => { const uv = a.sd === 0 ? [o - d, s2] : a.sd === 1 ? [o + d, s2] : a.sd === 2 ? [s2, o - d] : [s2, o + d], [x, y] = b.fr.w(uv[0], uv[1]); return [x, y, z]; }, zm = (a.z0 + a.z1) / 2, nb = w.parts.filter(q => q.tag === 'bar').length, sx = a.s0 + (a.s1 - a.s0) / nb * Math.floor(nb / 2);
+            C.enterInterior(b.id); C.poseInt(P(sx, a.t + 0.8, zm), P(sx, -30, zm - 6)); const TH = C.THREE, rc = new TH.Raycaster(), cam = C.camera; rc.setFromCamera(new TH.Vector2(0, -0.2), cam); const ms = []; C.scene.traverse(m => { if (m.isMesh) { for (let q = m; q; q = q.parent) if (!q.visible) return; ms.push(m); } }); const h = rc.intersectObjects(ms, false).filter(x => x.distance > 0.05)[0];
+            return { name: b.name, hit: h ? h.object.name : 'sky', dist: h ? +h.distance.toFixed(1) : null }; }""")
+        if shots and rep['win_view']:
+            pg.wait_for_timeout(300); pg.evaluate('__castle.renderNow()'); pg.screenshot(path=os.path.join(SHOTS, 'int_window_out.png'))
+            from PIL import Image
+            im = Image.open(os.path.join(SHOTS, 'int_window_out.png')).convert('L'); W0, H0 = im.size; px = list(im.crop((W0 // 4, H0 // 4, W0 * 3 // 4, H0 * 3 // 4)).resize((64, 40)).getdata())
+            rep['win_view']['lum'] = [min(px), round(sum(px) / len(px)), max(px)]
+        pg.evaluate('__castle.exitInterior()')
         # B1：建筑语法——读包、按需建内部（不阻塞：单栋建内部的耗时）、进入室内（御殿 + 一座橹），室内相机球清空、拖动不出墙
         rep['bldg'] = pg.evaluate("""() => { const C = __castle, W = C.bldg, out = { n: W.list.length, bpack: C.bpack, by: {}, enter: [] }; for (const b of W.list) { const k = b.type + '/' + b.tier; out.by[k] = (out.by[k] || 0) + 1; }
             for (const b of [W.list.find(b => b.type === 'goten'), W.list.find(b => b.type === 'yagura' && b.F.length === 3), W.list.find(b => b.tier === 'measured')]) { if (!b) continue; const t0 = performance.now(), r = C.enterInterior(b.id), ms = performance.now() - t0; let bad = 0; const q0 = C.cur().cam;
@@ -120,10 +132,11 @@ def run(shots=True):
         rep['cam_input'] = bad_in
         # 故障注入（C8）：桥下横一根梁，C8 必须报出来
         # B2：C11 的故障注入——ring：相机碰撞场不用渲染外圈地面（r4–r9 的拟合面外推）；intnear：室内近平面不随球半径缩小（r9 回归）。C11 必须两处都报
-        load('#seed=1&lost=1&view=top&labels=0&fault=c8,ring,intnear')
+        load('#seed=1&lost=1&view=top&labels=0&fault=c8,ring,intnear,stairgap')
         pg.wait_for_function('__castle.camAudit', timeout=240000)
         rep['c8_fault'] = pg.evaluate('__castle.camAudit.cnt.C8')
         rep['c11_fault'] = pg.evaluate('(() => { const c = __castle.camAudit.c11; return { ext: c.ext.bad, int: c.int.bad, byTag: c.ext.byTag, ex: c.ext.ex.slice(0, 2).concat(c.int.ex.slice(0, 1)) }; })()')
+        rep['c12_fault'] = pg.evaluate('(() => { const c = __castle.camAudit.c12; return { bad: c.bad, stairs: c.stairs, ex: c.ex.slice(0, 2) }; })()')  # B3：stairgap = 每座階段中间一级踏板不算支撑 → C12 必须报
         # reproducibility
         load('#seed=1&lost=1&view=top&labels=0')
         rep['sig1_again'] = pg.evaluate('__castle.signature')
@@ -241,7 +254,12 @@ def check(rep):
     assert rep['faults_node'] == 0, rep['faults_log']
     ct = rep['cam_terrain']
     assert ct['n'] > 1000 and ct['over'] == 0 and ct['gridOff'] > 0, ct
-    assert all(rep['audit_cnt'][f'H{i}'] == 0 for i in range(1, 28)), rep['audit_cnt']
+    assert all(rep['audit_cnt'][f'H{i}'] == 0 for i in range(1, 30)), rep['audit_cnt']
+    c12 = rep['c12']; assert rep['cam_cnt'].get('C12') == 0 and c12 and c12['stairs'] >= 20 and c12['bad'] == 0, c12
+    assert rep['c12_fault']['bad'] > 0, rep['c12_fault']
+    wr = rep['win_rays']; assert wr['n'] >= 200 and wr['ok'] == wr['n'], wr
+    wv = rep['win_view']; assert wv and wv['hit'] not in ('bldg', 'bldg-int', 'bldg-hull'), wv
+    if 'lum' in wv: assert wv['lum'][2] - wv['lum'][0] > 60 and 25 < wv['lum'][1] < 235, wv
     assert rep['cam_cnt'].get('C9') == 0 and rep['cam_cnt'].get('C10') == 0 and rep['cam_interiors'] and rep['cam_interiors']['rooms'] > 100, (rep['cam_cnt'], rep['cam_interiors'])
     bl = rep['bldg']
     assert bl['n'] >= 20 and bl['bpack'] and bl['bpack'].get('used') and len(bl['enter']) == 3 and all(e['room'] and e['bad'] == 0 and e['built'] for e in bl['enter']), bl
