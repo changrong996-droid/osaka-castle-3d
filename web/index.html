@@ -22,6 +22,13 @@ input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid 
 #hide{position:absolute;right:8px;top:8px;margin:0;padding:1px 7px}
 #load{position:fixed;inset:0;display:grid;place-items:center;color:#e8c25a;font-size:15px}
 #hint{position:fixed;right:14px;bottom:10px;color:#cbb98f;font-size:11.5px;opacity:.8}
+#minimap{display:none;position:fixed;right:14px;bottom:14px;background:rgba(15,12,8,.84);border:1px solid rgba(212,165,44,.5);border-radius:10px;padding:6px 8px 8px;color:#f3e6c4;font-size:12px;backdrop-filter:blur(6px)}
+#minimap .mh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}#mmt{color:#e8c25a;font-weight:600}
+#mmf button{margin:0 0 0 3px;padding:1px 6px}#mmcv{display:block;width:260px;height:240px;cursor:pointer;border-radius:6px;background:rgba(0,0,0,.25)}
+#minimap .ml{color:#b9a77a;font-size:10.5px;margin-top:3px;width:260px;line-height:1.45}
+#khint{display:none;position:fixed;left:50%;transform:translateX(-50%);top:14px;background:rgba(15,12,8,.8);color:#f0d98c;border:1px solid rgba(212,165,44,.45);border-radius:8px;padding:6px 12px;font-size:12px;white-space:nowrap}
+#khint kbd{display:inline-block;border:1px solid #8a6d22;border-radius:4px;padding:0 4px;margin:0 1px;background:#2a2216;font-family:inherit;font-size:11px}
+#btip{display:none;position:fixed;pointer-events:none;background:rgba(20,14,8,.88);color:#f3e6c4;border:1px solid #d4a52c;border-radius:7px;padding:5px 9px;font-size:12px;line-height:1.5;z-index:5}#btip b{color:#f2d27a}#btip span{color:#ffcf6a}
 </style>
 </head>
 <body>
@@ -41,14 +48,17 @@ input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid 
   <div id="camaudit"></div>
   <div id="stats"></div>
 </div>
-<div id="hint">左键旋转 · 右键平移 · 滚轮缩放（相机是 1.5 m 球体：不会钻进地面/建筑、拖得再快也穿不过墙，但能从门洞、桥下穿过）· 视角/开关写入网址 # 参数，可复现</div>
-<script src="data.js?v=12"></script>
-<script src="pack.js?v=12"></script>
-<script src="bake/manifest.js?v=12"></script>
-<script src="site.js?v=12"></script>
-<script src="tenshu.js?v=12"></script>
-<script src="camera.js?v=12"></script>
-<script src="bldg.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<div id="minimap"><div class="mh"><span id="mmt"></span><span id="mmf"></span></div><canvas id="mmcv"></canvas><div class="ml">点房间跳过去 · <span style="color:#ff9a3c">━</span> 出入口 · <span style="color:#ffd678">┅</span> 室内门 · 斜线 = 階段 · 黄扇形 = 视野</div></div>
+<div id="khint"><kbd>↑</kbd><kbd>↓</kbd>/<kbd>W</kbd><kbd>S</kbd> 前后走 · <kbd>←</kbd><kbd>→</kbd> 转身 · <kbd>A</kbd><kbd>D</kbd> 侧移 · <kbd>Shift</kbd> 快走 · 拖动鼠标环顾 · 滚轮前后 · <kbd>Esc</kbd> 出去</div>
+<div id="btip"></div>
+<div id="hint">左键旋转 · 右键平移 · 滚轮缩放 · 鼠标停在建筑上高亮、单击进入室内（相机是 1.5 m 球体：不会钻进地面/建筑、拖得再快也穿不过墙，但能从门洞、桥下穿过）· 视角/开关写入网址 # 参数，可复现</div>
+<script src="data.js?v=13"></script>
+<script src="pack.js?v=13"></script>
+<script src="bake/manifest.js?v=13"></script>
+<script src="site.js?v=13"></script>
+<script src="tenshu.js?v=13"></script>
+<script src="camera.js?v=13"></script>
+<script src="bldg.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
