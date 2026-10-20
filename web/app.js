@@ -212,7 +212,7 @@
           for (const sd of [-1, 1]) k.quad('deck', A(s0, sd * hw, z0 - t), A(s1, sd * hw, z1 - t), A(s1, sd * hw, z1), A(s0, sd * hw, z0));
           const r0 = Math.max(s0, 0), r1 = Math.min(s1, B.len); if (r1 > r0) for (const sd of [-1, 1]) { const ra = A(r0, sd * hw * 0.95, 0), rb = A(r1, sd * hw * 0.95, 0); k.seg('vermil', ra[0], ra[1], rb[0], rb[1], (B.topAt(r0) + B.topAt(r1)) / 2 + 0.9, 0.2, 0.2); } }
         const np = Math.max(2, Math.round(B.len / 2)); for (let i = 0; i <= np; i++) { const s = B.len * i / np; for (const sd of [-1, 1]) { const q = A(s, sd * hw * 0.95, 0); k.box('vermil', q[0], q[1], B.topAt(s), 0.22, 0.22, 1.1, ang); } }
-        if (P.fault === 'c8') { const sup = [B.sA].concat(B.piers.map(q2 => q2.s), [B.sB]).sort((a2, b2) => a2 - b2); let sm = B.len / 2; for (let i = 1; i < sup.length; i++) if (sup[i - 1] <= B.len / 2 && sup[i] >= B.len / 2) { sm = (sup[i - 1] + sup[i]) / 2; break; } const q = A(sm, 0, 0); /* 横在 C8 走的那一跨的中线上 */ k.box('wood', q[0], q[1], S.wzAt(q[0], q[1]) + 0.5, 0.6, 2 * hw + 4, 1.0, ang); } // 故障注入（测试用）：桥下横一根梁，C8 必须报出来
+        if (hasFault('c8')) { const sup = [B.sA].concat(B.piers.map(q2 => q2.s), [B.sB]).sort((a2, b2) => a2 - b2); let sm = B.len / 2; for (let i = 1; i < sup.length; i++) if (sup[i - 1] <= B.len / 2 && sup[i] >= B.len / 2) { sm = (sup[i - 1] + sup[i]) / 2; break; } const q = A(sm, 0, 0); /* 横在 C8 走的那一跨的中线上 */ k.box('wood', q[0], q[1], S.wzAt(q[0], q[1]) + 0.5, 0.6, 2 * hw + 4, 1.0, ang); } // 故障注入（测试用）：桥下横一根梁，C8 必须报出来
         for (const pr of B.piers) { for (const q of pr.rows) k.box('wood', q[0], q[1], pr.zb, SITE.SPEC.bridge.pierW, SITE.SPEC.bridge.pierW, pr.zt - pr.zb, ang); k.seg('wood', pr.rows[0][0], pr.rows[0][1], pr.rows[1][0], pr.rows[1][1], pr.zt - 0.45, 0.5, 0.45); } },
       dobashi(k, p, S) { // 土桥路面：沿剖面铺一条略高于地形的碎石路面
         const r = S.ramps.find(q => q.part === p), L = Math.hypot(p.x1 - p.x0, p.y1 - p.y0), n = Math.max(2, Math.ceil(L / 1.5)), ang = Math.atan2(p.y1 - p.y0, p.x1 - p.x0), nx = -Math.sin(ang), ny = Math.cos(ang), hw = p.w / 2 - 0.4;
@@ -303,7 +303,8 @@
       const RO = 9000, ring = [[-RO, -RO], [RO, -RO], [RO, RO], [-RO, RO]], inn = [[-R0, -R0], [R0, -R0], [R0, R0], [-R0, R0]], fp = new Float32Array(8 * 3), fi = [];
       [...ring, ...inn].forEach((p, i) => { fp[i * 3] = p[0]; fp[i * 3 + 1] = i < 4 ? cz(inn[i][0], inn[i][1]) : lv(p[0], p[1]) - 0.02; fp[i * 3 + 2] = -p[1]; });
       for (let i = 0; i < 4; i++) { const a = i, b = (i + 1) % 4, c2 = 4 + i, d2 = 4 + (i + 1) % 4; fi.push(a, b, d2, a, d2, c2); }
-      const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.BufferAttribute(fp, 3)); fg.setIndex(fi); fastNormals(fg); const m = new THREE.Mesh(fg, mat); m.material.side = THREE.DoubleSide; grp.add(m);
+      const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.BufferAttribute(fp, 3)); fg.setIndex(fi); fastNormals(fg); const m = new THREE.Mesh(fg, mat); m.material.side = THREE.DoubleSide; m.name = 'ring'; grp.add(m);
+      { const oz = outerZFn(pos, n, c, R0, gs, fp, fi); OUTER_Z = oz.z; OUTER_T = oz.tris; } // B2：相机在网格外的地面 = 这里渲染的同一组三角形
       // r7b：水面 = 每个连通水体在自己的实测水位（T.P.）上一块多边形；再加一张最低水位的大水面兜底（只会在地面以下露出）
       const wmat = new THREE.MeshStandardMaterial({ color: 0x3b6872, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.9 });
       // 兜底水面不是水体：放在全部渲染地面（网格 + 外圈拟合面的四角）以下，城下拟合平面外推到网格角时（东北角低于最低水位）不会被它淹掉
@@ -312,6 +313,26 @@
       for (const b of S.waterBodies) { if (!b.ring || b.ring.length < 3) continue; const sh = new THREE.Shape(b.ring.map(p => new THREE.Vector2(p[0], p[1])));
         const wm = new THREE.Mesh(new THREE.ShapeGeometry(sh), wmat); wm.rotation.x = -Math.PI / 2; wm.position.y = b.level; wm.receiveShadow = true; wm.name = 'water'; grp.add(wm); }
       return grp;
+    }
+    // B2：渲染出来的网格外地面的高度函数（外圈 4 m 粗网格的两种三角形 + 大环 8 个三角形；与上面建网格用同一批顶点和同一种剖分）
+    let OUTER_Z = null, OUTER_T = null;
+    function outerZFn(pos, n, c, R0, gs, fp, fi) {
+      const RT = []; for (let k = 0; k < fi.length; k += 3) { const v = q => [fp[q * 3], -fp[q * 3 + 2], fp[q * 3 + 1]]; RT.push([v(fi[k]), v(fi[k + 1]), v(fi[k + 2])]); }
+      const bary = (T, x, y) => { const [a, b, cc] = T, d = (b[1] - cc[1]) * (a[0] - cc[0]) + (cc[0] - b[0]) * (a[1] - cc[1]); if (Math.abs(d) < 1e-12) return null; const l1 = ((b[1] - cc[1]) * (x - cc[0]) + (cc[0] - b[0]) * (y - cc[1])) / d, l2 = ((cc[1] - a[1]) * (x - cc[0]) + (a[0] - cc[0]) * (y - cc[1])) / d, l3 = 1 - l1 - l2;
+        return l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9 ? null : l1 * a[2] + l2 * b[2] + l3 * cc[2]; };
+      const RK = new Float32Array(RT.length * 9); RT.forEach((T, k) => { for (let v = 0; v < 3; v++) for (let a = 0; a < 3; a++) RK[k * 9 + v * 3 + a] = T[v][a]; });
+      const TK = new Float32Array(9), hh = q => pos[q * 3 + 1];
+      const tris = (x0, y0, x1, y1, fn) => { // 与盒相交的渲染外圈地面三角形（粗网格：跳过细网格内部的格）
+        if (x1 >= -R0 && x0 <= R0 && y1 >= -R0 && y0 <= R0) { const i0 = Math.max(0, Math.floor((x0 + R0) / c)), i1 = Math.min(n - 2, Math.floor((x1 + R0) / c)), j0 = Math.max(0, Math.floor((y0 + R0) / c)), j1 = Math.min(n - 2, Math.floor((y1 + R0) / c));
+          for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const X0 = -R0 + i * c, Y0 = -R0 + j * c; if (X0 >= gs.x0 && X0 + c <= gs.x1 && Y0 >= gs.y0 && Y0 + c <= gs.y1) continue; const a = j * n + i;
+            TK[0] = X0; TK[1] = Y0; TK[2] = hh(a); TK[3] = X0 + c; TK[4] = Y0; TK[5] = hh(a + 1); TK[6] = X0 + c; TK[7] = Y0 + c; TK[8] = hh(a + n + 1); fn(TK, 0);
+            TK[0] = X0; TK[1] = Y0; TK[2] = hh(a); TK[3] = X0 + c; TK[4] = Y0 + c; TK[5] = hh(a + n + 1); TK[6] = X0; TK[7] = Y0 + c; TK[8] = hh(a + n); fn(TK, 0); } }
+        if (x0 < -R0 || x1 > R0 || y0 < -R0 || y1 > R0) for (let k = 0; k < RT.length; k++) { const o = k * 9; if (Math.max(RK[o], RK[o + 3], RK[o + 6]) < x0 || Math.min(RK[o], RK[o + 3], RK[o + 6]) > x1 || Math.max(RK[o + 1], RK[o + 4], RK[o + 7]) < y0 || Math.min(RK[o + 1], RK[o + 4], RK[o + 7]) > y1) continue; fn(RK, o); } };
+      const z = (x, y) => { if (x >= -R0 && x <= R0 && y >= -R0 && y <= R0) { const i = Math.min(n - 2, Math.max(0, Math.floor((x + R0) / c))), j = Math.min(n - 2, Math.max(0, Math.floor((y + R0) / c))), X0 = -R0 + i * c, Y0 = -R0 + j * c;
+          if (X0 >= gs.x0 && X0 + c <= gs.x1 && Y0 >= gs.y0 && Y0 + c <= gs.y1) return -1e9; const u = (x - X0) / c, v = (y - Y0) / c, a = j * n + i, h = q => pos[q * 3 + 1], ha = h(a), hb = h(a + 1), hc = h(a + n), hd = h(a + n + 1);
+          return u >= v ? ha + u * (hb - ha) + v * (hd - hb) : ha + v * (hc - ha) + u * (hd - hc); }
+        let best = -1e9; for (const T of RT) { const zz = bary(T, x, y); if (zz !== null && zz > best) best = zz; } return best; };
+      return { z, tris };
     }
     function treesMesh(S, hide) {
       const T = hide && hide.size ? S.trees.filter((t, i) => !hide.has(i)) : S.trees;
@@ -366,13 +387,127 @@
     function updateInteriors() { if (!bw || !world) return; const c = w3(camera.position), near = [];
       for (const b of bw.list) { const dx = Math.max(b.bb[0] - c[0], 0, c[0] - b.bb[2]), dy = Math.max(b.bb[1] - c[1], 0, c[1] - b.bb[3]), d = Math.hypot(dx, dy, Math.max(0, c[2] - b.F[b.F.length - 1].z - 12)); if (d < 45 || (intMode && intMode.b === b)) near.push([d, b]); else if (d > 110 && interiors.has(b.id)) { const e = interiors.get(b.id); intGroup.remove(e.grp); e.grp.traverse(o => o.geometry && o.geometry.dispose()); interiors.delete(b.id); } }
       near.sort((a, b2) => a[0] - b2[0]); for (const [, b] of near.slice(0, 6)) interiorFor(b); }
-    // B1：室内相机模式——球半径 SPEC.cam.R，碰撞 = 这栋的外壳 + 内部实心盒（BLDG.clearance）；外面的碰撞场不管
-    let intMode = null; const R_INT = () => BLDG.SPEC.cam.R;
-    function enterInterior(id, room) { const b = bw && bw.list[id]; if (!b) return null; if (!b.cams) BLDG.camAudit(site, bw, { only: b.id }); const cams = b.cams || []; const c = (room === undefined ? cams.find(q => q.what === 'toko') || cams[0] : cams.find(q => q.room === room || q.name === room)) || cams[0]; if (!c) return null;
-      interiorFor(b); anim = null; intMode = { b, c }; intLight.intensity = 4; hemi.intensity = 2.6; hemi.color.setHex(0xfff1dc); hemi.groundColor.setHex(0x9a7a58); // 室内：暖色天光（原蓝色天光让白墙发灰发蓝），点光源减弱（近墙处的高光斑） controls.minDistance = 0.3; controls.maxDistance = 8; camera.near = nearFor(camera.fov, camera.aspect) * R_INT() / CAM_R; camera.updateProjectionMatrix();
-      setV(camera.position, c.cam); setV(controls.target, c.tgt); controls.update(); intMode.last = w3(camera.position); requestRender(); return { name: c.name, what: c.what, cam: c.cam, tgt: c.tgt }; }
-    function exitInterior(silent) { if (!intMode) return; intMode = null; intLight.intensity = 0; hemi.intensity = 1.35; hemi.color.setHex(0xd6e4ff); hemi.groundColor.setHex(0x5d5545); controls.minDistance = 3; controls.maxDistance = 3000; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); if (!silent) { lastCam = null; enforce(true); requestRender(); } }
-    function enforceInt() { const c = w3(camera.position), b = intMode.b; if (BLDG.clearance(b, c, R_INT()) >= R_INT() - 1e-3) { intMode.last = c; return false; } setV(camera.position, intMode.last); camera.lookAt(controls.target); return true; }
+    // B1：室内相机模式——球半径 SPEC.cam.R，碰撞 = 这栋的外壳 + 内部实心盒（BLDG.clearance）
+    // web-r10（B2）：
+    //   · 修 r9 的回归：enterInterior 里一段注释吞掉了“近裁剪面按室内球半径缩小 + minDistance”的代码 → 室内近平面仍是外景的 1.11 m（球只有 0.25 m），
+    //     离墙/地板 <1.1 m 的面被近平面切掉 → 看穿地板/墙看到地下和外面。现在近平面按同一规则（四角 ≤0.9R）取室内球半径。
+    //   · 室内合法 = 建筑盒间隙 ≥R，且离开占地（外扩 0.6 m）后用外景碰撞场（地形/墙/别的建筑）的精确间隙 ≥R：从门走出去也钻不进地下。
+    //   · 步行：方向键/WASD 按步行速度走，每个子步（≤5 cm）检查球合法 + 脚下支撑面（楼板/踏步/土間/地面）高差 ≤0.45 m（台阶跟随、楼板洞/悬崖不走）；
+    //     眼高平滑跟随（≤2.5 m/s）；鼠标拖动环顾（OrbitControls 在室内停用）、滚轮前后走。
+    let intMode = null; const R_INT = () => BLDG.SPEC.cam.R, EYE_I = () => BLDG.SPEC.cam.eye, STEP_UP = 0.45, DROP = 0.45, WALK_V = 1.3, TURN_V = 1.6, VZ = 2.5, LOOK_D = 1.0;
+    const hasFault = k => (P.fault || '').split(',').includes(k);
+    const look = { yaw: 0, pitch: 0 }, KEYS = new Set();
+    const lookFrom = (c, t) => { const dx = t[0] - c[0], dy = t[1] - c[1], dz = t[2] - c[2]; look.yaw = Math.atan2(dy, dx); look.pitch = Math.atan2(dz, Math.hypot(dx, dy)); };
+    const lookDir = () => { const cp = Math.cos(look.pitch); return [Math.cos(look.yaw) * cp, Math.sin(look.yaw) * cp, Math.sin(look.pitch)]; };
+    function applyLook() { const c = w3(camera.position), d = lookDir(); setV(controls.target, [c[0] + d[0] * LOOK_D, c[1] + d[1] * LOOK_D, c[2] + d[2] * LOOK_D]); camera.lookAt(controls.target); camera.updateMatrixWorld(); }
+    function inFoot(b, p, m) { const [u, v] = b.fr.l(p[0], p[1]); return u > BLDG.U(b, 0) - m && v > BLDG.V(b, 0) - m && u < BLDG.U(b, b.nu) + m && v < BLDG.V(b, b.nv) + m; }
+    function intValid(p, b) { b = b || intMode.b; const R = R_INT(); if (BLDG.clearance(b, p, R + 0.01) < R - 1e-3) return false;
+      if (inFoot(b, p, 0.6)) { let g = -1e9; for (const [dx, dy] of [[0, 0], [R, 0], [-R, 0], [0, R], [0, -R]]) g = Math.max(g, site.heightAt(p[0] + dx, p[1] + dy)); return p[2] - g >= R - 1e-3; }
+      return F.clearance(p, R + 0.01) >= R - 1e-3; }
+    // 脚下支撑面：建筑实心盒（楼板面层 +0.04、踏步、土間、床、踏石）与地面里，顶 ≤ 当前脚底 + STEP_UP 的最高者
+    function floorUnder(b, x, y, foot) { const G = BLDG.geoOf(b), [u, v] = b.fr.l(x, y); let best = -1e9;
+      for (const B of G.solid) { const q = B.b; if (u < q[0] || u > q[3] || v < q[1] || v > q[4] || B.tag === 'ceil' || B.tag === 'lintel' || B.tag === 'beam') continue; const top = q[5] + (B.tag === 'slab' ? 0.04 : 0); if (top <= foot + STEP_UP && top > best) best = top; }
+      const tz = site.surfaceAt(x, y); if (tz <= foot + STEP_UP && tz > best) best = tz; return best; }
+    function teleportInt(cam, tgt) { setV(camera.position, cam); lookFrom(cam, tgt); applyLook(); intMode.last = cam.slice(); intMode.foot = floorUnder(intMode.b, cam[0], cam[1], cam[2] - EYE_I() + 0.05); }
+    function camsOf(b) { if (!b.cams) BLDG.camAudit(site, bw, { only: b.id }); return b.cams || []; }
+    function entranceCam(b) { const c0 = camsOf(b)[0]; if (!c0) return null; const p = c0.path, t = p[Math.min(2, p.length - 1)]; return { name: b.name + '·入口', what: 'entrance', room: c0.room, cam: c0.door.slice(), tgt: [t[0], t[1], c0.door[2]] }; }
+    function enterInterior(id, room, o) { o = o || {}; const b = bw && bw.list[id]; if (!b) return null; const cams = camsOf(b);
+      const c = room === 'entrance' ? entranceCam(b) : (room === undefined || room === null ? cams.find(q => q.what === 'toko') || cams[0] : cams.find(q => q.room === room || q.name === room)) || cams[0]; if (!c) return null;
+      if (!o.noMesh) { interiorFor(b); const sl = $('bsel'); if (sl) sl.value = b.id; } anim = null; setHover(null); intMode = { b, c }; intLight.intensity = 4; hemi.intensity = 2.6; hemi.color.setHex(0xfff1dc); hemi.groundColor.setHex(0x9a7a58); // 室内：暖色天光，点光源减弱
+      controls.enabled = false; controls.minDistance = 0.05; controls.maxDistance = 8; controls.minPolarAngle = 0.01; controls.maxPolarAngle = Math.PI - 0.01; // 室内不用 OrbitControls（拖动 = 环顾），只保留它的 target 作视线点
+      if (!hasFault('intnear')) camera.near = nearFor(camera.fov, camera.aspect) * R_INT() / CAM_R; camera.updateProjectionMatrix(); // 近平面四角 ≤0.9·R_INT
+      teleportInt(c.cam, c.tgt); KEYS.clear(); intMode.t = null; uiInterior(true); requestRender(); return { name: c.name, what: c.what, cam: c.cam, tgt: c.tgt }; }
+    function exitInterior(silent) { if (!intMode) return; const b = intMode.b, c = w3(camera.position); intMode = null; KEYS.clear(); intLight.intensity = 0; hemi.intensity = 1.35; hemi.color.setHex(0xd6e4ff); hemi.groundColor.setHex(0x5d5545);
+      controls.enabled = true; controls.minDistance = 3; controls.maxDistance = 3000; controls.minPolarAngle = 0; controls.maxPolarAngle = Math.PI * 0.495; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); uiInterior(false); lastCam = null;
+      if (!silent) { const [x0, y0, x1, y1] = b.bb, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rr = Math.hypot(x1 - x0, y1 - y0) / 2 + 22; let dx = c[0] - cx, dy = c[1] - cy; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L; // 出来：退到这栋外面斜上方看它
+        const tz = b.F[0].z + 3, tgt = [cx, cy, tz]; setV(controls.target, tgt); setV(camera.position, F.place([cx + dx * rr, cy + dy * rr, tz + rr * 0.55])); controls.update(); enforce(true); requestRender(); } }
+    function enforceInt() { const c = w3(camera.position); if (intValid(c)) { const l = intMode.last; if (!l || Math.abs(l[0] - c[0]) + Math.abs(l[1] - c[1]) + Math.abs(l[2] - c[2]) > 1e-6) intMode.foot = floorUnder(intMode.b, c[0], c[1], c[2] - EYE_I() + 0.05); intMode.last = c; return false; } setV(camera.position, intMode.last); camera.lookAt(controls.target); return true; }
+    // 一次水平位移（世界 dx,dy），分 ≤5 cm 子步；每步：脚下支撑面高差 ≤STEP_UP/DROP、球合法；被挡时沿轴向滑移；眼高按 VZ 趋近 支撑面+eye
+    function walkMove(dx, dy, dt) { const b = intMode.b; let p = w3(camera.position), foot = intMode.foot; const L = Math.hypot(dx, dy), N = Math.max(1, Math.ceil(L / 0.05)), mz = VZ * Math.max(dt, 1e-3) / N; let moved = 0;
+      for (let k = 0; k < N; k++) { let ok = false; const sx = dx / N, sy = dy / N;
+        for (const [ax, ay] of [[sx, sy], [sx, 0], [0, sy]]) { if (Math.abs(ax) + Math.abs(ay) < 1e-9) continue; const x = p[0] + ax, y = p[1] + ay, fl = floorUnder(b, x, y, foot); if (fl < foot - DROP) continue;
+          const zt = fl + EYE_I(), z = p[2] + Math.max(-mz, Math.min(mz, zt - p[2])), q = [x, y, z]; if (!intValid(q)) continue; p = q; foot = fl; ok = true; moved += Math.hypot(ax, ay); break; }
+        if (!ok) break; }
+      { const zt = foot + EYE_I(), dz = zt - p[2]; if (Math.abs(dz) > 1e-4) { const q = [p[0], p[1], p[2] + Math.max(-VZ * dt, Math.min(VZ * dt, dz))]; if (intValid(q)) p = q; } } // 停下时眼高继续趋近
+      setV(camera.position, p); intMode.foot = foot; intMode.last = p.slice(); applyLook(); state.walkSteps = (state.walkSteps || 0) + 1; return moved; }
+    const K = c => KEYS.has(c);
+    function walkUpdate(now) { if (!intMode) return false; const dt = intMode.t === null || intMode.t === undefined ? 0 : Math.min(0.1, Math.max(0, (now - intMode.t) / 1000)); intMode.t = now;
+      let f = 0, s = 0, t = 0; if (K('ArrowUp') || K('KeyW')) f++; if (K('ArrowDown') || K('KeyS')) f--; if (K('ArrowLeft') || K('KeyQ')) t++; if (K('ArrowRight') || K('KeyE')) t--; if (K('KeyA')) s++; if (K('KeyD')) s--;
+      const p = w3(camera.position), zOff = Math.abs(intMode.foot + EYE_I() - p[2]) > 1e-3; if (!f && !s && !t && !zOff) return false; if (!dt) return false;
+      look.yaw += t * TURN_V * dt; const v = (K('ShiftLeft') || K('ShiftRight') ? 2 : 1) * WALK_V * dt, cy = Math.cos(look.yaw), sy = Math.sin(look.yaw); let dx = cy * f - sy * s, dy = sy * f + cy * s; const n = Math.hypot(dx, dy); if (n > 1) { dx /= n; dy /= n; }
+      walkMove(dx * v, dy * v, dt); const q = w3(camera.position); if (!inFoot(intMode.b, q, 2.0)) exitInterior(false); // 走出这栋 2 m → 回到外景
+      return true; }
+    // 室内鼠标：拖动环顾，滚轮前后走
+    { const el = renderer.domElement; let drag = null;
+      el.addEventListener('pointerdown', e => { if (!intMode || e.button !== 0) return; drag = { x: e.clientX, y: e.clientY }; try { el.setPointerCapture(e.pointerId); } catch (er) {} });
+      el.addEventListener('pointermove', e => { if (!intMode || !drag) return; look.yaw -= (e.clientX - drag.x) * 0.004; look.pitch = Math.max(-1.52, Math.min(1.52, look.pitch - (e.clientY - drag.y) * 0.004)); drag = { x: e.clientX, y: e.clientY }; applyLook(); requestRender(); });
+      el.addEventListener('pointerup', () => { drag = null; });
+      el.addEventListener('wheel', e => { if (!intMode) return; e.preventDefault(); const s = e.deltaY < 0 ? 0.6 : -0.6; walkMove(Math.cos(look.yaw) * s, Math.sin(look.yaw) * s, 0.5); requestRender(); }, { passive: false }); }
+    addEventListener('keydown', e => { const tg = e.target && e.target.tagName; if (tg === 'INPUT' || tg === 'SELECT' || tg === 'TEXTAREA') return; if (!intMode) return;
+      if (e.code === 'Escape') { exitInterior(false); return; } if (/^(Arrow|Key[WASDQE]$|Shift)/.test(e.code)) { KEYS.add(e.code); e.preventDefault(); requestRender(); } });
+    addEventListener('keyup', e => { KEYS.delete(e.code); });
+    addEventListener('blur', () => KEYS.clear());
+    // ---------- B2：室内平面小地图（当前楼层：格属性、墙、门、階段、房间名；相机位置 + 视锥；点房间 = 跳到该房间的 C9/C10 机位）----------
+    const MM = { cv: $('mmcv'), f: -1, manual: null, view: null };
+    const camFloor = b => { const z = w3(camera.position)[2] - EYE_I(); let f = 0; for (let k = 0; k < b.F.length; k++) if (b.F[k].z <= z + 0.6) f = k; return f; };
+    const MMC = { 1: '#cdbf86', 2: '#a8865c', 3: '#a8865c', 4: '#7d746a', 5: '#5c4630', 6: '#55504a', 7: '#d9a63a', 8: '#1d1a17' }; // ROOM 畳 / IRI / ROUKA / DOMA / STAIR / ISHI / TOKO / VOID
+    function drawMinimap() { const cv = MM.cv; if (!cv || !intMode) return; const b = intMode.b, cf = camFloor(b); if (MM.cf !== cf) { MM.cf = cf; MM.manual = null; } const f = MM.manual === null ? cf : MM.manual, Fl = b.F[f], nu = b.nu, nv = b.nv;
+      const dpr = Math.min(devicePixelRatio || 1, 2), W = 260, H = 240; if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; } const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+      const pad = 10, su = BLDG.U(b, nu) - BLDG.U(b, 0), sv = BLDG.V(b, nv) - BLDG.V(b, 0), s = Math.min((W - 2 * pad) / su, (H - 2 * pad) / sv), ox = (W - su * s) / 2, oy = (H - sv * s) / 2;
+      const X = u => ox + (u - BLDG.U(b, 0)) * s, Y = v => oy + (BLDG.V(b, nv) - v) * s; MM.view = { b: b.id, f, X, Y, s, ox, oy };
+      const A = BLDG.A, oe = BLDG.openEdgeSet(b);
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = Fl.a[j * nu + i]; if (a === A.OUT) continue; let col = MMC[a] || '#888'; if (a === A.ROOM) { const rm = b.rooms[Fl.r[j * nu + i]]; col = rm && rm.kind === 'board' ? '#b89a6c' : rm && rm.kind === 'doma' ? '#7d746a' : '#cdbf86'; }
+        g.fillStyle = col; g.fillRect(X(BLDG.U(b, i)), Y(BLDG.V(b, j + 1)), s * b.cs + 0.5, s * b.cs + 0.5);
+        if (a === A.STAIR) { g.strokeStyle = 'rgba(255,240,200,.55)'; g.lineWidth = 1; g.beginPath(); const x0 = X(BLDG.U(b, i)), y0 = Y(BLDG.V(b, j + 1)), w = s * b.cs; for (let k = 0; k <= 2; k++) { g.moveTo(x0 + w * k / 2, y0); g.lineTo(x0 + w * k / 2, y0 + w); } g.stroke(); } }
+      const lab = (i, j) => (i < 0 || j < 0 || i >= nu || j >= nv || Fl.a[j * nu + i] === A.OUT) ? -1 : Fl.r[j * nu + i];
+      g.lineCap = 'square';
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const la = lab(i, j); if (la < 0 && Fl.a[j * nu + i] === A.OUT) { /* 外部格只画与内部格的边（由内部格那侧画）*/ }
+        for (let sd = 0; sd < 4; sd++) { const [di, dj] = BLDG.NB[sd], lb = lab(i + di, j + dj); if (la < 0 || la === lb) continue; if (lb >= 0 && (sd === 1 || sd === 3)) continue; // 内部隔断只画一次
+          const open = oe.has(BLDG.edgeKey(f, i, j, sd)), u0 = BLDG.U(b, sd === 0 ? i + 1 : i), u1 = BLDG.U(b, sd === 1 ? i : i + 1), v0 = BLDG.V(b, sd === 2 ? j + 1 : j), v1 = BLDG.V(b, sd === 3 ? j : j + 1);
+          const xa = X(sd < 2 ? u0 : BLDG.U(b, i)), xb = X(sd < 2 ? u0 : BLDG.U(b, i + 1)), ya = Y(sd < 2 ? BLDG.V(b, j) : v0), yb = Y(sd < 2 ? BLDG.V(b, j + 1) : v0); void u1; void v1;
+          g.strokeStyle = open ? (lb < 0 ? '#ff9a3c' : 'rgba(255,214,120,.9)') : (lb < 0 ? '#1a1410' : '#3a2c1c'); g.lineWidth = open ? (lb < 0 ? 3 : 1) : (lb < 0 ? 2.5 : 1.4); if (open && lb >= 0) g.setLineDash([2, 2]); else g.setLineDash([]);
+          g.beginPath(); g.moveTo(xa, ya); g.lineTo(xb, yb); g.stroke(); } }
+      g.setLineDash([]); MM.rooms = [];
+      g.font = '10px "PingFang SC","Noto Sans CJK SC",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (const rm of b.rooms) { if (rm.f !== f) continue; let su2 = 0, sv2 = 0, n = 0; for (let j = rm.rect[1]; j < rm.rect[3]; j++) for (let i = rm.rect[0]; i < rm.rect[2]; i++) { const q = j * nu + i; if (Fl.r[q] === rm.id && BLDG.WALKABLE(Fl.a[q]) && Fl.a[q] !== A.STAIR) { su2 += i + 0.5; sv2 += j + 0.5; n++; } } if (!n) continue;
+        let ci = su2 / n, cj = sv2 / n; { let bd = 1e9, bi = ci, bj = cj; for (let j = rm.rect[1]; j < rm.rect[3]; j++) for (let i = rm.rect[0]; i < rm.rect[2]; i++) { const q = j * nu + i; if (Fl.r[q] !== rm.id || !BLDG.WALKABLE(Fl.a[q]) || Fl.a[q] === A.STAIR) continue; const d = Math.hypot(i + 0.5 - ci, j + 0.5 - cj); if (d < bd) { bd = d; bi = i + 0.5; bj = j + 0.5; } } ci = bi; cj = bj; } // 标注点落在房间自己的格上（L 形/回字形房间）
+        const px = X(BLDG.U(b, ci)), py = Y(BLDG.V(b, cj)), nm = rm.name.split('·').pop(); MM.rooms.push({ id: rm.id, name: rm.name, px, py, f });
+        g.fillStyle = 'rgba(20,14,8,.72)'; const tw = g.measureText(nm).width + 6; g.fillRect(px - tw / 2, py - 7, tw, 14); g.fillStyle = '#f3e6c4'; g.fillText(nm, px, py + 0.5); }
+      if (f === cf) { const c = w3(camera.position), [u, v] = b.fr.l(c[0], c[1]), x = X(u), y = Y(v), a = look.yaw - b.fr.ang, hf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect), L = 5 * s;
+        g.fillStyle = 'rgba(255,220,90,.28)'; g.beginPath(); g.moveTo(x, y); g.arc(x, y, L, -(a + hf), -(a - hf)); g.closePath(); g.fill(); g.strokeStyle = 'rgba(255,220,90,.8)'; g.lineWidth = 1; g.stroke();
+        g.fillStyle = '#ff5a36'; g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); MM.cam = { x, y, a }; } else MM.cam = null;
+      const fb = $('mmf'); if (fb) { if (fb.dataset.b !== String(b.id) || fb.children.length !== b.F.length) { fb.dataset.b = b.id; fb.innerHTML = b.F.map((_, k) => `<button data-f="${k}">${k + 1}F</button>`).join(''); fb.querySelectorAll('button').forEach(bt => bt.onclick = e => { e.stopPropagation(); MM.manual = +bt.dataset.f === camFloor(b) ? null : +bt.dataset.f; drawMinimap(); }); }
+        fb.querySelectorAll('button').forEach(bt => bt.classList.toggle('on', +bt.dataset.f === f)); }
+      const tt = $('mmt'); if (tt) tt.textContent = b.name + ' · ' + (f + 1) + '階' + (f === cf ? '' : '（查看中）'); MM.t = performance.now(); }
+    function mmJump(roomId) { if (!intMode) return false; const b = intMode.b, c = camsOf(b).find(q => q.room === roomId); if (!c) return false; teleportInt(c.cam, c.tgt); MM.manual = null; drawMinimap(); requestRender(); state.mmJumps = (state.mmJumps || 0) + 1; return { name: c.name, cam: c.cam }; }
+    if (MM.cv) MM.cv.addEventListener('click', e => { if (!intMode || !MM.view) return; const r = MM.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, V = MM.view, b = intMode.b;
+      const u = BLDG.U(b, 0) + (x - V.ox) / V.s, v = BLDG.V(b, b.nv) - (y - V.oy) / V.s, i = Math.floor((u - BLDG.U(b, 0)) / b.cs), j = Math.floor((v - BLDG.V(b, 0)) / b.cs); if (i < 0 || j < 0 || i >= b.nu || j >= b.nv) return;
+      const Fl = b.F[V.f], q = j * b.nu + i; if (Fl.a[q] === BLDG.A.OUT) return; mmJump(Fl.r[q]); });
+    function uiInterior(on) { const lb = world && world.getObjectByName('labels'); if (lb) lb.visible = on ? false : P.labels; // 室内：外景建筑标注隐藏，出来再按开关恢复
+      for (const id of ['minimap', 'khint']) { const el = $(id); if (el) el.style.display = on ? 'block' : 'none'; } const h = $('hint'); if (h) h.style.display = on ? 'none' : ''; if (on) { MM.manual = null; MM.cf = -1; drawMinimap(); } }
+    // ---------- B2：外景里选建筑——悬停高亮（半透明体 + 边框 + 名称），单击进入（入口机位 = C9 门槛点，看向进门路线）----------
+    const HL = new THREE.Group(); HL.name = 'bldg-hl'; HL.visible = false; HL.renderOrder = 5;
+    { const bg = new THREE.BoxGeometry(1, 1, 1); HL.add(new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ color: 0xffc640, transparent: true, opacity: 0.28, depthWrite: false })), new THREE.LineSegments(new THREE.EdgesGeometry(bg), new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.95 }))); } scene.add(HL);
+    let hover = null; const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    function bObb(b) { if (b._obb) return b._obb; const H = BLDG.exterior(b, { hullOnly: true }).hull; const o = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; for (const m in H) { const a = H[m]; for (let k = 0; k < a.length; k += 3) { const [u, v] = b.fr.l(a[k], a[k + 1]); o[0] = Math.min(o[0], u); o[1] = Math.min(o[1], v); o[2] = Math.min(o[2], a[k + 2]); o[3] = Math.max(o[3], u); o[4] = Math.max(o[4], v); o[5] = Math.max(o[5], a[k + 2]); } }
+      Object.defineProperty(b, '_obb', { value: o, enumerable: false, configurable: true }); return o; }
+    function pickBldg(cx, cy) { if (!bw || !F || intMode) return null; const r = renderer.domElement.getBoundingClientRect(); ndc.set((cx - r.left) / r.width * 2 - 1, -(cy - r.top) / r.height * 2 + 1); ray.setFromCamera(ndc, camera);
+      const o = w3(ray.ray.origin), d = [ray.ray.direction.x, -ray.ray.direction.z, ray.ray.direction.y]; let best = null;
+      for (const b of bw.list) { const B = bObb(b), [u, v] = b.fr.l(o[0], o[1]), du = d[0] * b.fr.c + d[1] * b.fr.s, dv = -d[0] * b.fr.s + d[1] * b.fr.c, lo = [u, v, o[2]], dl = [du, dv, d[2]]; let t0 = 0, t1 = 1e5;
+        for (let k = 0; k < 3; k++) { if (Math.abs(dl[k]) < 1e-12) { if (lo[k] < B[k] || lo[k] > B[k + 3]) { t0 = 2e5; break; } continue; } let a = (B[k] - lo[k]) / dl[k], c = (B[k + 3] - lo[k]) / dl[k]; if (a > c) { const tt = a; a = c; c = tt; } t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) break; }
+        if (t0 <= t1 && (!best || t0 < best.t)) best = { b, t: t0 }; }
+      if (!best) return null; const h = [o[0] + d[0] * best.t, o[1] + d[1] * best.t, o[2] + d[2] * best.t], e = [h[0] - d[0] * 0.5, h[1] - d[1] * 0.5, h[2] - d[2] * 0.5];
+      if (best.t > 1 && F.segHit(o, e)) return null; // 被地形/别的实体挡住：不选
+      return best.b; }
+    function setHover(b, cx, cy) { const tip = $('btip'); if (!b) { if (hover) { hover = null; HL.visible = false; requestRender(); } if (tip) tip.style.display = 'none'; renderer.domElement.style.cursor = ''; return; }
+      if (hover !== b) { hover = b; const B = bObb(b), cu = (B[0] + B[3]) / 2, cv = (B[1] + B[4]) / 2, [x, y] = b.fr.w(cu, cv); HL.position.copy(W(x, y, (B[2] + B[5]) / 2)); HL.rotation.set(0, b.fr.ang, 0); HL.scale.set(B[3] - B[0] + 0.6, B[5] - B[2] + 0.4, B[4] - B[1] + 0.6); HL.visible = true; requestRender(); }
+      if (tip) { tip.innerHTML = `<b>${b.name}</b><br>${b.tier === 'measured' ? '实测外观' : '推定'} · ${b.F.length} 層 · ${b.rooms.length} 室<br><span>单击进入室内</span>`; tip.style.display = 'block'; tip.style.left = (cx + 16) + 'px'; tip.style.top = (cy + 12) + 'px'; } renderer.domElement.style.cursor = 'pointer'; }
+    { const el = renderer.domElement; let down = null, lastPick = 0;
+      el.addEventListener('pointermove', e => { if (intMode) return; if (e.buttons) { setHover(null); return; } const t = performance.now(); if (t - lastPick < 50) return; lastPick = t; setHover(pickBldg(e.clientX, e.clientY), e.clientX, e.clientY); });
+      el.addEventListener('pointerleave', () => setHover(null));
+      el.addEventListener('pointerdown', e => { down = intMode || e.button !== 0 ? null : { x: e.clientX, y: e.clientY, t: performance.now() }; });
+      el.addEventListener('pointerup', e => { if (!down || intMode) return; const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null; if (moved > 5 || dt > 600) return;
+        const b = pickBldg(e.clientX, e.clientY); if (!b) return; enterInterior(b.id, 'entrance'); updateInteriors(); const s = $('bsel'); if (s) s.value = b.id; state.clickEnter = (state.clickEnter || 0) + 1; }); }
 
     // ---------- 构建 ----------
     let site = null, world = null, tenshuProto = null, bw = null; const BLDG = window.CASTLE_BLDG;
@@ -498,8 +633,8 @@
     }
     const clamp01 = t => t < 0 ? 0 : t > 1 ? 1 : t;
     function buildField() {
-      const t0 = performance.now(); F = CAMX.create(site, { R: CAM_R, keepTris: P.camgeo }); world.updateMatrixWorld(true);
-      const skip = new Set(['terrain', 'outer', 'water', 'labels', 'bad', 'bldg', 'bldg-far', 'bldg-int']), m4 = new THREE.Matrix4(), mm = new THREE.Matrix4();
+      const t0 = performance.now(); F = CAMX.create(site, { R: CAM_R, keepTris: P.camgeo, outerZ: hasFault('ring') ? null : OUTER_Z, outerTris: hasFault('ring') ? null : OUTER_T }); GI = null; world.updateMatrixWorld(true);
+      const skip = new Set(['terrain', 'outer', 'ring', 'water', 'labels', 'bad', 'bldg', 'bldg-far', 'bldg-int', 'bldg-hl']), m4 = new THREE.Matrix4(), mm = new THREE.Matrix4();
       const walk = o => { if (skip.has(o.name) || o.isSprite) return; if (o.isMesh && o.geometry) { const g = o.geometry, pos = g.attributes.position.array, idx = g.index ? g.index.array : null;
           if (o.isInstancedMesh) { for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); mm.multiplyMatrices(o.matrixWorld, m4); F.addTris(pos, idx, mm.elements, true); } }
           else F.addTris(pos, idx, o.matrixWorld.equals(new THREE.Matrix4()) ? null : o.matrixWorld.elements); }
@@ -546,6 +681,7 @@
     addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); requestRender(); });
     function step(now) {
       let moved = false; if (!F) return false;
+      if (intMode) { if (walkUpdate(now)) moved = true; if (intMode && enforce()) moved = true; if (intMode && (moved || !(now - (MM.t || 0) < 1000))) drawMinimap(); if (!(now - (state.intT || 0) < 500)) { state.intT = now; updateInteriors(); } return moved; } // 室内：步行 + 约束，不走 OrbitControls
       if (anim) { const k = (now - anim.s) / (anim.pth.dur * 1000), q = anim.pth.at(k); setV(camera.position, q.cam); setV(controls.target, q.tgt); moved = true;
         if (k >= 1) { if (anim.i + 1 < anim.list.length) { anim.i++; anim.s = now; anim.pth = anim.list[anim.i]; } else anim = null; } }
       if (controls.update()) moved = true;
@@ -568,7 +704,7 @@
       { id: 'C6', name: '每座门：眼高 1.6 m 沿 H14 路线穿过门洞，全程清空（失败门数）' },
       { id: 'C7', name: '快速拖动/穿越模糊测试：相邻两帧之间球心不穿过任何几何' },
       { id: 'C8', name: '每座木桥：相机球贴水面从桥下两墩之间横穿，全程清空（失败桥数）' },
-    ].concat(BLDG.CRULES);
+    ].concat(BLDG.CRULES, [{ id: 'C11', name: '看不到地下：外景多起点拖拽/缩放模糊 + 室内步行/环顾模糊，相机球与近平面四角始终在渲染地面之上、不在实体内（违规步数）' }]);
     // C8（r5）：木桥下的船行通道——在跨中所在的那一跨（两支点之间）中线上，球心离水面 R+0.4，垂直于桥轴横穿桥下；
     // 要求：跨净宽 ≥ 2R+0.6、桥底净空够、两端合法且向上开放、直线扫掠全程合法、逐帧 move() 走完全程不被挡（不滑移）
     function bridgeUnder() {
@@ -590,9 +726,9 @@
     function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
     // 模糊测试：随机施加 OrbitControls 的操作（旋转/缩放/平移/穿过目标的推拉，含大幅度；以及把目标瞬移到全城任意处），然后跑真实的一帧约束
     // mode: 'new'（web-r4 扫掠）| 'r3'（web-r3 柱状场抬升）| 'none'（r2 无约束）
-    function fuzz(n, seed, mode, geo, start) {
-      const save = cur(), rnd = rng(seed || 7), sp = new THREE.Spherical(), off = new THREE.Vector3(); let bad = 0, badGeo = 0, checked = 0, tun = 0; const ex = [], exT = [];
-      if (start) { const v = PRE[start]; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); lastCam = v.cam.slice(); }
+    function fuzz(n, seed, mode, geo, start, chk) {
+      const save = cur(), rnd = rng(seed || 7), sp = new THREE.Spherical(), off = new THREE.Vector3(); let bad = 0, badGeo = 0, checked = 0, tun = 0, cbad = 0; const ex = [], exT = [], cex = [];
+      if (start) { const v = typeof start === 'string' ? PRE[start] : start; setV(camera.position, v.cam); setV(controls.target, v.tgt); controls.update(); lastCam = v.cam.slice(); }
       if (mode === 'new') enforce(!lastCam || !F.valid(lastCam));
       for (let i = 0; i < n; i++) {
         const a = rnd(), prev = w3(camera.position); let jump = false;
@@ -606,10 +742,64 @@
         const mv = mode === 'new' && !jump ? (F.lastMove() || [prev, c]) : [prev, c]; let hit = false; if (!jump) for (let k = 1; k < mv.length && !hit; k++) hit = !!F.segHit(mv[k - 1], mv[k]);
         if (hit) { tun++; if (exT.length < 3) exT.push([prev.map(v => +v.toFixed(1)), c.map(v => +v.toFixed(1))]); }
         if (geo && F.hasGeo() && i % geo === 0) { checked++; if (F.geoCheck(c)) badGeo++; }
+        if (chk) { const r = chk(); if (r) { cbad++; if (cex.length < 4) cex.push(r + ' @' + c.map(v => v.toFixed(1)) + ' tgt ' + w3(controls.target).map(v => v.toFixed(1))); } }
       }
       setV(camera.position, save.cam); setV(controls.target, save.tgt); controls.update(); lastCam = null; if (mode === 'new') enforce(true); requestRender();
-      return { n, bad, badGeo, checked, ex, tun, exT };
+      return { n, bad, badGeo, checked, ex, tun, exT, cbad, cex };
     }
+    // ---------- B2：C11 —— 相机永远看不到地下：独立于碰撞场的“渲染地面”检查 ----------
+    // 渲染地面索引：直接读渲染用的网格缓冲（细网格地形 terrain + 外圈 outer + 大环 ring），4 m 桶，(x,y) 处覆盖三角形的最高插值（不经相机碰撞场的任何函数）
+    let GI = null;
+    function groundIdx() { if (GI && GI.world === world) return GI; const B = 4; world.updateMatrixWorld(true); const meshes = [];
+      world.traverse(m => { if (m.isMesh && (m.name === 'terrain' || m.name === 'outer' || m.name === 'ring')) meshes.push(m); });
+      let nt = 0; for (const m of meshes) { const g = m.geometry; nt += Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3); }
+      const T = new Float32Array(nt * 9), bb = new Int32Array(nt * 4), big = []; let t9 = 0, kx0 = 1e9, ky0 = 1e9, kx1 = -1e9, ky1 = -1e9; // 类型数组 + CSR 桶（审计完就释放；r10 初版用 JS 数组常驻 ~130 MB）
+      for (const m of meshes) { const g = m.geometry, Pa = g.attributes.position.array, I = g.index ? g.index.array : null, nn = I ? I.length : Pa.length / 3, e = m.matrixWorld.elements;
+        for (let t = 0; t + 2 < nn; t += 3) { for (let v = 0; v < 3; v++) { const k = I ? I[t + v] : t + v, x = Pa[k * 3], y = Pa[k * 3 + 1], z = Pa[k * 3 + 2]; T[t9 + v * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; T[t9 + v * 3 + 1] = -(e[2] * x + e[6] * y + e[10] * z + e[14]); T[t9 + v * 3 + 2] = e[1] * x + e[5] * y + e[9] * z + e[13]; }
+          const o = t9 / 9, x0 = Math.min(T[t9], T[t9 + 3], T[t9 + 6]), x1 = Math.max(T[t9], T[t9 + 3], T[t9 + 6]), y0 = Math.min(T[t9 + 1], T[t9 + 4], T[t9 + 7]), y1 = Math.max(T[t9 + 1], T[t9 + 4], T[t9 + 7]);
+          if (x1 - x0 > 400 || y1 - y0 > 400) { big.push(t9); bb[o * 4] = 1; bb[o * 4 + 1] = 0; } else { const a0 = Math.floor(x0 / B), a1 = Math.floor(x1 / B), b0 = Math.floor(y0 / B), b1 = Math.floor(y1 / B); bb[o * 4] = a0; bb[o * 4 + 1] = a1; bb[o * 4 + 2] = b0; bb[o * 4 + 3] = b1; kx0 = Math.min(kx0, a0); kx1 = Math.max(kx1, a1); ky0 = Math.min(ky0, b0); ky1 = Math.max(ky1, b1); }
+          t9 += 9; } }
+      const NXk = kx1 - kx0 + 1, NYk = ky1 - ky0 + 1, cnt = new Int32Array(NXk * NYk + 1);
+      for (let o = 0; o < nt; o++) { if (bb[o * 4] > bb[o * 4 + 1]) continue; for (let j = bb[o * 4 + 2]; j <= bb[o * 4 + 3]; j++) for (let i = bb[o * 4]; i <= bb[o * 4 + 1]; i++) cnt[(j - ky0) * NXk + (i - kx0) + 1]++; }
+      for (let q = 0; q < NXk * NYk; q++) cnt[q + 1] += cnt[q]; const IT = new Int32Array(cnt[NXk * NYk]), fill = cnt.slice(0, NXk * NYk);
+      for (let o = 0; o < nt; o++) { if (bb[o * 4] > bb[o * 4 + 1]) continue; for (let j = bb[o * 4 + 2]; j <= bb[o * 4 + 3]; j++) for (let i = bb[o * 4]; i <= bb[o * 4 + 1]; i++) IT[fill[(j - ky0) * NXk + (i - kx0)]++] = o * 9; }
+      const tz = (o, x, y) => { const ax = T[o], ay = T[o + 1], bx = T[o + 3], by = T[o + 4], cx = T[o + 6], cy = T[o + 7], d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy); if (Math.abs(d) < 1e-12) return -1e9; const l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d, l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d, l3 = 1 - l1 - l2; return l1 < -1e-7 || l2 < -1e-7 || l3 < -1e-7 ? -1e9 : l1 * T[o + 2] + l2 * T[o + 5] + l3 * T[o + 8]; };
+      const zAt = (x, y) => { let best = -1e9; const i = Math.floor(x / B) - kx0, j = Math.floor(y / B) - ky0; if (i >= 0 && j >= 0 && i < NXk && j < NYk) { const q = j * NXk + i; for (let s = cnt[q]; s < cnt[q + 1]; s++) { const z = tz(IT[s], x, y); if (z > best) best = z; } } for (const o of big) { const z = tz(o, x, y); if (z > best) best = z; } return best; };
+      GI = { world, zAt, tris: nt }; return GI; }
+    const NCV = new THREE.Vector3();
+    function nearCorners() { camera.updateMatrixWorld(); const t = Math.tan(camera.fov * Math.PI / 360), hh = camera.near * t, hw = hh * camera.aspect, out = []; for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { NCV.set(sx * hw, sy * hh, -camera.near).applyMatrix4(camera.matrixWorld); out.push(w3(NCV)); } return out; }
+    // 外景：球心到渲染地面（13 个水平偏移处的竖直间隙 ≥ √(R²−ρ²)·0.98）+ 近平面四角在渲染地面之上 + 实体（F.clear）
+    function c11Ext() { const G = groundIdx(), c = w3(camera.position), R = CAM_R;
+      for (const rho of [0, 0.5, 0.9]) for (let a = 0; a < (rho ? 8 : 1); a++) { const x = c[0] + rho * R * Math.cos(a * Math.PI / 4), y = c[1] + rho * R * Math.sin(a * Math.PI / 4); if (c[2] - G.zAt(x, y) < Math.sqrt(1 - rho * rho) * R * 0.98 - 1e-3) return 'ext:sphere-below-render-ground'; }
+      for (const q of nearCorners()) if (q[2] <= G.zAt(q[0], q[1])) return 'ext:near-plane-below-ground';
+      if (!F.clear(c, 1e-3)) return 'ext:solid'; return null; }
+    // 室内：球合法（建筑盒 + 出门后的外景场）+ 近平面角距 < R_INT + 四角不在实体内、在渲染地面之上
+    function c11Int() { const b = intMode.b, c = w3(camera.position), G = groundIdx(), R = R_INT(); if (!intValid(c)) return 'int:sphere';
+      const t = Math.tan(camera.fov * Math.PI / 360), corner = camera.near * Math.sqrt(1 + t * t * (1 + camera.aspect * camera.aspect)); if (!(corner < R)) return 'int:near-plane ' + corner.toFixed(2) + ' m ≥ R ' + R;
+      for (const q of nearCorners()) { if (q[2] <= G.zAt(q[0], q[1])) return 'int:near-below-ground'; if (BLDG.clearance(b, q, 0.05) <= 0) return 'int:near-in-solid'; } if (c[2] - G.zAt(c[0], c[1]) < R - 1e-3) return 'int:below-ground'; return null; }
+    // 起点：网格边界（角 + 边中）、±700 m 外圈边、远处大环（1.1/1.8/2.6 km × 8 方向）、石垣顶线与堀岸（各曲轮石垣边）、建筑基础四角
+    function c11Starts(rnd) { const G = groundIdx(), gs = SITE.SPEC.grid, out = [];
+      const add = (x, y, tag) => { const z = Math.max(G.zAt(x, y), site.wzAt(x, y)); if (!(z > -1e8)) return; const d = 4 + rnd() * 40, az = rnd() * Math.PI * 2, el = (2 + rnd() * 30) * Math.PI / 180, tgt = [x, y, z + 0.5]; out.push({ tag, tgt, cam: F.place([x + Math.cos(az) * Math.cos(el) * d, y + Math.sin(az) * Math.cos(el) * d, z + 0.5 + Math.sin(el) * d]) }); };
+      for (const [x, y] of [[gs.x0, gs.y0], [gs.x1, gs.y0], [gs.x0, gs.y1], [gs.x1, gs.y1], [0, gs.y0], [0, gs.y1], [gs.x0, 0], [gs.x1, 0]]) add(x, y, 'grid-edge');
+      for (const [x, y] of [[-700, -700], [700, -700], [-700, 700], [700, 700], [0, -700], [0, 700], [-700, 0], [700, 0]]) add(x * 0.999, y * 0.999, 'outer-edge');
+      for (const r of [1100, 1800, 2600]) for (let a = 0; a < 8; a++) add(Math.cos(a * Math.PI / 4 + 0.2) * r, Math.sin(a * Math.PI / 4 + 0.2) * r, 'ring');
+      const E = []; for (const g of site.regions) for (const e of g.edges || []) if (e.B && e.len > 8) E.push(e); for (let k = 0; k < 14 && E.length; k++) { const e = E[Math.floor(k * E.length / 14)], mx = (e.ax + e.bx) / 2, my = (e.ay + e.by) / 2; add(mx - e.nx * (e.B + 1), my - e.ny * (e.B + 1), 'ishigaki-crest'); add(mx + e.nx * 3, my + e.ny * 3, 'moat-bank'); }
+      for (let k = 0; k < Math.min(10, bw ? bw.list.length : 0); k++) { const b = bw.list[Math.floor(k * bw.list.length / 10)]; add(b.bb[0] - 1, b.bb[1] - 1, 'bldg-base'); add(b.bb[2] + 1, b.bb[3] + 1, 'bldg-base'); }
+      return out; }
+    function saveCam() { return { cam: w3(camera.position), tgt: w3(controls.target), int: intMode && { id: intMode.b.id, cam: w3(camera.position), yaw: look.yaw, pitch: look.pitch, foot: intMode.foot } }; }
+    function restoreCam(s) { if (s.int) { if (!intMode || intMode.b.id !== s.int.id) { if (intMode) exitInterior(true); enterInterior(s.int.id, null, { noMesh: interiors.has(s.int.id) ? false : true }); } setV(camera.position, s.int.cam); look.yaw = s.int.yaw; look.pitch = s.int.pitch; applyLook(); intMode.foot = s.int.foot; intMode.last = s.int.cam.slice(); }
+      else { if (intMode) exitInterior(true); setV(camera.position, s.cam); setV(controls.target, s.tgt); controls.update(); lastCam = null; enforce(true); } requestRender(); }
+    // 室内模糊：每栋从各房间机位出发，随机 按键步行（真实 walkUpdate，合成时钟）/ 转身 / 俯仰到 ±87° / 滚轮 / 拖动式乱移（enforce）/ 小地图跳房间；每步查 c11Int
+    function c11IntFuzz(b, n, rnd, out) { const cams = camsOf(b); if (!cams.length) return; enterInterior(b.id, cams[Math.floor(rnd() * cams.length)].room, { noMesh: true }); const save = new Set(KEYS); let t = 1000;
+      const chk = what => { out.n++; const r = c11Int(); if (r) { out.bad++; if (out.ex.length < 6) out.ex.push(b.name + ' ' + what + ' ' + r + ' @' + w3(camera.position).map(v => v.toFixed(2))); } };
+      const ks = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyD', 'KeyS'];
+      for (let i = 0; i < n && intMode; i++) { const a = rnd();
+        if (a < 0.45) { KEYS.clear(); KEYS.add(ks[Math.floor(rnd() * ks.length)]); if (rnd() < 0.3) KEYS.add(ks[Math.floor(rnd() * ks.length)]); const steps = 5 + Math.floor(rnd() * 60); intMode.t = t; for (let s = 0; s < steps && intMode; s++) { t += 33; walkUpdate(t); if (intMode) chk('walk'); } KEYS.clear(); }
+        else if (a < 0.6) { look.yaw += (rnd() - 0.5) * 4; look.pitch = Math.max(-1.52, Math.min(1.52, (rnd() - 0.5) * 3.04)); applyLook(); chk('look'); }
+        else if (a < 0.7) { const s = rnd() < 0.5 ? 0.6 : -0.6; walkMove(Math.cos(look.yaw) * s, Math.sin(look.yaw) * s, 0.5); chk('wheel'); }
+        else if (a < 0.85) { const c = w3(camera.position); setV(camera.position, [c[0] + (rnd() - 0.5) * 2.5, c[1] + (rnd() - 0.5) * 2.5, c[2] + (rnd() - 0.5) * 2]); enforce(); applyLook(); chk('drag'); }
+        else { const rs = b.rooms; mmJump(rs[Math.floor(rnd() * rs.length)].id); chk('jump'); } }
+      KEYS.clear(); for (const k of save) KEYS.add(k); if (intMode) exitInterior(true); }
     const C7_STARTS = ['otegate', 'otejoint', 'sakura', 'eastwall', 'tenshu'];
     function tunnelFuzz(mode, n, seed) { let tun = 0, bad = 0; const ex = []; C7_STARTS.forEach((v, i) => { const f = fuzz(n || 120, (seed || 101) + i, mode, 0, v); tun += f.tun; bad += f.bad; ex.push(...f.exT); }); return { tun, bad, ex: ex.slice(0, 3) }; }
     function gateAudit(old) { const out = []; for (const g of site.gates) { const r = old ? gateRoute(g, q => F.clearOld(q, 1e-3)) : route(g.spec.id); out.push({ gate: g.name, ok: !!r.ok, why: r.why, bad: r.bad, thr: r.thr && +r.thr.toFixed(2), n: r.pts && r.pts.length, eye: r.eyeMin !== undefined ? [+r.eyeMin.toFixed(2), +r.eyeMax.toFixed(2)] : null }); } return out; }
@@ -618,7 +808,7 @@
     function cameraAudit(o) { const it = camAuditSteps(o); let r = it.next(); while (!r.done) r = it.next(); return r.value; }
     function cameraAuditAsync(o, done) { const it = camAuditSteps(o); const st = () => { const r = it.next(); if (r.done) done(r.value); else setTimeout(st, 0); }; setTimeout(st, 0); }
     function* camAuditSteps(o) { const TS = state.camStages = []; let tS = performance.now(); const lap = n => { const t = performance.now(); TS.push([n, Math.round(t - tS)]); tS = t; };
-      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
+      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0, C11: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
       const pre = {}; for (const k of names) pre[k] = legacy ? { cam: LEGACY[k][0], tgt: LEGACY[k][1] } : PRE[k];
       for (const k of names) { const p = pre[k]; if (k !== names[0]) yield;
         if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机球不合法 ' + p.cam.map(v => v.toFixed(1))); }
@@ -639,8 +829,16 @@
         bu = bridgeUnder(); cnt.C8 = bu.filter(q => !q.ok).length; for (const q of bu) { if (!q.ok) items.push('C8 ' + q.bridge + ' 桥下横穿失败（' + q.why + '）'); geo.C8 += q.geo; } }
       lap('C8'); let bint = null;
       if (!legacy && !o.old && bw) { bint = { rooms: 0, paths: 0 }; for (const b of bw.list) { yield; const R = BLDG.camAudit(site, bw, { only: b.id }); cnt.C9 += R.cnt.C9; cnt.C10 += R.cnt.C10; bint.rooms += R.rooms; bint.paths += R.paths; for (const it of R.items) items.push(it.rule + ' ' + it.msg); } lap('C9C10'); }
+      let c11 = null;
+      if (!legacy && !o.old) { yield; const rnd = rng((o.seed || 7) + 911), tg0 = performance.now(), G = groundIdx(), msIdx = Math.round(performance.now() - tg0); c11 = { ext: { starts: 0, n: 0, bad: 0, ex: [], byTag: {} }, int: { bldgs: 0, n: 0, bad: 0, ex: [] }, groundTris: G.tris };
+        c11.msIdx = msIdx; const tx = performance.now(); const nd0 = need, sv = saveCam(); if (intMode) exitInterior(true); const starts = c11Starts(rnd); restoreCam(sv); need = nd0; c11.msStarts = Math.round(performance.now() - tx); let msE = 0, msI = 0;
+        for (let k = 0; k < starts.length; k++) { if (k % 6 === 0) yield; const te = performance.now(), nd0 = need, sv2 = saveCam(); if (intMode) exitInterior(true); const st = starts[k], fz = fuzz(o.c11n || 30, (o.seed || 7) * 131 + k, 'new', 0, st, c11Ext); restoreCam(sv2); need = nd0; msE += performance.now() - te;
+          c11.ext.starts++; c11.ext.n += fz.n; c11.ext.bad += fz.cbad; if (fz.cbad) { c11.ext.byTag[st.tag] = (c11.ext.byTag[st.tag] || 0) + fz.cbad; for (const e of fz.cex) if (c11.ext.ex.length < 6) c11.ext.ex.push(st.tag + ' ' + e); } }
+        if (bw) for (const b of bw.list) { yield; const ti = performance.now(), nd0 = need, sv3 = saveCam(); c11IntFuzz(b, o.c11i || 24, rnd, c11.int); restoreCam(sv3); need = nd0; c11.int.bldgs++; msI += performance.now() - ti; } c11.msExt = Math.round(msE); c11.msInt = Math.round(msI);
+        cnt.C11 = c11.ext.bad + c11.int.bad; if (cnt.C11) items.push('C11 外景 ' + c11.ext.bad + '/' + c11.ext.n + ' 步、室内 ' + c11.int.bad + '/' + c11.int.n + ' 步看得到地下/在实体内，例 ' + (c11.ext.ex[0] || c11.int.ex[0]));
+        GI = null; lap('C11'); } // 渲染地面索引只给审计用，审计完释放
       const total = Object.values(cnt).reduce((s, v) => s + v, 0);
-      return { total, cnt, items, geo, gates, c7: tf, bridges: bu, interiors: bint, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
+      return { total, cnt, items, geo, gates, c7: tf, bridges: bu, interiors: bint, c11, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
     }
     function showCamAudit(A) {
       const el = $('camaudit'); if (!el) return; const ok = A.total === 0;
@@ -655,7 +853,7 @@
     if ($('benter')) $('benter').onclick = () => { const id = +$('bsel').value; enterInterior(id); updateInteriors(); };
     if ($('bexit')) $('bexit').onclick = () => exitInterior(false);
     fillBsel();
-    $('labels').checked = P.labels; $('labels').onchange = e => { P.labels = e.target.checked; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels; requestRender(); };
+    $('labels').checked = P.labels; $('labels').onchange = e => { P.labels = e.target.checked; writeHash(P); const l = world.getObjectByName('labels'); if (l) l.visible = P.labels && !intMode; requestRender(); };
     $('lost').checked = P.lost; $('lost').onchange = e => { P.lost = e.target.checked; writeHash(P); $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状'; buildWorld(P); };
     $('era').textContent = P.lost ? '江戸盛期（含失传橹）' : '现状';
     $('seed').value = P.seed; $('seed').onchange = e => { P.seed = Math.max(1, +e.target.value | 0); writeHash(P); buildWorld(P); };
@@ -669,6 +867,14 @@
     state.renderNow = () => { controls.update(); renderer.render(scene, camera); };
     state.enterInterior = (id, room) => { const r = enterInterior(id, room); updateInteriors(); renderer.render(scene, camera); return r; }; state.exitInterior = () => exitInterior(false); state.intMode = () => intMode && { b: intMode.b.id, name: intMode.b.name };
     state.interiorFor = id => { const b = bw.list[id]; const e = interiorFor(b); return { ms: e.ms }; }; state.updateInteriors = updateInteriors; state.interiorsBuilt = () => [...interiors.keys()]; state.bldgClear = (id, q) => BLDG.clearance(bw.list[id], q, 1);
+    // B2：测试钩子
+    state.keys = KEYS; state.walkUpdate = now => walkUpdate(now); state.walkMove = (dx, dy, dt) => walkMove(dx, dy, dt); state.lookYP = look; state.applyLook = applyLook; state.intValid = p => intValid(p);
+    state.minimap = () => { const el = $('minimap'); return { visible: !!(el && el.style.display === 'block' && el.offsetWidth > 0), floor: MM.view && MM.view.f, camFloor: intMode ? camFloor(intMode.b) : null, rooms: (MM.rooms || []).map(r => ({ id: r.id, name: r.name, px: r.px, py: r.py })), cam: MM.cam, rect: el && MM.cv.getBoundingClientRect().toJSON() }; };
+    state.mmJump = id => mmJump(id); state.drawMinimap = () => drawMinimap();
+    state.hover = () => hover && hover.id; state.hlVisible = () => HL.visible; state.pick = (x, y) => { const b = pickBldg(x, y); return b ? b.id : null; };
+    state.bldgScreen = id => { const b = bw.list[id], B = bObb(b), [x, y] = b.fr.w((B[0] + B[3]) / 2, (B[1] + B[4]) / 2), v = W(x, y, B[2] + (B[5] - B[2]) * 0.6).project(camera), r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, z: v.z }; };
+    state.labelsVisible = () => { const l = world.getObjectByName('labels'); return !!(l && l.visible); };
+    state.c11Ext = () => c11Ext(); state.c11Int = () => intMode ? c11Int() : null; state.groundZ = (x, y) => groundIdx().zAt(x, y);
     state.rebuild = o => { Object.assign(P, o); writeHash(P); buildWorld(P); };
     state.loadMs = Math.round(performance.now() - T0);
     state.ready = true; $('load').remove();
