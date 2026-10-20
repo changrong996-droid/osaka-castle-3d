@@ -577,9 +577,10 @@
       const info = mmInfo(b, f), dpr = T.dpr, Wd = T.W * dpr, Hd = T.H * dpr, placed = [], out = [], seen = new Set(), pad = 3 * dpr;
       const box = bb => { const r = mmCellRect(b, T, bb[0], bb[1], bb[2], bb[3]); return [r[0], r[1], r[0] + r[2], r[1] + r[3]]; };
       const cand = [];
-      for (const h of info.halls) { const [cu, cv] = [BLDG.U(b, (h.bb[0] + h.bb[2]) / 2), BLDG.V(b, (h.bb[1] + h.bb[3]) / 2)]; cand.push({ text: h.name, at: T.X(cu, cv), reg: box(h.bb), fs: 12.5, w: 700, pr: 0, area: h.n }); }
+      const hallShort = n => { let t = n.split('・').pop(); if (t.replace(/\(.*\)/, '').length >= 4) t = t.replace(/^御/, ''); return t; }; // r14：拟合御殿 19 栋——殿名缩短（御伺公間・御使者間 → 使者間，御対面所 → 対面所），放不下再缩字号
+      for (const h of info.halls) { const [cu, cv] = [BLDG.U(b, (h.bb[0] + h.bb[2]) / 2), BLDG.V(b, (h.bb[1] + h.bb[3]) / 2)]; for (const fs of [12.5, 10.5, 9]) cand.push({ text: hallShort(h.name), at: T.X(cu, cv), reg: box(h.bb), fs, w: 700, pr: 0, area: h.n }); }
       for (const r of info.rooms) { if (r.kind === 'iri' || r.kind === 'rouka') continue; cand.push({ text: r.short, at: T.X(BLDG.U(b, r.ci), BLDG.V(b, r.cj)), reg: box(r.bb), fs: 11, w: 500, pr: 1, area: r.n, id: r.id }); }
-      cand.sort((p, q) => p.pr - q.pr || q.area - p.area);
+      cand.sort((p, q) => p.pr - q.pr || q.area - p.area || q.fs - p.fs);
       for (const c of cand) { if (seen.has(c.text)) continue; g.font = `${c.w} ${c.fs * dpr}px ${MMFONT}`; const tw = g.measureText(c.text).width, th = c.fs * dpr * 1.15, x0 = c.at[0] - tw / 2, y0 = c.at[1] - th / 2, x1 = x0 + tw, y1 = y0 + th;
         if (x0 < c.reg[0] + dpr || x1 > c.reg[2] - dpr || y0 < c.reg[1] + dpr || y1 > c.reg[3] - dpr) continue; // 必须放进自己的房间/殿
         if (x0 < 2 * dpr || y0 < 2 * dpr || x1 > Wd - 2 * dpr || y1 > Hd - 2 * dpr) continue;
@@ -644,7 +645,7 @@
       return best.b; }
     function setHover(b, cx, cy) { const tip = $('btip'); if (!b) { if (hover) { hover = null; HL.visible = false; requestRender(); } if (tip) tip.style.display = 'none'; renderer.domElement.style.cursor = ''; return; }
       if (hover !== b) { hover = b; const B = bObb(b), cu = (B[0] + B[3]) / 2, cv = (B[1] + B[4]) / 2, [x, y] = b.fr.w(cu, cv); HL.position.copy(W(x, y, (B[2] + B[5]) / 2)); HL.rotation.set(0, b.fr.ang, 0); HL.scale.set(B[3] - B[0] + 0.6, B[5] - B[2] + 0.4, B[4] - B[1] + 0.6); HL.visible = true; requestRender(); }
-      if (tip) { tip.innerHTML = `<b>${b.name}</b><br>${b.tier === 'measured' ? '实测外观' : '推定'} · ${b.F.length} 層 · ${b.rooms.length} 室<br><span>单击进入室内</span>`; tip.style.display = 'block'; tip.style.left = (cx + 16) + 'px'; tip.style.top = (cy + 12) + 'px'; } renderer.domElement.style.cursor = 'pointer'; }
+      if (tip) { tip.innerHTML = `<b>${b.name}</b><br>${tierTxt(b)} · ${b.F.length} 層 · ${b.rooms.length} 室<br><span>单击进入室内</span>`; tip.style.display = 'block'; tip.style.left = (cx + 16) + 'px'; tip.style.top = (cy + 12) + 'px'; } renderer.domElement.style.cursor = 'pointer'; }
     { const el = renderer.domElement; let down = null, lastPick = 0;
       el.addEventListener('pointermove', e => { if (intMode) return; if (e.buttons) { setHover(null); return; } const t = performance.now(); if (t - lastPick < 50) return; lastPick = t; setHover(pickBldg(e.clientX, e.clientY), e.clientX, e.clientY); });
       el.addEventListener('pointerleave', () => setHover(null));
@@ -1015,7 +1016,8 @@
     }
     document.querySelectorAll('#views button').forEach(b => b.onclick = () => setView(b.dataset.v));
     if ($('walk')) $('walk').onclick = () => walkThrough('otemon');
-    function fillBsel() { const el = $('bsel'); if (!el || !bw) return; el.innerHTML = bw.list.map(b => `<option value="${b.id}">${b.name}（${b.tier === 'measured' ? '实测外观' : '推定'}·${b.F.length}層·${b.rooms.length}室）</option>`).join('');
+    function tierTxt(b) { return b.tier === 'measured' ? '实测外观' : b.prov && b.prov.tier && b.prov.tier !== '推定' ? b.prov.tier + '（占地/平面）·房间推定' : '推定'; } // r14：本丸御殿/御金蔵 = 史料拟合，伏見櫓 = 文献
+    function fillBsel() { const el = $('bsel'); if (!el || !bw) return; el.innerHTML = bw.list.map(b => `<option value="${b.id}">${b.name}（${tierTxt(b)}·${b.F.length}層·${b.rooms.length}室）</option>`).join('');
       const by = {}; for (const b of bw.list) { const k = b.type + (b.tier === 'measured' ? '·实测' : '·推定'); by[k] = (by[k] || 0) + 1; } const st = $('bstat'); if (st) st.textContent = '建筑语法 B1：' + Object.entries(by).map(([k, n]) => k + ' ' + n).join(' · ') + ' · ' + bw.list.reduce((a, b) => a + b.rooms.length, 0) + ' 室 · ' + (bw.fromPack ? '读包' : '生成 ' + state.bldgMs + ' ms'); }
     if ($('benter')) $('benter').onclick = () => { const id = +$('bsel').value; enterInterior(id); updateInteriors(); };
     if ($('bexit')) $('bexit').onclick = () => exitInterior(false);
