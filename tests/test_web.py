@@ -4,7 +4,7 @@ Run:  python3 tests/test_web.py            (or: pytest tests/test_web.py)
 Needs: pip install playwright && python3 -m playwright install chromium
        (in the Hark sandbox:  . ../work/setup_pw.sh  provides a persistent Chromium + missing libs)
 
-Asserts: (r6) camera collision uses the conforming (split) terrain · H1–H21 all 0 · node fault injection (tests/test_faults.js: every H15–H21 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
+Asserts: (B2/web-r10) C11 never-see-underground fuzz (exterior from 80+ start points incl. grid/outer/ring edges, ishigaki, moat banks, building bases; interior walking/looking in every building) == 0 and its fault injection (ring, intnear) is caught; hover-highlight + click-to-enter, label hiding, minimap + click-to-jump, keyboard walking without penetration + stairs. (r6) camera collision uses the conforming (split) terrain · H1–H21 all 0 · node fault injection (tests/test_faults.js: every H15–H21 rule catches its injected violation) · C8 (camera under each wooden bridge) incl. an injected obstacle · page loads without console errors · audit total == 0 (江戸盛期 and 现状) · camera audit C1–C7 == 0 (C6 walk through every gate at eye height,
 C7 fast-drag tunneling fuzz), per-frame walk-through-Otemon animation clear + tunnel-free + actually under the gate lintel, extra fuzz,
 per-frame animated transitions clear, independent triangle-exact check, real mouse wheel/drag input never leaves the camera inside solids · URL hash reproducible
 (same hash -> same signature, other seed -> different) · writes one screenshot per view (incl. inside the Otemon gate opening) to web/shots/.
@@ -75,7 +75,7 @@ def run(shots=True):
         rep['cam_fuzz'] = [pg.evaluate(f'__castle.cameraAudit({{fuzz:1500, seed:{sd}}}).cnt.C4') for sd in (11, 23, 37)]
         rep['cam_legacy'] = pg.evaluate('__castle.cameraAudit({legacy:true}).cnt')
         rep['cam_old_r3'] = pg.evaluate('__castle.cameraAudit({old:true}).cnt')  # web-r3 逻辑（柱状场 + 抬升）下的 C6/C7
-        rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']; rep['cam_interiors'] = ca.get('interiors')
+        rep['cam_gates'] = ca['gates']; rep['cam_bridges'] = ca['bridges']; rep['cam_interiors'] = ca.get('interiors'); rep['c11'] = ca.get('c11')
         # B1：建筑语法——读包、按需建内部（不阻塞：单栋建内部的耗时）、进入室内（御殿 + 一座橹），室内相机球清空、拖动不出墙
         rep['bldg'] = pg.evaluate("""() => { const C = __castle, W = C.bldg, out = { n: W.list.length, bpack: C.bpack, by: {}, enter: [] }; for (const b of W.list) { const k = b.type + '/' + b.tier; out.by[k] = (out.by[k] || 0) + 1; }
             for (const b of [W.list.find(b => b.type === 'goten'), W.list.find(b => b.type === 'yagura' && b.F.length === 3), W.list.find(b => b.tier === 'measured')]) { if (!b) continue; const t0 = performance.now(), r = C.enterInterior(b.id), ms = performance.now() - t0; let bad = 0; const q0 = C.cur().cam;
@@ -97,6 +97,8 @@ def run(shots=True):
         rep['cam_anim'] = pg.evaluate("""() => { const C = __castle, V = Object.keys(C.VIEWS), out = []; for (const a of V) for (const b of V) { if (a === b) continue;
             C.setView(a); C.goView(b); const A = C.anim(); let bad = 0, n = 0; for (let t = A.s; t <= A.s + A.dur * 1000 + 200; t += 16) { C.step(t); n++; if (!C.camField.clear(C.cur().cam, 1e-3)) bad++; }
             const q = C.cur(), p = C.presets[b], end = Math.hypot(q.cam[0] - p.cam[0], q.cam[1] - p.cam[1], q.cam[2] - p.cam[2]); out.push({ a, b, frames: n, bad, end: +end.toFixed(3), lift: +A.maxLift.toFixed(1) }); } return out; }""")
+        # B2：外景悬停/单击进入、标注隐藏、小地图、键盘步行（真实键盘/鼠标事件）
+        rep['b2'] = b2_checks(pg, SHOTS if shots else None)
         # 独立几何校验（三角形精确距离，不经碰撞场）+ 真实鼠标输入（滚轮猛推进 + 拖到仰视）
         load('#seed=1&lost=1&view=otemon&labels=0&camgeo=1')
         pg.wait_for_function('__castle.camAudit', timeout=120000)
@@ -117,9 +119,11 @@ def run(shots=True):
             bad_in += pg.evaluate('(() => { const q = __castle.cur(); return (__castle.camField.clear(q.cam, 1e-3) ? 0 : 1) + (__castle.camField.geoCheck(q.cam) ? 1 : 0); })()')
         rep['cam_input'] = bad_in
         # 故障注入（C8）：桥下横一根梁，C8 必须报出来
-        load('#seed=1&lost=1&view=top&labels=0&fault=c8')
-        pg.wait_for_function('__castle.camAudit', timeout=120000)
+        # B2：C11 的故障注入——ring：相机碰撞场不用渲染外圈地面（r4–r9 的拟合面外推）；intnear：室内近平面不随球半径缩小（r9 回归）。C11 必须两处都报
+        load('#seed=1&lost=1&view=top&labels=0&fault=c8,ring,intnear')
+        pg.wait_for_function('__castle.camAudit', timeout=240000)
         rep['c8_fault'] = pg.evaluate('__castle.camAudit.cnt.C8')
+        rep['c11_fault'] = pg.evaluate('(() => { const c = __castle.camAudit.c11; return { ext: c.ext.bad, int: c.int.bad, byTag: c.ext.byTag, ex: c.ext.ex.slice(0, 2).concat(c.int.ex.slice(0, 1)) }; })()')
         # reproducibility
         load('#seed=1&lost=1&view=top&labels=0')
         rep['sig1_again'] = pg.evaluate('__castle.signature')
@@ -148,6 +152,83 @@ def run(shots=True):
     return rep
 
 
+def b2_checks(pg, shotdir=None):
+    """B2 (web-r10): hover highlight + click-to-enter (real mouse), label hiding, minimap presence + click-to-jump (real click),
+    keyboard walking (real key events, synthetic 30 fps clock driving the real step()): every frame sphere valid, no penetration, C11 clean, stairs followed."""
+    out = {}
+    pg.evaluate('__castle.setView("goten")'); pg.evaluate('__castle.renderNow()')
+    # 找一栋在画面里、没被挡住的建筑（屏幕坐标 = 包围盒中心投影）
+    cand = pg.evaluate("""() => { const C = __castle, out = []; for (const b of C.bldg.list) { const s = C.bldgScreen(b.id); if (s.z < 1 && s.x > 360 && s.x < 1240 && s.y > 60 && s.y < 760 && C.pick(s.x, s.y) === b.id) out.push({ id: b.id, x: s.x, y: s.y, name: b.name, type: b.type, F: b.F.length }); } return out; }""")
+    out['hover_cands'] = len(cand)
+    if not cand:
+        return out
+    c = sorted(cand, key=lambda q: (q['type'] != 'yagura', -q['F']))[0]
+    out['labels_before'] = pg.evaluate('__castle.labelsVisible()')
+    pg.mouse.move(c['x'] - 30, c['y'] - 30); pg.mouse.move(c['x'], c['y'], steps=3); pg.wait_for_timeout(150)
+    out['hover'] = pg.evaluate('__castle.hover()'); out['hover_want'] = c['id']; out['hl_visible'] = pg.evaluate('__castle.hlVisible()')
+    out['tip'] = pg.evaluate("document.getElementById('btip').style.display === 'block' && document.getElementById('btip').textContent")
+    if shotdir:
+        pg.evaluate('__castle.renderNow()'); pg.wait_for_timeout(200); pg.screenshot(path=os.path.join(shotdir, 'ext_hover.png'))
+    pg.mouse.click(c['x'], c['y']); pg.wait_for_timeout(200)
+    out['entered'] = pg.evaluate('__castle.intMode()'); out['labels_inside'] = pg.evaluate('__castle.labelsVisible()')
+    out['minimap'] = pg.evaluate('(() => { const m = __castle.minimap(); return { visible: m.visible, floor: m.floor, rooms: m.rooms.length, cam: !!m.cam }; })()')
+    out['khint'] = pg.evaluate("getComputedStyle(document.getElementById('khint')).display")
+    out['c11_enter'] = pg.evaluate('__castle.c11Int()')
+    # 键盘步行：真实按键（keydown 进 KEYS），合成时钟驱动真实 step()；每帧：球合法 + 两帧之间不穿实体（球扫掠）+ C11
+    def walk(keys, frames):
+        for k in keys: pg.keyboard.down(k)
+        r = pg.evaluate("""(n) => { const C = __castle; let t = 100000 + Math.random() * 1000, bad = 0, c11 = 0, moved = 0, zs = new Set(), prev = C.cur().cam, tun = 0; C.step(t);
+            for (let k = 0; k < n && C.intMode(); k++) { t += 33; C.step(t); const q = C.cur().cam; if (!C.intValid(q)) bad++; if (C.c11Int()) c11++;
+              const L = Math.hypot(q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]), N = Math.max(1, Math.ceil(L / 0.02)); for (let s = 1; s < N; s++) { const p = [0, 1, 2].map(i => prev[i] + (q[i] - prev[i]) * s / N); if (!C.intValid(p)) { tun++; break; } }
+              moved += Math.hypot(q[0] - prev[0], q[1] - prev[1]); zs.add(q[2].toFixed(2)); prev = q; }
+            return { bad, c11, tun, moved: +moved.toFixed(2), zLevels: zs.size, inside: !!C.intMode(), cam: C.cur().cam.map(v => +v.toFixed(2)) }; }""", frames)
+        for k in keys: pg.keyboard.up(k)
+        return r
+    out['walk'] = [walk(['ArrowUp'], 90), walk(['ArrowLeft'], 20), walk(['ArrowUp'], 120), walk(['KeyD'], 40), walk(['KeyS'], 60), walk(['ArrowRight', 'KeyW'], 120)]
+    # 撞墙：长时间往前走（墙/隔断挡住，不能穿过去）
+    out['walk_wall'] = walk(['ArrowUp'], 400)
+    # 上楼：用小地图跳到有階段的房间附近不确定——直接在所有楼层>1 的橹里找下层階段底，朝階段方向走，眼高必须上升到上一层
+    out['stairs'] = pg.evaluate("""() => { const C = __castle, B = C.bldg.list.find(b => b.type === 'yagura' && b.stairs.length && b.F.length >= 2); if (!B) return null; C.exitInterior(); C.enterInterior(B.id); const st = B.stairs[0], BL = window.CASTLE_BLDG;
+        const [i0, j0, i1, j1] = st.rect, d = BL.NB[st.dir], cu = (i0 + i1) / 2, cv = (j0 + j1) / 2, L = st.dir < 2 ? i1 - i0 : j1 - j0, su = cu - d[0] * (L / 2 + 1.2), sv = cv - d[1] * (L / 2 + 1.2), [x, y] = B.fr.w(BL.U(B, su), BL.V(B, sv)), [x2, y2] = B.fr.w(BL.U(B, cu + d[0] * L), BL.V(B, cv + d[1] * L));
+        const cam = [x, y, B.F[st.f].z + BL.SPEC.cam.eye]; if (!C.intValid(cam)) return { skip: 'start invalid' }; C.camera.position.set(cam[0], cam[2], -cam[1]); C.enforce(); C.lookYP.yaw = Math.atan2(y2 - y, x2 - x); C.lookYP.pitch = 0; C.applyLook();
+        const z0 = C.cur().cam[2]; let t = 50000, bad = 0, c11 = 0; C.keys.add('ArrowUp'); C.step(t); for (let k = 0; k < 240 && C.intMode(); k++) { t += 33; C.step(t); if (!C.intValid(C.cur().cam)) bad++; if (C.c11Int()) c11++; } C.keys.clear();
+        for (let k = 0; k < 40 && C.intMode(); k++) { t += 33; C.step(t); } const z1 = C.cur().cam[2]; return { name: B.name, z0: +z0.toFixed(2), z1: +z1.toFixed(2), rise: +(z1 - z0).toFixed(2), want: +st.rise.toFixed(2), bad, c11, floor: C.minimap().camFloor }; }""")
+    # 小地图：真实点击一个房间 → 相机跳到那个房间的机位
+    pg.evaluate('__castle.drawMinimap()')
+    mm = pg.evaluate('__castle.minimap()')
+    out['mm_click'] = None
+    if mm['rooms']:
+        cur = pg.evaluate('__castle.cur().cam'); best = None
+        for r in mm['rooms']:
+            dd = (r['px'] - (mm['cam']['x'] if mm['cam'] else 0)) ** 2 + (r['py'] - (mm['cam']['y'] if mm['cam'] else 0)) ** 2
+            if best is None or dd > best[0]: best = (dd, r)
+        r = best[1]; j0 = pg.evaluate('__castle.mmJumps || 0')
+        pg.mouse.click(mm['rect']['left'] + r['px'], mm['rect']['top'] + r['py']); pg.wait_for_timeout(150)
+        after = pg.evaluate('__castle.cur().cam')
+        out['mm_click'] = {'room': r['name'], 'jumps': pg.evaluate('__castle.mmJumps || 0') - j0, 'moved': round(sum((a - b) ** 2 for a, b in zip(after, cur)) ** 0.5, 2), 'valid': pg.evaluate('__castle.intValid(__castle.cur().cam)'), 'c11': pg.evaluate('__castle.c11Int()')}
+    if shotdir:
+        pg.evaluate("(() => { const C = __castle; C.lookYP.pitch = -0.12; C.applyLook(); C.drawMinimap(); C.renderNow(); })()"); pg.wait_for_timeout(250)
+        pg.screenshot(path=os.path.join(shotdir, 'int_minimap.png'))
+    pg.keyboard.press('Escape'); pg.wait_for_timeout(150)
+    out['exited'] = pg.evaluate('!__castle.intMode()'); out['labels_after'] = pg.evaluate('__castle.labelsVisible()')
+    out['mm_after'] = pg.evaluate('__castle.minimap().visible'); out['c11_after'] = pg.evaluate('__castle.c11Ext()')
+    return out
+
+
+def b2_ok(o):
+    assert o.get('hover_cands', 0) > 0 and o['hover'] == o['hover_want'] and o['hl_visible'] and o['tip'], o
+    assert o['entered'] and o['entered']['b'] == o['hover_want'], o
+    assert o['labels_before'] is True and o['labels_inside'] is False and o['labels_after'] is True, o
+    assert o['minimap']['visible'] and o['minimap']['rooms'] > 0 and o['minimap']['cam'] and o['khint'] == 'block', o
+    assert o['c11_enter'] is None and o['c11_after'] is None and o['exited'] and not o['mm_after'], o
+    assert all(w['bad'] == 0 and w['c11'] == 0 and w['tun'] == 0 for w in o['walk'] + [o['walk_wall']]), o
+    assert sum(w['moved'] for w in o['walk']) > 3, o
+    st = o['stairs']
+    assert st and st.get('bad') == 0 and st.get('c11') == 0 and abs(st['rise'] - st['want']) < 0.3, st
+    mc = o['mm_click']
+    assert mc and mc['jumps'] == 1 and mc['valid'] and mc['c11'] is None, mc
+
+
 def check(rep):
     assert not rep['errors'], rep['errors']
     assert rep['audit'] == 0, rep['audit_items']
@@ -166,6 +247,9 @@ def check(rep):
     assert bl['n'] >= 20 and bl['bpack'] and bl['bpack'].get('used') and len(bl['enter']) == 3 and all(e['room'] and e['bad'] == 0 and e['built'] for e in bl['enter']), bl
     assert rep['bldg_node'] == 0, rep['bldg_log']
     assert rep['c8_fault'] > 0, rep['c8_fault']
+    assert rep['cam_cnt'].get('C11') == 0 and rep['c11'] and rep['c11']['ext']['n'] >= 2000 and rep['c11']['int']['n'] >= 5000 and rep['c11']['int']['bldgs'] >= 20, rep.get('c11')
+    assert rep['c11_fault']['ext'] > 0 and rep['c11_fault']['byTag'].get('ring', 0) > 0 and rep['c11_fault']['int'] > 0, rep['c11_fault']
+    b2_ok(rep['b2'])
     assert all(b['ok'] for b in rep['cam_bridges']), rep['cam_bridges']
     w = rep['cam_walk']
     assert w and w['bad'] == 0 and w['tun'] == 0 and w['under'] > 0 and w['eyeMin'] >= 1.55, w
