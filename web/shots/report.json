@@ -1,15 +1,15 @@
 {
  "errors": [],
  "audit_ready_s": [
-  15.03,
-  9.78,
-  9.35,
-  8.41,
-  10.73,
-  11.07,
-  8.13
+  12.16,
+  14.26,
+  15.57,
+  15.99,
+  11.86,
+  14.61,
+  15.19
  ],
- "load_s": 2.25,
+ "load_s": 2.07,
  "audit": 0,
  "audit_cnt": {
   "H1": 0,
@@ -45,8 +45,8 @@
  "stats": {
   "verts": 1322754,
   "tris": 1501934,
-  "buildMs": 247,
-  "sceneMs": 721,
+  "buildMs": 269,
+  "sceneMs": 653,
   "parts": 245,
   "trees": 1037,
   "dobei": 193,
@@ -65,17 +65,17 @@
    "dropped": 449,
    "fans": 1
   },
-  "camMs": 243,
-  "auditMs": 10649
+  "camMs": 248,
+  "auditMs": 9746
  },
- "app_load_ms": 1426,
+ "app_load_ms": 1360,
  "pack": {
   "used": true,
   "file": "bake/s1-l1.bin.gz",
   "bytes": 938155,
-  "fetchMs": 34,
-  "unzipMs": 80,
-  "restoreMs": 247
+  "fetchMs": 35,
+  "unzipMs": 61,
+  "restoreMs": 269
  },
  "cam_audit": 0,
  "cam_cnt": {
@@ -88,7 +88,8 @@
   "C7": 0,
   "C8": 0,
   "C9": 0,
-  "C10": 0
+  "C10": 0,
+  "C11": 0
  },
  "cam_items": [],
  "cam_near": 1.113,
@@ -107,7 +108,8 @@
   "C7": 0,
   "C8": 0,
   "C9": 0,
-  "C10": 0
+  "C10": 0,
+  "C11": 0
  },
  "cam_old_r3": {
   "C1": 0,
@@ -119,7 +121,8 @@
   "C7": 11,
   "C8": 0,
   "C9": 0,
-  "C10": 0
+  "C10": 0,
+  "C11": 0
  },
  "cam_gates": [
   {
@@ -234,13 +237,33 @@
   "rooms": 186,
   "paths": 186
  },
+ "c11": {
+  "ext": {
+   "starts": 88,
+   "n": 2640,
+   "bad": 0,
+   "ex": [],
+   "byTag": {}
+  },
+  "int": {
+   "bldgs": 26,
+   "n": 9898,
+   "bad": 0,
+   "ex": []
+  },
+  "groundTris": 1154787,
+  "msIdx": 240,
+  "msStarts": 15,
+  "msExt": 166,
+  "msInt": 401
+ },
  "bldg": {
   "n": 26,
   "bpack": {
    "used": true,
    "file": "bake/b-s1-l1.json.gz",
    "bytes": 19180,
-   "ms": 372,
+   "ms": 402,
    "key": "b1-3ddcd130-k1-620670ef-cddb72d2-s1-l1-c1.5-r"
   },
   "by": {
@@ -255,7 +278,7 @@
     "name": "本丸御殿",
     "room": "遠侍·上段之間",
     "what": "toko",
-    "ms": 35.2,
+    "ms": 30,
     "bad": 0,
     "built": true
    },
@@ -263,7 +286,7 @@
     "name": "伏見櫓",
     "room": "伏見櫓·3階·内室1",
     "what": "window",
-    "ms": 3.6,
+    "ms": 3.8,
     "bad": 0,
     "built": true
    },
@@ -271,7 +294,7 @@
     "name": "千貫櫓",
     "room": "千貫櫓·2階·内室1",
     "what": "center",
-    "ms": 3,
+    "ms": 3.7,
     "bad": 0,
     "built": true
    }
@@ -1013,6 +1036,141 @@
    "lift": 0
   }
  ],
+ "b2": {
+  "hover_cands": 7,
+  "labels_before": true,
+  "hover": 9,
+  "hover_want": 9,
+  "hl_visible": true,
+  "tip": "月見櫓推定 · 3 層 · 7 室单击进入室内",
+  "entered": {
+   "b": 9,
+   "name": "月見櫓"
+  },
+  "labels_inside": false,
+  "minimap": {
+   "visible": true,
+   "floor": 0,
+   "rooms": 3,
+   "cam": true
+  },
+  "khint": "block",
+  "c11_enter": null,
+  "walk": [
+   {
+    "bad": 0,
+    "c11": 0,
+    "tun": 0,
+    "moved": 3.99,
+    "zLevels": 1,
+    "inside": true,
+    "cam": [
+     116.66,
+     -61.11,
+     33.53
+    ]
+   },
+   {
+    "bad": 0,
+    "c11": 0,
+    "tun": 0,
+    "moved": 0,
+    "zLevels": 1,
+    "inside": true,
+    "cam": [
+     116.66,
+     -61.11,
+     33.53
+    ]
+   },
+   {
+    "bad": 0,
+    "c11": 0,
+    "tun": 0,
+    "moved": 0.69,
+    "zLevels": 1,
+    "inside": true,
+    "cam": [
+     117.16,
+     -60.67,
+     33.53
+    ]
+   },
+   {
+    "bad": 0,
+    "c11": 0,
+    "tun": 0,
+    "moved": 1.72,
+    "zLevels": 1,
+    "inside": true,
+    "cam": [
+     118.4,
+     -61.86,
+     33.53
+    ]
+   },
+   {
+    "bad": 0,
+    "c11": 0,
+    "tun": 0,
+    "moved": 2.57,
+    "zLevels": 1,
+    "inside": true,
+    "cam": [
+     116.63,
+     -63.72,
+     33.53
+    ]
+   },
+   {
+    "bad": 0,
+    "c11": 0,
+    "tun": 0,
+    "moved": 3.86,
+    "zLevels": 1,
+    "inside": true,
+    "cam": [
+     117.46,
+     -62.85,
+     33.53
+    ]
+   }
+  ],
+  "walk_wall": {
+   "bad": 0,
+   "c11": 0,
+   "tun": 0,
+   "moved": 7.99,
+   "zLevels": 4,
+   "inside": true,
+   "cam": [
+    122.3,
+    -56.82,
+    33.53
+   ]
+  },
+  "stairs": {
+   "name": "千貫櫓",
+   "z0": 28.32,
+   "z1": 33.07,
+   "rise": 4.75,
+   "want": 4.75,
+   "bad": 0,
+   "c11": 0,
+   "floor": 1
+  },
+  "mm_click": {
+   "room": "千貫櫓·2階·内室1",
+   "jumps": 1,
+   "moved": 12.86,
+   "valid": true,
+   "c11": null
+  },
+  "exited": true,
+  "labels_after": true,
+  "mm_after": false,
+  "c11_after": null
+ },
  "cam_geo": {
   "C1": 0,
   "C3": 0,
@@ -1022,11 +1180,25 @@
  },
  "cam_input": 0,
  "c8_fault": 1,
+ "c11_fault": {
+  "ext": 57,
+  "int": 9898,
+  "byTag": {
+   "outer-edge": 22,
+   "ring": 30,
+   "moat-bank": 5
+  },
+  "ex": [
+   "outer-edge ext:sphere-below-render-ground @3.6,-700.0,20.4 tgt 0.7,-700.6,20.4",
+   "outer-edge ext:sphere-below-render-ground @3.6,-700.2,20.4 tgt 0.7,-700.6,20.4",
+   "千貫櫓 walk int:near-plane 1.35 m ≥ R 0.25 @-275.59,-187.09,28.32"
+  ]
+ },
  "sig1_again": "2862a389-245-1037|d3705824-26",
  "sig1_live": "2862a389-245-1037|d3705824-26",
  "pack_off": null,
  "audit_live": 0,
- "load_live_s": 10.73,
+ "load_live_s": 11.86,
  "sig2": "d242bb51-245-996|031fc2c3-27",
  "audit_seed2": 0,
  "audit_now": 0,
@@ -1057,10 +1229,10 @@
  ],
  "bldg_node": 0,
  "bldg_log": [
-  "baseline seed 1 江戸盛期 bldgs 26 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":2} gen 367 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 186 ",
-  "baseline seed 1 现状 bldgs 4 {\"yagura(实测)\":4} gen 35 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 21 ",
-  "baseline seed 2 江戸盛期 bldgs 27 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":3} gen 301 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 193 ",
-  "baseline seed 2 现状 bldgs 4 {\"yagura(实测)\":4} gen 12 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 23 ",
+  "baseline seed 1 江戸盛期 bldgs 26 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":2} gen 353 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 186 ",
+  "baseline seed 1 现状 bldgs 4 {\"yagura(实测)\":4} gen 33 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 21 ",
+  "baseline seed 2 江戸盛期 bldgs 27 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":3} gen 310 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 193 ",
+  "baseline seed 2 现状 bldgs 4 {\"yagura(实测)\":4} gen 21 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"C9\":0,\"C10\":0} rooms 23 ",
   "roll yagura@坤櫓.rooms:1 → changed 坤櫓 (goten unchanged: true)",
   "OK   H22 番所移到道路上 → H22=3  番所1：59 个占地采样点不在所属台地（honmaru）上",
   "OK   H22 蔵压到土塀（移到一段本丸土塀中点） → H22=3  蔵1：占地内地面高差 8.42 m > 基础上限 1.5 m",
@@ -1081,15 +1253,15 @@
  ],
  "pack_node": 0,
  "pack_log": [
-  "bake/s1-l1.bin.gz gz 938155 live 4987 ms pack 181 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
+  "bake/s1-l1.bin.gz gz 938155 live 4795 ms pack 170 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
-  "bake/s1-l0.bin.gz gz 933971 live 4544 ms pack 207 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
+  "bake/s1-l0.bin.gz gz 933971 live 4402 ms pack 133 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
-  "bake/b-s1-l1.json.gz gz 19180 gen 378 ms bldgs 26 same as live sig ok",
+  "bake/b-s1-l1.json.gz gz 19180 gen 355 ms bldgs 26 same as live sig ok",
   "  bldg tamper check caught",
-  "bake/b-s1-l0.json.gz gz 3711 gen 22 ms bldgs 4 same as live sig ok",
+  "bake/b-s1-l0.json.gz gz 3711 gen 31 ms bldgs 4 same as live sig ok",
   "  bldg tamper check caught",
   "PACK_OK"
  ]
