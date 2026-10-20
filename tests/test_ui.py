@@ -36,6 +36,7 @@ def run():
         pg.on('pageerror', lambda e: rep['errors'].append('pageerror: ' + str(e)))
         pg.goto(f'http://127.0.0.1:{port}/index.html#seed=1&lost=1&view=aerial')
         pg.wait_for_function('window.__castle && (window.__castle.ready && window.__castle.bldgDetail || window.__castle.errors.length)', timeout=240000)
+        pg.wait_for_function('window.__castle && (window.__castle.camAudit || window.__castle.errors.length)', timeout=900000)  # B5: the async camera audit (C11 interior fuzz) enters interiors and calls mmJump - wait for it, or it races the click-to-jump check
         pg.evaluate("document.getElementById('ui').classList.add('min')")
         bl = pg.evaluate('__castle.bldg.list.map(b => ({ id: b.id, name: b.name, type: b.type, F: b.F.length }))')
         rep['n_bldg'] = len(bl)
