@@ -1,15 +1,15 @@
 {
  "errors": [],
  "audit_ready_s": [
-  17.78,
-  13.55,
-  16.7,
-  16.15,
-  12.1,
-  12.41,
-  16.57
+  27.4,
+  18.92,
+  22.88,
+  22.51,
+  16.65,
+  18.11,
+  21.99
  ],
- "load_s": 2.29,
+ "load_s": 2.87,
  "audit": 0,
  "audit_cnt": {
   "H1": 0,
@@ -47,8 +47,8 @@
  "stats": {
   "verts": 1323330,
   "tris": 1502126,
-  "buildMs": 225,
-  "sceneMs": 674,
+  "buildMs": 258,
+  "sceneMs": 683,
   "parts": 245,
   "trees": 1037,
   "dobei": 193,
@@ -67,17 +67,17 @@
    "dropped": 449,
    "fans": 1
   },
-  "camMs": 297,
-  "auditMs": 15107
+  "camMs": 261,
+  "auditMs": 12219
  },
- "app_load_ms": 1445,
+ "app_load_ms": 1443,
  "pack": {
   "used": true,
   "file": "bake/s1-l1.bin.gz",
   "bytes": 938155,
-  "fetchMs": 75,
-  "unzipMs": 105,
-  "restoreMs": 225
+  "fetchMs": 49,
+  "unzipMs": 91,
+  "restoreMs": 258
  },
  "cam_audit": 0,
  "cam_cnt": {
@@ -257,10 +257,10 @@
    "ex": []
   },
   "groundTris": 1154787,
-  "msIdx": 250,
-  "msStarts": 30,
-  "msExt": 152,
-  "msInt": 281
+  "msIdx": 164,
+  "msStarts": 22,
+  "msExt": 191,
+  "msInt": 412
  },
  "c12": {
   "stairs": 31,
@@ -281,9 +281,9 @@
   "hit": "terrain",
   "dist": 18.1,
   "lum": [
-   0,
-   182,
-   223
+   16,
+   176,
+   219
   ]
  },
  "bldg": {
@@ -292,7 +292,7 @@
    "used": true,
    "file": "bake/b-s1-l1.json.gz",
    "bytes": 19189,
-   "ms": 54,
+   "ms": 58,
    "key": "b1-2031ea4f-k1-620670ef-cddb72d2-s1-l1-c1.5-r"
   },
   "by": {
@@ -307,7 +307,7 @@
     "name": "本丸御殿",
     "room": "遠侍·上段之間",
     "what": "toko",
-    "ms": 146.3,
+    "ms": 150.8,
     "bad": 0,
     "built": true
    },
@@ -315,7 +315,7 @@
     "name": "伏見櫓",
     "room": "伏見櫓·3階·内室1",
     "what": "window",
-    "ms": 21.5,
+    "ms": 12.4,
     "bad": 0,
     "built": true
    },
@@ -323,7 +323,7 @@
     "name": "千貫櫓",
     "room": "千貫櫓·2階·内室1",
     "what": "center",
-    "ms": 13.6,
+    "ms": 14.6,
     "bad": 0,
     "built": true
    }
@@ -1094,8 +1094,8 @@
     "zLevels": 1,
     "inside": true,
     "cam": [
-     116.54,
-     -61.05,
+     116.56,
+     -61.06,
      33.53
     ]
    },
@@ -1107,8 +1107,8 @@
     "zLevels": 1,
     "inside": true,
     "cam": [
-     116.54,
-     -61.05,
+     116.68,
+     -61.11,
      33.53
     ]
    },
@@ -1116,12 +1116,12 @@
     "bad": 0,
     "c11": 0,
     "tun": 0,
-    "moved": 5.15,
+    "moved": 5.1,
     "zLevels": 1,
     "inside": true,
     "cam": [
-     119.89,
-     -57.15,
+     120.11,
+     -57.39,
      33.53
     ]
    },
@@ -1133,8 +1133,8 @@
     "zLevels": 1,
     "inside": true,
     "cam": [
-     121.19,
-     -58.26,
+     121.35,
+     -58.57,
      33.53
     ]
    },
@@ -1143,24 +1143,24 @@
     "c11": 0,
     "tun": 0,
     "moved": 2.57,
-    "zLevels": 23,
+    "zLevels": 14,
     "inside": true,
     "cam": [
-     119.43,
-     -60.32,
-     34.21
+     119.56,
+     -60.45,
+     34.01
     ]
    },
    {
     "bad": 0,
     "c11": 0,
     "tun": 0,
-    "moved": 4.92,
-    "zLevels": 15,
+    "moved": 5.15,
+    "zLevels": 10,
     "inside": true,
     "cam": [
-     119.46,
-     -60.54,
+     119.59,
+     -60.42,
      33.53
     ]
    }
@@ -1169,12 +1169,12 @@
    "bad": 0,
    "c11": 0,
    "tun": 0,
-   "moved": 4.86,
-   "zLevels": 10,
+   "moved": 4.65,
+   "zLevels": 9,
    "inside": true,
    "cam": [
-    122.3,
-    -56.81,
+    122.28,
+    -56.8,
     33.53
    ]
   },
@@ -1235,7 +1235,7 @@
  "sig1_live": "2862a389-245-1037|8bd92839-26",
  "pack_off": null,
  "audit_live": 0,
- "load_live_s": 12.1,
+ "load_live_s": 16.65,
  "sig2": "d242bb51-245-996|b76eb79a-27",
  "audit_seed2": 0,
  "audit_now": 0,
@@ -1266,10 +1266,10 @@
  ],
  "bldg_node": 0,
  "bldg_log": [
-  "baseline seed 1 江戸盛期 bldgs 26 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":2} gen 407 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 186 ",
-  "baseline seed 1 现状 bldgs 4 {\"yagura(实测)\":4} gen 36 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 21 ",
-  "baseline seed 2 江戸盛期 bldgs 27 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":3} gen 346 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 193 ",
-  "baseline seed 2 现状 bldgs 4 {\"yagura(实测)\":4} gen 12 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 23 ",
+  "baseline seed 1 江戸盛期 bldgs 26 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":2} gen 412 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 186 ",
+  "baseline seed 1 现状 bldgs 4 {\"yagura(实测)\":4} gen 29 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 21 ",
+  "baseline seed 2 江戸盛期 bldgs 27 {\"yagura(实测)\":4,\"yagura(推定)\":17,\"goten(推定)\":1,\"bansho(推定)\":2,\"kura(推定)\":3} gen 317 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 193 ",
+  "baseline seed 2 现状 bldgs 4 {\"yagura(实测)\":4} gen 13 ms H/C {\"H22\":0,\"H23\":0,\"H24\":0,\"H25\":0,\"H26\":0,\"H27\":0,\"H28\":0,\"H29\":0,\"C9\":0,\"C10\":0} rooms 23 ",
   "roll yagura@坤櫓.rooms:1 → changed 坤櫓 (goten unchanged: true)",
   "OK   H22 番所移到道路上 → H22=3  番所1：59 个占地采样点不在所属台地（honmaru）上",
   "OK   H22 蔵压到土塀（移到一段本丸土塀中点） → H22=3  蔵1：占地内地面高差 8.42 m > 基础上限 1.5 m",
@@ -1300,15 +1300,15 @@
  ],
  "pack_node": 0,
  "pack_log": [
-  "bake/s1-l1.bin.gz gz 938155 live 4842 ms pack 173 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
+  "bake/s1-l1.bin.gz gz 938155 live 5042 ms pack 192 ms sig 2862a389-245-1037 2862a389-245-1037 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
-  "bake/s1-l0.bin.gz gz 933971 live 4368 ms pack 221 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
+  "bake/s1-l0.bin.gz gz 933971 live 4554 ms pack 131 ms sig cf1a5d19-227-1043 cf1a5d19-227-1043 diffs 0",
   "  audit total 0 0 same post-audit diffs 0",
   "  tamper check caught",
-  "bake/b-s1-l1.json.gz gz 19189 gen 409 ms bldgs 26 same as live sig ok",
+  "bake/b-s1-l1.json.gz gz 19189 gen 462 ms bldgs 26 same as live sig ok",
   "  bldg tamper check caught",
-  "bake/b-s1-l0.json.gz gz 3695 gen 14 ms bldgs 4 same as live sig ok",
+  "bake/b-s1-l0.json.gz gz 3695 gen 25 ms bldgs 4 same as live sig ok",
   "  bldg tamper check caught",
   "PACK_OK"
  ]
