@@ -116,8 +116,8 @@ const gableTex = canvasTex(512, 256, (g, w, h) => {
 
 // ---------- materials ----------
 const M = {
-  tile: new THREE.MeshStandardMaterial({ map: tileTex, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide, envMapIntensity: 0.6 }),
-  gold: new THREE.MeshStandardMaterial({ color: 0xe0ad3a, metalness: 1, roughness: 0.28, envMapIntensity: 1.4 }),
+  tile: new THREE.MeshStandardMaterial({ map: tileTex, roughness: 0.6, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.45 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xc9983e, metalness: 1, roughness: 0.36, envMapIntensity: 0.85 }), // B5：金收敛（降亮度/饱和、略粗糙）
   ridge: new THREE.MeshStandardMaterial({ color: 0x24272c, roughness: 0.6, metalness: 0.2 }),
   stone: new THREE.MeshStandardMaterial({ map: stoneTex, roughness: 0.95, side: THREE.DoubleSide }),
   lacquer: new THREE.MeshStandardMaterial({ color: 0x141215, roughness: 0.35, metalness: 0.1 }),
