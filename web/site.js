@@ -54,9 +54,10 @@
     // 外堀外侧的一圈土地在 OSM 里与二之丸连成一片（土桥=陆地窄颈）。规则：在每个 neck 门处找最窄的横截线（颈），
     // 从二之丸内部种子洪泛，过不了颈的二之丸格点都归为“城下”(city, 0 m)。
     band: { seed: { building: '豊国神社' }, neckSearch: 30, chordMax: 70 },
-    yagura: { cornerTurnDeg: 35, cornerRadius: 22, snapRadius: 20, setback: 0.1, snapReal: 10, honmaru: { fam: 'yagura3', w: 13, d: 11 }, ninomaru: { fam: 'yagura2', w: 12, d: 10 } },
+    yagura: { cornerTurnDeg: 35, cornerRadius: 22, snapRadius: 20, setback: 0.1, snapReal: 10, honmaru: { fam: 'yagura3', w: 13, d: 11 }, ninomaru: { fam: 'yagura2', w: 12, d: 10 },
+      byName: { '伏見櫓跡': { ew: 9 * 1.97, ns: 8 * 1.97 } } }, // r14：伏見櫓 初重 東西 9 × 南北 8 間（城戸久 1942，建築學會論文集 27 p.22）；其余失传橹 = 曲轮默认槽位
     // ---- r5：可步行表面网络 / 桥 / 净空（参数来源见 docs/RULES.md）----
-    net: { slope: 0.3, cross: 0.05, tol: 0.6, pocket: 30, noAccess: ['dry'], roadRegions: ['honmaru', 'yamazato', 'ninomaru'], dest: ['tenshu', 'hall'], endSnap: 1.5, termReach: 25 },
+    net: { slope: 0.3, cross: 0.05, tol: 0.6, pocket: 30, noAccess: ['dry'], roadRegions: ['honmaru', 'yamazato', 'ninomaru'], dest: ['tenshu', 'hall'], endSnap: 1.5, termReach: 25, reserve: 4.5 },
     bridge: { bear: 1.0, maxSpan: 5.9, deckT: 0.5, pierW: 0.7, pierRow: 0.6, level: 0.1, minPierH: 0.5, cont: 0.1 },   // 木梁跨度 ≤3 間；桥面两端搭在桥台上 ≥1 m
     dobashi: { batMin: 0.2, batMax: 0.4, earth: 1.5, toe: 0.3 },        // 土桥侧面：石垣面（水平/竖直 0.2–0.4）或土坡（≥1.5）；坡脚落到原地面/堀底
     clear: { person: 1.7, margin: 0.4, boat: 2.0 },                      // 步行面以上净高 ≥2.1 m；木桥下水面净空 ≥2 m
@@ -901,11 +902,13 @@
     const nearestCrest = (g, x, y) => { let best = null, m = 1e9; const I = edgeIdx(g), A = I.A, E = g.edges; for (let k = 0; k < E.length; k++) { const e = E[k]; if (!e.B || e.band) continue; const o = k * 10, ddx = Math.max(A[o + 5] - x, 0, x - A[o + 7]), ddy = Math.max(A[o + 6] - y, 0, y - A[o + 8]); if (Math.sqrt(ddx * ddx + ddy * ddy) * (1 - A[o + 9]) - A[o + 4] >= m) continue; /* 下界 ≥ 当前最小：这条边不可能更近（只为提速） */ if (e.mixed && bandAt(e, x, y)) continue; const d = segDist(x, y, e.ax, e.ay, e.bx, e.by) - Bat(e, g.surf, x, y); if (d < m) { m = d; best = e; } } return { e: best, m }; };
     if (opt.lost) for (const ly of D.lost_yagura) {
       const g = zoneAt(ly.x, ly.y); if (!g || g.band || (g.name !== 'honmaru' && g.name !== 'ninomaru')) { S.lostSkipped.push(ly.name + '（不在本丸/二之丸）'); continue; }
-      const Yg = SPEC.yagura[g.name], hd = Yg.d / 2;
+      let Yg = SPEC.yagura[g.name]; const YB = SPEC.yagura.byName[ly.name];
       const ne = nearestEdge(g, ly.x, ly.y, true);
       if (!ne || ne.d > SPEC.yagura.snapRadius) { S.lostSkipped.push(ly.name + '（离石垣 ' + (ne ? ne.d.toFixed(0) : '?') + ' m，不吸附）'); continue; }
       let dom = ne.e; for (const e of g.edges) { if (!e.B || e.len <= dom.len) continue; if (segDist(ly.x, ly.y, e.ax, e.ay, e.bx, e.by) <= ne.d + 10) dom = e; }
       const ang = Math.atan2(dom.ty, dom.tx); let t = clamp(segT(ly.x, ly.y, dom.ax, dom.ay, dom.bx, dom.by), 0, 1);
+      if (YB) { const ewAlong = Math.abs(Math.cos(ang)) >= Math.abs(Math.sin(ang)); Yg = Object.assign({}, Yg, { w: ewAlong ? YB.ew : YB.ns, d: ewAlong ? YB.ns : YB.ew }); } // 文献尺寸：东西/南北 按槽位主方向分到 w（沿墙）/d
+      const hd = Yg.d / 2;
       let kind = 'edge';
       const toA = t * dom.len, toB = (1 - t) * dom.len;
       const turnAt = (px, py) => { const o = g.edges.find(e => e !== dom && e.B && ((Math.hypot(e.bx - px, e.by - py) < 0.01) || (Math.hypot(e.ax - px, e.ay - py) < 0.01))); return o ? Math.abs(Math.asin(clamp(dom.tx * o.ty - dom.ty * o.tx, -1, 1))) * 180 / Math.PI + (dom.tx * o.tx + dom.ty * o.ty < 0 ? 90 : 0) : 0; };
@@ -1193,7 +1196,9 @@
     // 边 = 穿门段（直线穿过门洞）+ 坡道/土桥/木桥 + 曲轮内道路（同一连通地面上所有端点的 Steiner 树：多源 Dijkstra + Voronoi 边 + MST）。
     S.tm.bridges = TM() - tq; tq = TM();
     const NET = SPEC.net; S.terms = []; S.roads = [];
-    const WG = walkGrid(S, { closeGates: true }), N2 = NX * NY, edgeSeed  // 门关上：每块曲轮地面/枡形方院各自是一个连通块，门/坡道/桥是块之间的边
+    // r14：江戸盛期 本丸御殿 = 绘图拟合的殿舍/蔵/附属占地（data/goten_fit.json → data.js gotenFit）外扩 NET.reserve 后当障碍：道路绕开御殿（现状无御殿，不加）
+    const reserve = opt.lost && D.gotenFit ? D.gotenFit.elements.filter(e => e.use !== 'skip').map(e => rectPoly(e.cx, e.cy, e.w, e.d, e.ax * Math.PI / 180, NET.reserve)) : [];
+    const WG = walkGrid(S, { closeGates: true, extra: reserve }), N2 = NX * NY, edgeSeed  // 门关上：每块曲轮地面/枡形方院各自是一个连通块，门/坡道/桥是块之间的边
     = new Uint8Array(N2);
     { const hs = WG.hs, bk = WG.blk, lim = NET.slope * c + 0.02, crs = NET.cross * c + 0.01, gate = (q, k) => !bk[k] && Math.abs(hs[q] - hs[k]) > crs; // 种子 = 障碍格本身 + 坡折两侧的格（DT ≈ 到障碍/坡折的净距） // 道路要在平地上：坡度 > 横坡上限的格也算“边”（路面两侧不能落在斜坡上）
       void lim; for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) { const q = j * NX + i; if (bk[q] || (i + 1 < NX && gate(q, q + 1)) || (i > 0 && gate(q, q - 1)) || (j + 1 < NY && gate(q, q + NX)) || (j > 0 && gate(q, q - NX))) edgeSeed[q] = 1; } }
@@ -1591,6 +1596,7 @@
     for (const p of S.parts) { if (!p.poly || p.ramp) continue; const b = bboxOf(p.poly);
       for (let j = Math.max(0, Math.floor((b[1] - h - y0) / c)); j <= Math.min(NY - 1, Math.ceil((b[3] + h - y0) / c)); j++) for (let i = Math.max(0, Math.floor((b[0] - h - x0) / c)); i <= Math.min(NX - 1, Math.ceil((b[2] + h - x0) / c)); i++) {
         const x = S.X(i), y = S.Y(j); if (polyDist(x, y, p.poly) >= h) continue; if (!o.closeGates && p.passages && p.passages.some(pp => polyDist(x, y, pp.poly) < h)) continue; blk[j * NX + i] = 1; } }
+    for (const P of o.extra || []) { const b = bboxOf(P); for (let j = Math.max(0, Math.floor((b[1] - y0) / c)); j <= Math.min(NY - 1, Math.ceil((b[3] - y0) / c)); j++) for (let i = Math.max(0, Math.floor((b[0] - x0) / c)); i <= Math.min(NX - 1, Math.ceil((b[2] - x0) / c)); i++) if (inPoly(S.X(i), S.Y(j), P)) blk[j * NX + i] = 1; }
     if (o.trees) for (const t of S.trees) { const i = Math.round((t.x - x0) / c), j = Math.round((t.y - y0) / c); if (i >= 0 && j >= 0 && i < NX && j < NY) blk[j * NX + i] = 1; }
     const lim = SPEC.net.slope * c + 0.02, pass = (q, k) => !blk[q] && !blk[k] && Math.abs(hs[q] - hs[k]) <= lim;
     const comp = new Int32Array(N).fill(-1), sizes = [], st = new Int32Array(N); let nc = 0;
