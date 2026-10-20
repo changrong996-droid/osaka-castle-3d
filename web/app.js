@@ -119,6 +119,29 @@
       ceil: new THREE.MeshStandardMaterial({ color: 0x9b7b55, roughness: 0.8 }),
     };
     const badMat = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.45, depthWrite: false });
+    // ---------- B3：建筑材质的程序纹理（运行时在 canvas 上画，种子确定；不进包）。bldg.js 的盒子出米制 UV（木纹沿盒的最长边），畳/障子/襖 出 0–1 UV ----------
+    //   木（柱/梁/阶段）：竖向木纹；床板：0.3 m 宽板 + 端接缝；灰泥：细噪点；畳：藺草纹 + 长边两侧的縁；天井：板 / 竿縁（0.45 m）/ 格天井（0.9 m）；障子：組子 + 透光纸（emissiveMap）
+    let MB = null;
+    function bMats() { if (MB) return MB; const t0 = performance.now(), rr = (a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(20261020);
+      const cv = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); draw(g, w, h); return c; };
+      const tex = (c, mx, my, srgb) => { const T = new THREE.CanvasTexture(c); T.wrapS = T.wrapT = THREE.RepeatWrapping; T.repeat.set(1 / mx, 1 / my); T.anisotropy = 4; if (srgb !== false) T.colorSpace = THREE.SRGBColorSpace; return T; };
+      const grain = (g, w, h, base, dark, n, amp) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let k = 0; k < n; k++) { const y0 = rr() * h, ph = rr() * 6.28, f = 1 + rr() * 3, a = amp * (0.3 + rr()); g.strokeStyle = dark; g.globalAlpha = 0.08 + rr() * 0.22; g.lineWidth = 0.6 + rr() * 1.6; g.beginPath(); for (let x = 0; x <= w; x += 4) { const y = y0 + Math.sin(x / w * 6.283 * f + ph) * a; x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); } g.globalAlpha = 1; };
+      const noise = (g, w, h, n, col, a) => { for (let k = 0; k < n; k++) { g.fillStyle = col; g.globalAlpha = rr() * a; const s = 1 + rr() * 3; g.fillRect(rr() * w, rr() * h, s, s); } g.globalAlpha = 1; };
+      const wood = cv(256, 128, (g, w, h) => { grain(g, w, h, '#8a6243', '#3e2614', 70, 3); noise(g, w, h, 600, '#2a180c', 0.12); });            // 1.0 m（纹向）× 0.25 m
+      const floor = cv(512, 256, (g, w, h) => { const nb = 4; for (let k = 0; k < nb; k++) { const y0 = k * h / nb, c = 150 + Math.floor(rr() * 30); g.save(); g.beginPath(); g.rect(0, y0, w, h / nb); g.clip(); grain(g, w, h, `rgb(${c},${Math.floor(c * 0.74)},${Math.floor(c * 0.5)})`, '#4a2e17', 40, 2.5); g.restore(); g.fillStyle = 'rgba(30,18,8,.55)'; g.fillRect(0, y0, w, 1.5); const jx = rr() * w; g.fillRect(jx, y0, 1.5, h / nb); } noise(g, w, h, 900, '#2a180c', 0.1); }); // 2 m × 1.2 m（4 块 0.3 m 板）
+      const plaster = cv(256, 256, (g, w, h) => { g.fillStyle = '#efeadf'; g.fillRect(0, 0, w, h); noise(g, w, h, 4000, '#b8b0a0', 0.18); noise(g, w, h, 1500, '#ffffff', 0.35); });
+      const tatami = cv(512, 256, (g, w, h) => { g.fillStyle = '#c3b67c'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = (y / 2) % 2 ? 'rgba(120,110,50,.18)' : 'rgba(255,250,200,.12)'; g.fillRect(0, y, w, 1); } for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(90,80,40,.18)'; g.fillRect(x, 0, 1, h); } const hb = Math.round(h * 0.045); g.fillStyle = '#2b2a26'; g.fillRect(0, 0, w, hb); g.fillRect(0, h - hb, w, hb); g.fillStyle = 'rgba(200,190,150,.25)'; g.fillRect(0, hb - 1, w, 1); g.fillRect(0, h - hb, w, 1); }); // 縁 = 长边两侧
+      const ceilS = cv(512, 512, (g, w, h) => { grain(g, w, h, '#a07c55', '#5a3c22', 50, 3); for (let k = 0; k < 4; k++) { g.fillStyle = 'rgba(40,24,10,.35)'; g.fillRect(0, k * h / 4, w, 1); } for (let k = 0; k < 4; k++) { const x = (k + 0.5) * w / 4; g.fillStyle = '#4a3019'; g.fillRect(x - 5, 0, 10, h); g.fillStyle = 'rgba(255,230,190,.2)'; g.fillRect(x - 5, 0, 2, h); } }); // 1.8 m：竿縁 0.45 m
+      const ceilK = cv(512, 512, (g, w, h) => { g.fillStyle = '#b89a62'; g.fillRect(0, 0, w, h); noise(g, w, h, 2000, '#7a5a30', 0.2); for (let k = 0; k <= 2; k++) { g.fillStyle = '#2a1a0e'; g.fillRect(k * w / 2 - 9, 0, 18, h); g.fillRect(0, k * h / 2 - 9, w, 18); } g.strokeStyle = 'rgba(210,170,80,.6)'; g.lineWidth = 3; for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) g.strokeRect(a * w / 2 + 24, c * h / 2 + 24, w / 2 - 48, h / 2 - 48); }); // 格天井 1.8 m（格 0.9 m）
+      const shoji = cv(512, 256, (g, w, h) => { g.fillStyle = '#f4efe2'; g.fillRect(0, 0, w, h); noise(g, w, h, 1500, '#d8cfb8', 0.25); g.fillStyle = '#6b4e33'; for (let k = 1; k < 8; k++) g.fillRect(k * w / 8 - 2, 0, 4, h); for (let k = 1; k < 3; k++) g.fillRect(0, k * h / 3 - 2, w, 4); g.fillRect(0, 0, w, 10); g.fillRect(0, h - 10, w, 10); g.fillRect(0, 0, 10, h); g.fillRect(w - 10, 0, 10, h); g.fillRect(w - 64, 0, 3, h); }); // 長边 = 高
+      const fusuma = cv(256, 256, (g, w, h) => { g.fillStyle = '#e2d6b4'; g.fillRect(0, 0, w, h); noise(g, w, h, 2500, '#b9a675', 0.2); g.strokeStyle = '#3a2a1a'; g.lineWidth = 8; g.strokeRect(0, 0, w, h); });
+      const Tw = tex(wood, 1.0, 0.25), Tf = tex(floor, 2.0, 1.2), Tp = tex(plaster, 2, 2), Tt = tex(tatami, 1, 1), Tc = tex(ceilS, 1.8, 1.8), Tk = tex(ceilK, 1.8, 1.8), Ts = tex(shoji, 1, 1), Tu = tex(fusuma, 1, 1);
+      const std = (o) => new THREE.MeshStandardMaterial(o);
+      MB = { wood: std({ map: Tw, color: 0xc0aa98, roughness: 0.72 }), beam: std({ map: Tw, color: 0xb09888, roughness: 0.78 }), step: std({ map: Tw, color: 0xe8d4bc, roughness: 0.7 }),
+        floorwood: std({ map: Tf, color: 0xd8c0a0, roughness: 0.62 }), ceil: std({ map: Tf, color: 0xc0a080, roughness: 0.8 }), ceilS: std({ map: Tc, roughness: 0.8 }), ceilK: std({ map: Tk, roughness: 0.6 }),
+        plaster: std({ map: Tp, roughness: 0.92 }), kabe: std({ map: Tp, color: 0xe2d2b0, roughness: 0.95 }), tatami: std({ map: Tt, roughness: 0.95 }), fusuma: std({ map: Tu, roughness: 0.85 }),
+        shoji: std({ map: Ts, emissiveMap: Ts, emissive: 0x6a6458, roughness: 0.95 }), hazama: std({ map: Tp, color: 0x6a6052, roughness: 1 }) };
+      state.texMs = Math.round(performance.now() - t0); return MB; }
 
     // ---------- 几何累加器（每种材质合并成一个网格）----------
     function Kit() {
@@ -358,8 +381,9 @@
     }
 
     // ---------- B1：建筑（web/bldg.js 生成规格 + 几何；这里只做坐标轴换算与网格）----------
-    function accMeshes(accs, name, shadow) { const out = []; for (const [m, a] of Object.entries(accs)) { const n = a.length, f = new Float32Array(n); for (let i = 0; i < n; i += 3) { f[i] = a[i]; f[i + 1] = a[i + 2]; f[i + 2] = -a[i + 1]; }
-        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(f, 3)); fastNormals(g); const mesh = new THREE.Mesh(g, M[m] || M.plaster); mesh.name = name; mesh.castShadow = shadow; mesh.receiveShadow = true; out.push(mesh); } return out; }
+    function accMeshes(accs, name, shadow, mats) { const out = []; for (const [m, a] of Object.entries(accs)) { if (m.endsWith('@uv')) continue; const n = a.length, f = new Float32Array(n); for (let i = 0; i < n; i += 3) { f[i] = a[i]; f[i + 1] = a[i + 2]; f[i + 2] = -a[i + 1]; }
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(f, 3)); const uv = accs[m + '@uv']; if (uv && uv.length * 3 === n * 2) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2)); fastNormals(g);
+        const mat = (mats && uv && mats[m]) || M[m] || (m === 'beam' || m === 'step' ? M.wood : m === 'ceilS' || m === 'ceilK' ? M.ceil : m === 'hazama' ? M.stone : M.plaster); const mesh = new THREE.Mesh(g, mat); mesh.name = name; mesh.castShadow = shadow; mesh.receiveShadow = true; out.push(mesh); } return out; }
     const mergeAcc = (dst, src) => { for (const [m, a] of Object.entries(src)) { const L = dst[m] || (dst[m] = []); for (let i = 0; i < a.length; i++) L.push(a[i]); } };
     function bldgWorld(bw) { // 首帧：只有外壳（显示 + 进相机碰撞场）；首帧之后逐栋补外观细节（LOD0），换成 LOD（近 = 细节，远 = 外壳）
       const grp = new THREE.Group(); grp.name = 'bldg-group'; const HU = {};
@@ -369,20 +393,20 @@
     function bldgDetail(grp, b0) { // 首帧之后：逐栋算细节（每步 ≤30 ms），全部算完再一次换上
       const L0 = {}; let k = 0; const st = () => { if (bw !== b0 || !grp.parent) return; const t = performance.now(); while (k < b0.list.length && performance.now() - t < 30) { mergeAcc(L0, BLDG.exterior(b0.list[k]).lod0); k++; }
         if (k < b0.list.length) { setTimeout(st, 0); return; }
-        const near = new THREE.Group(); near.name = 'bldg'; for (const m of accMeshes(L0, 'bldg', true)) near.add(m);
+        const near = new THREE.Group(); near.name = 'bldg'; for (const m of accMeshes(L0, 'bldg', true, bMats())) near.add(m);
         const far = new THREE.Group(); far.name = 'bldg-far'; for (const m of accMeshes(grp.userData.hu, 'bldg-far', true)) far.add(m);
         const lod = new THREE.LOD(); lod.name = 'bldg-lod'; lod.addLevel(near, 0); lod.addLevel(far, 700); grp.add(lod);
         const hull = grp.getObjectByName('bldg-hull'); if (hull) hull.visible = false; // 外壳网格留在场景里（相机碰撞场已经用了它），只是不再显示
         state.bldgDetail = true; requestRender(); }; setTimeout(st, 0); }
     // B1：建筑审计 H22–H27 逐栋分步跑（每栋之间让出主线程），合并进 H 审计结果
-    function withBldgAudit(A0, s0, b0, done) { const cnt = { H22: 0, H23: 0, H24: 0, H25: 0, H26: 0, H27: 0 }, items = []; let k = 0, t1 = performance.now();
+    function withBldgAudit(A0, s0, b0, done) { const cnt = Object.fromEntries(BLDG.RULES.map(r => [r.id, 0])), items = []; let k = 0, t1 = performance.now();
       const st = () => { if (site !== s0 || bw !== b0) return; const t = performance.now(); while (k < b0.list.length && performance.now() - t < 40) { const R = BLDG.audit(s0, b0, { only: b0.list[k].id }); for (const r in R.cnt) cnt[r] += R.cnt[r]; for (const it of R.items) items.push({ rule: it.rule, name: b0.list[it.b].name, msg: it.msg }); k++; }
         if (k < b0.list.length) { setTimeout(st, 0); return; } state.bldgAuditMs = Math.round(performance.now() - t1); const tot = Object.values(cnt).reduce((a, c) => a + c, 0);
         done({ total: A0.total + tot, cnt: Object.assign({}, A0.cnt, cnt), rules: (A0.rules || []).concat(BLDG.RULES), items: (A0.items || []).concat(items), worker: A0.worker, bldg: { cnt, total: tot } }); };
       setTimeout(st, 0); }
     // B1：内部按需生成（相机离建筑 <45 m 时建，>110 m 时释放；最多同时 6 栋）
     const interiors = new Map(); let intGroup = null;
-    function interiorFor(b) { let e = interiors.get(b.id); if (e) return e; const t0 = performance.now(), g = BLDG.geoOf(b), grp = new THREE.Group(); grp.name = 'bldg-int'; for (const m of accMeshes(g.int.acc, 'bldg-int', false)) { m.receiveShadow = false; grp.add(m); } // 室内不接太阳阴影（阴影图分辨率在室内尺度下是锯齿光斑）
+    function interiorFor(b) { let e = interiors.get(b.id); if (e) return e; const t0 = performance.now(), g = BLDG.geoOf(b), grp = new THREE.Group(); grp.name = 'bldg-int'; for (const m of accMeshes(BLDG.interior(b).acc, 'bldg-int', !!intMode, bMats())) { m.receiveShadow = !!intMode; grp.add(m); } // B3：室内也投/接太阳阴影——进室内时阴影相机收紧到这一栋（纹素 ~1.5 cm），阳光只从真窓洞进来
       if (!intGroup || !intGroup.parent) { intGroup = new THREE.Group(); intGroup.name = 'bldg-int'; world.add(intGroup); } intGroup.add(grp); e = { grp, ms: Math.round(performance.now() - t0) }; interiors.set(b.id, e); state.intBuilt = (state.intBuilt || 0) + 1; requestRender(); return e; }
     function updateInteriors() { if (!bw || !world) return; const c = w3(camera.position), near = [];
       for (const b of bw.list) { const dx = Math.max(b.bb[0] - c[0], 0, c[0] - b.bb[2]), dy = Math.max(b.bb[1] - c[1], 0, c[1] - b.bb[3]), d = Math.hypot(dx, dy, Math.max(0, c[2] - b.F[b.F.length - 1].z - 12)); if (d < 45 || (intMode && intMode.b === b)) near.push([d, b]); else if (d > 110 && interiors.has(b.id)) { const e = interiors.get(b.id); intGroup.remove(e.grp); e.grp.traverse(o => o.geometry && o.geometry.dispose()); interiors.delete(b.id); } }
@@ -405,35 +429,48 @@
       if (inFoot(b, p, 0.6)) { let g = -1e9; for (const [dx, dy] of [[0, 0], [R, 0], [-R, 0], [0, R], [0, -R]]) g = Math.max(g, site.heightAt(p[0] + dx, p[1] + dy)); return p[2] - g >= R - 1e-3; }
       return F.clearance(p, R + 0.01) >= R - 1e-3; }
     // 脚下支撑面：建筑实心盒（楼板面层 +0.04、踏步、土間、床、踏石）与地面里，顶 ≤ 当前脚底 + STEP_UP 的最高者
-    function floorUnder(b, x, y, foot) { const G = BLDG.geoOf(b), [u, v] = b.fr.l(x, y); let best = -1e9;
-      for (const B of G.solid) { const q = B.b; if (u < q[0] || u > q[3] || v < q[1] || v > q[4] || B.tag === 'ceil' || B.tag === 'lintel' || B.tag === 'beam') continue; const top = q[5] + (B.tag === 'slab' ? 0.04 : 0); if (top <= foot + STEP_UP && top > best) best = top; }
-      const tz = site.surfaceAt(x, y); if (tz <= foot + STEP_UP && tz > best) best = tz; return best; }
-    function teleportInt(cam, tgt) { setV(camera.position, cam); lookFrom(cam, tgt); applyLook(); intMode.last = cam.slice(); intMode.foot = floorUnder(intMode.b, cam[0], cam[1], cam[2] - EYE_I() + 0.05); }
+    let SUP = null; // 最近一次 floorUnder 的支撑盒（踏板 → 坡道跟随）
+    function floorUnder(b, x, y, foot) { const G = BLDG.geoOf(b), [u, v] = b.fr.l(x, y); let best = -1e9, sb = null; const gap = hasFault('stairgap');
+      for (const B of G.solid) { const q = B.b; if (u < q[0] || u > q[3] || v < q[1] || v > q[4] || B.tag === 'ceil' || B.tag === 'lintel' || B.tag === 'beam' || B.tag === 'rail') continue; if (gap && B.tag === 'step' && B.o && B.o.k === Math.floor(Math.ceil(b.stairs[B.o.st].rise / BLDG.SPEC.stair.riserMax) / 2)) continue; const top = q[5] + (B.tag === 'slab' ? 0.04 : 0); if (top <= foot + STEP_UP && top > best) { best = top; sb = B; } }
+      const tz = site.surfaceAt(x, y); if (tz <= foot + STEP_UP && tz > best) { best = tz; sb = null; } SUP = sb; return best; }
+    // B3：在踏板上时，眼高目标 = 沿梯段的连续坡道（踏板中点连线），不是逐级的踏面——上下楼不再一顿一顿
+    function rampEye(b, x, y, fl) { const B = SUP; if (!B || B.tag !== 'step' || !B.o) return fl + EYE_I(); const st = b.stairs[B.o.st], F0 = b.F[st.f], n = Math.ceil(st.rise / BLDG.SPEC.stair.riserMax), [u, v] = b.fr.l(x, y), r = st.rect, X = st.dir === 0 ? u - BLDG.U(b, r[0]) : st.dir === 1 ? BLDG.U(b, r[2]) - u : st.dir === 2 ? v - BLDG.V(b, r[1]) : BLDG.V(b, r[3]) - v;
+      const zr = F0.z + st.rise * Math.max(0, Math.min(1, X / st.run + 0.5 / n)); return Math.max(fl - 0.15, Math.min(fl + 0.15, zr)) + EYE_I(); }
+    function teleportInt(cam, tgt) { setV(camera.position, cam); lookFrom(cam, tgt); applyLook(); intMode.last = cam.slice(); delete intMode.zt; intMode.foot = floorUnder(intMode.b, cam[0], cam[1], cam[2] - EYE_I() + 0.05); }
     function camsOf(b) { if (!b.cams) BLDG.camAudit(site, bw, { only: b.id }); return b.cams || []; }
     function entranceCam(b) { const c0 = camsOf(b)[0]; if (!c0) return null; const p = c0.path, t = p[Math.min(2, p.length - 1)]; return { name: b.name + '·入口', what: 'entrance', room: c0.room, cam: c0.door.slice(), tgt: [t[0], t[1], c0.door[2]] }; }
+    // B3：竖向亮条的根因 = 全城阴影图（±620 m / 4096 → 纹素 0.30 m）+ normalBias 0.6 m，比 0.24 m 的墙和 0.22 m 的柱还粗：室内墙面在柱边的阴影查找落到遮挡体外 → 阳光“漏”成斜条。
+    //   规则：进室内时阴影正交相机按本栋外接圆（+8 m）收紧，纹素 ≈ 2R/4096（~1–2 cm），normalBias/bias 按纹素取；出来恢复全城阴影。窓是真洞，阳光与窓外景色都从洞里进来。
+    const SH0 = { l: 620, near: 10, far: 3000, nb: 0.6, bias: -0.0005 }, sunDir = sun.position.clone().normalize();
+    function intLighting(b) { const C = sun.shadow.camera; if (intGroup) intGroup.traverse(m => { if (m.isMesh) { m.castShadow = !!b; m.receiveShadow = !!b; } }); // 室内网格只在室内模式投/接阴影（外景的阴影图不多画这些三角形）
+      if (!b) { Object.assign(C, { left: -SH0.l, right: SH0.l, top: SH0.l, bottom: -SH0.l, near: SH0.near, far: SH0.far }); C.updateProjectionMatrix(); sun.shadow.normalBias = SH0.nb; sun.shadow.bias = SH0.bias; sun.target.position.set(0, 0, 0); sun.position.copy(sunDir).multiplyScalar(1500); sun.target.updateMatrixWorld(); intLight.intensity = 0; hemi.intensity = 1.35; hemi.color.setHex(0xd6e4ff); hemi.groundColor.setHex(0x5d5545); renderer.toneMappingExposure = 0.72; return; }
+      const [x0, y0, x1, y1] = b.bb, r = Math.hypot(x1 - x0, y1 - y0) / 2 + 8, zt = b.F[b.F.length - 1].z + 12, ctr = W((x0 + x1) / 2, (y0 + y1) / 2, (b.F[0].z + zt) / 2);
+      sun.target.position.copy(ctr); sun.position.copy(ctr).addScaledVector(sunDir, 300); sun.target.updateMatrixWorld(); Object.assign(C, { left: -r, right: r, top: r, bottom: -r, near: 300 - r - 20, far: 300 + r + 20 }); C.updateProjectionMatrix();
+      const tx = 2 * r / sun.shadow.mapSize.x; sun.shadow.normalBias = tx * 1.5; sun.shadow.bias = -0.0002;
+      intLight.intensity = 2.2; intLight.distance = 16; intLight.decay = 1; hemi.intensity = 2.1; hemi.color.setHex(0xeef0f4); hemi.groundColor.setHex(0xa89c88); renderer.toneMappingExposure = 0.88; }
     function enterInterior(id, room, o) { o = o || {}; const b = bw && bw.list[id]; if (!b) return null; const cams = camsOf(b);
       const c = room === 'entrance' ? entranceCam(b) : (room === undefined || room === null ? cams.find(q => q.what === 'toko') || cams[0] : cams.find(q => q.room === room || q.name === room)) || cams[0]; if (!c) return null;
-      if (!o.noMesh) { interiorFor(b); const sl = $('bsel'); if (sl) sl.value = b.id; } anim = null; setHover(null); intMode = { b, c }; intLight.intensity = 4; hemi.intensity = 2.6; hemi.color.setHex(0xfff1dc); hemi.groundColor.setHex(0x9a7a58); // 室内：暖色天光，点光源减弱
+      if (!o.noMesh) { interiorFor(b); const sl = $('bsel'); if (sl) sl.value = b.id; } anim = null; setHover(null); intMode = { b, c }; intLighting(b); // B3：室内光照（阴影相机收紧到本栋；天光与外景同一套，窓外的景色不过曝/不发黑）
       controls.enabled = false; controls.minDistance = 0.05; controls.maxDistance = 8; controls.minPolarAngle = 0.01; controls.maxPolarAngle = Math.PI - 0.01; // 室内不用 OrbitControls（拖动 = 环顾），只保留它的 target 作视线点
       if (!hasFault('intnear')) camera.near = nearFor(camera.fov, camera.aspect) * R_INT() / CAM_R; camera.updateProjectionMatrix(); // 近平面四角 ≤0.9·R_INT
       teleportInt(c.cam, c.tgt); KEYS.clear(); intMode.t = null; uiInterior(true); requestRender(); return { name: c.name, what: c.what, cam: c.cam, tgt: c.tgt }; }
-    function exitInterior(silent) { if (!intMode) return; const b = intMode.b, c = w3(camera.position); intMode = null; KEYS.clear(); intLight.intensity = 0; hemi.intensity = 1.35; hemi.color.setHex(0xd6e4ff); hemi.groundColor.setHex(0x5d5545);
+    function exitInterior(silent) { if (!intMode) return; const b = intMode.b, c = w3(camera.position); intMode = null; KEYS.clear(); intLighting(null);
       controls.enabled = true; controls.minDistance = 3; controls.maxDistance = 3000; controls.minPolarAngle = 0; controls.maxPolarAngle = Math.PI * 0.495; camera.near = nearFor(camera.fov, camera.aspect); camera.updateProjectionMatrix(); uiInterior(false); lastCam = null;
       if (!silent) { const [x0, y0, x1, y1] = b.bb, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rr = Math.hypot(x1 - x0, y1 - y0) / 2 + 22; let dx = c[0] - cx, dy = c[1] - cy; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L; // 出来：退到这栋外面斜上方看它
         const tz = b.F[0].z + 3, tgt = [cx, cy, tz]; setV(controls.target, tgt); setV(camera.position, F.place([cx + dx * rr, cy + dy * rr, tz + rr * 0.55])); controls.update(); enforce(true); requestRender(); } }
     function enforceInt() { const c = w3(camera.position); if (intValid(c)) { const l = intMode.last; if (!l || Math.abs(l[0] - c[0]) + Math.abs(l[1] - c[1]) + Math.abs(l[2] - c[2]) > 1e-6) intMode.foot = floorUnder(intMode.b, c[0], c[1], c[2] - EYE_I() + 0.05); intMode.last = c; return false; } setV(camera.position, intMode.last); camera.lookAt(controls.target); return true; }
     // 一次水平位移（世界 dx,dy），分 ≤5 cm 子步；每步：脚下支撑面高差 ≤STEP_UP/DROP、球合法；被挡时沿轴向滑移；眼高按 VZ 趋近 支撑面+eye
-    function walkMove(dx, dy, dt) { const b = intMode.b; let p = w3(camera.position), foot = intMode.foot; const L = Math.hypot(dx, dy), N = Math.max(1, Math.ceil(L / 0.05)), mz = VZ * Math.max(dt, 1e-3) / N; let moved = 0;
+    function walkMove(dx, dy, dt) { const b = intMode.b; let p = w3(camera.position), foot = intMode.foot; const z00 = p[2]; const L = Math.hypot(dx, dy), N = Math.max(1, Math.ceil(L / 0.05)), mz = VZ * Math.max(dt, 1e-3) / N; let moved = 0;
       for (let k = 0; k < N; k++) { let ok = false; const sx = dx / N, sy = dy / N;
         for (const [ax, ay] of [[sx, sy], [sx, 0], [0, sy]]) { if (Math.abs(ax) + Math.abs(ay) < 1e-9) continue; const x = p[0] + ax, y = p[1] + ay, fl = floorUnder(b, x, y, foot); if (fl < foot - DROP) continue;
-          const zt = fl + EYE_I(), z = p[2] + Math.max(-mz, Math.min(mz, zt - p[2])), q = [x, y, z]; if (!intValid(q)) continue; p = q; foot = fl; ok = true; moved += Math.hypot(ax, ay); break; }
+          const zt = rampEye(b, x, y, fl), z = p[2] + Math.max(-mz, Math.min(mz, zt - p[2])), q = [x, y, z]; if (!intValid(q)) continue; p = q; foot = fl; intMode.zt = zt; ok = true; moved += Math.hypot(ax, ay); break; }
         if (!ok) break; }
-      { const zt = foot + EYE_I(), dz = zt - p[2]; if (Math.abs(dz) > 1e-4) { const q = [p[0], p[1], p[2] + Math.max(-VZ * dt, Math.min(VZ * dt, dz))]; if (intValid(q)) p = q; } } // 停下时眼高继续趋近
+      { const zt = intMode.zt !== undefined && Math.abs(intMode.zt - EYE_I() - foot) < 0.2 ? intMode.zt : foot + EYE_I(), dz = zt - p[2]; const lim = VZ * dt, lo = z00 - lim, hi = z00 + lim; if (Math.abs(dz) > 1e-4) { const q = [p[0], p[1], Math.max(lo, Math.min(hi, p[2] + dz))]; if (intValid(q)) p = q; } } // 停下时眼高继续趋近（B3：一帧总的眼高变化 ≤ VZ·dt，含子步）
       setV(camera.position, p); intMode.foot = foot; intMode.last = p.slice(); applyLook(); state.walkSteps = (state.walkSteps || 0) + 1; return moved; }
     const K = c => KEYS.has(c);
     function walkUpdate(now) { if (!intMode) return false; const dt = intMode.t === null || intMode.t === undefined ? 0 : Math.min(0.1, Math.max(0, (now - intMode.t) / 1000)); intMode.t = now;
       let f = 0, s = 0, t = 0; if (K('ArrowUp') || K('KeyW')) f++; if (K('ArrowDown') || K('KeyS')) f--; if (K('ArrowLeft') || K('KeyQ')) t++; if (K('ArrowRight') || K('KeyE')) t--; if (K('KeyA')) s++; if (K('KeyD')) s--;
-      const p = w3(camera.position), zOff = Math.abs(intMode.foot + EYE_I() - p[2]) > 1e-3; if (!f && !s && !t && !zOff) return false; if (!dt) return false;
+      const p = w3(camera.position), zOff = Math.abs((intMode.zt !== undefined && Math.abs(intMode.zt - EYE_I() - intMode.foot) < 0.2 ? intMode.zt : intMode.foot + EYE_I()) - p[2]) > 1e-3; if (!f && !s && !t && !zOff) return false; if (!dt) return false;
       look.yaw += t * TURN_V * dt; const v = (K('ShiftLeft') || K('ShiftRight') ? 2 : 1) * WALK_V * dt, cy = Math.cos(look.yaw), sy = Math.sin(look.yaw); let dx = cy * f - sy * s, dy = sy * f + cy * s; const n = Math.hypot(dx, dy); if (n > 1) { dx /= n; dy /= n; }
       walkMove(dx * v, dy * v, dt); const q = w3(camera.position); if (!inFoot(intMode.b, q, 2.0)) exitInterior(false); // 走出这栋 2 m → 回到外景
       return true; }
@@ -704,7 +741,7 @@
       { id: 'C6', name: '每座门：眼高 1.6 m 沿 H14 路线穿过门洞，全程清空（失败门数）' },
       { id: 'C7', name: '快速拖动/穿越模糊测试：相邻两帧之间球心不穿过任何几何' },
       { id: 'C8', name: '每座木桥：相机球贴水面从桥下两墩之间横穿，全程清空（失败桥数）' },
-    ].concat(BLDG.CRULES, [{ id: 'C11', name: '看不到地下：外景多起点拖拽/缩放模糊 + 室内步行/环顾模糊，相机球与近平面四角始终在渲染地面之上、不在实体内（违规步数）' }]);
+    ].concat(BLDG.CRULES, [{ id: 'C11', name: '看不到地下：外景多起点拖拽/缩放模糊 + 室内步行/环顾模糊，相机球与近平面四角始终在渲染地面之上、不在实体内（违规步数）' }, { id: 'C12', name: '走得上下楼：每座階段用键盘步行（真实 walkUpdate，30 fps）从下端走到上层、再转身走回下层：全程球合法、每帧眼高变化 ≤ VZ·dt、无卡住，到达两端' }]);
     // C8（r5）：木桥下的船行通道——在跨中所在的那一跨（两支点之间）中线上，球心离水面 R+0.4，垂直于桥轴横穿桥下；
     // 要求：跨净宽 ≥ 2R+0.6、桥底净空够、两端合法且向上开放、直线扫掠全程合法、逐帧 move() 走完全程不被挡（不滑移）
     function bridgeUnder() {
@@ -790,6 +827,26 @@
     function restoreCam(s) { if (s.int) { if (!intMode || intMode.b.id !== s.int.id) { if (intMode) exitInterior(true); enterInterior(s.int.id, null, { noMesh: interiors.has(s.int.id) ? false : true }); } setV(camera.position, s.int.cam); look.yaw = s.int.yaw; look.pitch = s.int.pitch; applyLook(); intMode.foot = s.int.foot; intMode.last = s.int.cam.slice(); }
       else { if (intMode) exitInterior(true); setV(camera.position, s.cam); setV(controls.target, s.tgt); controls.update(); lastCam = null; enforce(true); } requestRender(); }
     // 室内模糊：每栋从各房间机位出发，随机 按键步行（真实 walkUpdate，合成时钟）/ 转身 / 俯仰到 ±87° / 滚轮 / 拖动式乱移（enforce）/ 小地图跳房间；每步查 c11Int
+    // B3：C12 —— 用真实的键盘步行（walkUpdate，33 ms 一帧）走每座階段：下端 → 上层（再走 1 格）→ 转身 → 回到下层
+    function stairWalk(b, si) { const st = b.stairs[si], F0 = b.F[st.f], F1 = b.F[st.f + 1], r = st.rect, cs = b.cs, U = BLDG.U, V = BLDG.V, NB = BLDG.NB[st.dir], res = { ok: false, frames: 0, maxDz: 0, why: '' };
+      const cu = st.dir < 2 ? null : (U(b, r[0]) + U(b, r[2])) / 2, cv = st.dir < 2 ? (V(b, r[1]) + V(b, r[3])) / 2 : null, a0 = st.dir === 0 ? U(b, r[0]) : st.dir === 1 ? U(b, r[2]) : st.dir === 2 ? V(b, r[1]) : V(b, r[3]), sg = st.dir === 0 || st.dir === 2 ? 1 : -1;
+      const loc = x => st.dir < 2 ? [a0 + sg * x, cv] : [cu, a0 + sg * x], wpt = (x, z) => { const [u, v] = loc(x); const [X, Y] = b.fr.w(u, v); return [X, Y, z]; }, prog = p => { const [u, v] = b.fr.l(p[0], p[1]); return sg * ((st.dir < 2 ? u : v) - a0); };
+      enterInterior(b.id, null, { noMesh: true }); if (!intMode) { res.why = '进不去'; return res; } const save = new Set(KEYS); KEYS.clear();
+      const start = wpt(-cs * 0.5, F0.z + EYE_I()), ahead = wpt(st.run + 2, F0.z + EYE_I()); teleportInt(start, ahead); if (!intValid(w3(camera.position))) { res.why = '起点不合法'; KEYS.clear(); for (const k of save) KEYS.add(k); exitInterior(true); return res; }
+      let t = 1000; intMode.t = t; const legs = [{ dir: 1, goal: p => intMode.foot >= F1.z - 1e-3 && prog(p) > st.run + 0.3 }, { dir: -1, goal: p => intMode.foot <= F0.z + 1e-3 && prog(p) < -0.3 }];
+      for (const L of legs) { if (L.dir < 0) { look.yaw += Math.PI; applyLook(); } KEYS.clear(); KEYS.add('ArrowUp'); let z0 = w3(camera.position)[2], stall = 0, done = false, lastP = w3(camera.position);
+        for (let k = 0; k < 600 && intMode; k++) { t += 33; walkUpdate(t); res.frames++; const p = w3(camera.position), dz = Math.abs(p[2] - z0); res.maxDz = Math.max(res.maxDz, dz); z0 = p[2];
+          if (dz > VZ * 0.033 + 1e-3) { res.why = '眼高一帧跳 ' + dz.toFixed(3) + ' m'; break; } if (!intValid(p)) { res.why = '球不合法'; break; }
+          const mv = Math.hypot(p[0] - lastP[0], p[1] - lastP[1]); lastP = p; stall = mv < 1e-4 ? stall + 1 : 0; if (stall > 15) { res.why = (L.dir > 0 ? '上楼' : '下楼') + '卡住于 ' + prog(p).toFixed(2) + ' m / 脚 ' + (intMode.foot - F0.z).toFixed(2); break; }
+          if (L.goal(p)) { done = true; break; } }
+        if (!done) { if (!res.why) res.why = (L.dir > 0 ? '上楼' : '下楼') + '超时'; break; } if (L.dir < 0) res.ok = true; }
+      KEYS.clear(); for (const k of save) KEYS.add(k); if (intMode) exitInterior(true); return res; }
+    // B3：窓通视（three.js 射线，对场景里所有可见网格）：从室内 0.6 m 处穿过每个窓洞的缝中心向外，第一个交点必须在墙外 >0.3 m（或打到天空）
+    function windowRays(b) { const G = BLDG.geoOf(b), meshes = []; scene.traverse(o => { if (!o.isMesh || !o.geometry) return; for (let q = o; q; q = q.parent) if (!q.visible) return; if (o.material && o.material.transparent) return; meshes.push(o); }); const rc = new THREE.Raycaster(), out = { n: 0, ok: 0, sky: 0, ex: [] };
+      for (const W2 of G.ext.wa) { const o = W2.o; if (o.kind !== 'window' && o.kind !== 'akari') continue; const ap = W2.ap, bars = W2.parts.filter(q => q.tag === 'bar'), n = bars.length, p = n ? (ap.s1 - ap.s0) / n : 0, sx = o.kind === 'akari' ? (W2.parts.filter(q => q.tag === 'shoji')[0].b[ap.sd < 2 ? 1 : 0] > (ap.s0 + ap.s1) / 2 - 0.1 ? ap.s0 + (ap.s1 - ap.s0) * 0.25 : ap.s1 - (ap.s1 - ap.s0) * 0.25) : ap.s0 + p, z = (ap.z0 + ap.z1) / 2;
+        const L = (d) => { const o2 = BLDG.outerOf(b, ap.sd, ap.line), uv = ap.sd === 0 ? [o2 - d, sx] : ap.sd === 1 ? [o2 + d, sx] : ap.sd === 2 ? [sx, o2 - d] : [sx, o2 + d], [X, Y] = b.fr.w(uv[0], uv[1]); return W(X, Y, z); };
+        const a = L(ap.t + 0.6), c = L(-1), dir = c.clone().sub(a).normalize(); rc.set(a, dir); rc.far = 3000; const h = rc.intersectObjects(meshes, false)[0]; out.n++; const okD = !h || h.distance > ap.t + 0.6 + 0.3; if (okD) { out.ok++; if (!h) out.sky++; } else if (out.ex.length < 4) out.ex.push((o.f + 1) + 'F ' + (o.wt || o.kind) + ' 撞到 ' + (h.object.name || '?') + ' @' + h.distance.toFixed(2)); }
+      return out; }
     function c11IntFuzz(b, n, rnd, out) { const cams = camsOf(b); if (!cams.length) return; enterInterior(b.id, cams[Math.floor(rnd() * cams.length)].room, { noMesh: true }); const save = new Set(KEYS); let t = 1000;
       const chk = what => { out.n++; const r = c11Int(); if (r) { out.bad++; if (out.ex.length < 6) out.ex.push(b.name + ' ' + what + ' ' + r + ' @' + w3(camera.position).map(v => v.toFixed(2))); } };
       const ks = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyD', 'KeyS'];
@@ -808,7 +865,7 @@
     function cameraAudit(o) { const it = camAuditSteps(o); let r = it.next(); while (!r.done) r = it.next(); return r.value; }
     function cameraAuditAsync(o, done) { const it = camAuditSteps(o); const st = () => { const r = it.next(); if (r.done) done(r.value); else setTimeout(st, 0); }; setTimeout(st, 0); }
     function* camAuditSteps(o) { const TS = state.camStages = []; let tS = performance.now(); const lap = n => { const t = performance.now(); TS.push([n, Math.round(t - tS)]); tS = t; };
-      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0, C11: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
+      o = o || {}; const legacy = !!o.legacy, names = Object.keys(VIEWS).filter(k => !legacy || LEGACY[k]), cnt = { C1: 0, C2: 0, C3: 0, C4: 0, C5: 0, C6: 0, C7: 0, C8: 0, C9: 0, C10: 0, C11: 0, C12: 0 }, items = [], geo = { C1: 0, C3: 0, C4: 0, C6: 0, C8: 0 };
       const pre = {}; for (const k of names) pre[k] = legacy ? { cam: LEGACY[k][0], tgt: LEGACY[k][1] } : PRE[k];
       for (const k of names) { const p = pre[k]; if (k !== names[0]) yield;
         if (!F.clear(p.cam, 1e-3)) { cnt.C1++; items.push('C1 ' + k + ' 相机球不合法 ' + p.cam.map(v => v.toFixed(1))); }
@@ -829,6 +886,9 @@
         bu = bridgeUnder(); cnt.C8 = bu.filter(q => !q.ok).length; for (const q of bu) { if (!q.ok) items.push('C8 ' + q.bridge + ' 桥下横穿失败（' + q.why + '）'); geo.C8 += q.geo; } }
       lap('C8'); let bint = null;
       if (!legacy && !o.old && bw) { bint = { rooms: 0, paths: 0 }; for (const b of bw.list) { yield; const R = BLDG.camAudit(site, bw, { only: b.id }); cnt.C9 += R.cnt.C9; cnt.C10 += R.cnt.C10; bint.rooms += R.rooms; bint.paths += R.paths; for (const it of R.items) items.push(it.rule + ' ' + it.msg); } lap('C9C10'); }
+      let c12 = null;
+      if (!legacy && !o.old && bw) { c12 = { stairs: 0, bad: 0, ex: [], maxDz: 0, frames: 0 }; for (const b of bw.list) { if (!b.stairs.length) continue; yield; const nd0 = need, sv = saveCam(); for (let si = 0; si < b.stairs.length; si++) { const r = stairWalk(b, si); c12.stairs++; c12.frames += r.frames; c12.maxDz = Math.max(c12.maxDz, r.maxDz); if (!r.ok) { c12.bad++; if (c12.ex.length < 6) c12.ex.push(b.name + ' ' + (b.stairs[si].f + 1) + '階: ' + r.why); } } restoreCam(sv); need = nd0; }
+        cnt.C12 = c12.bad; if (c12.bad) items.push('C12 ' + c12.bad + '/' + c12.stairs + ' 座階段走不通，例 ' + c12.ex[0]); c12.maxDz = +c12.maxDz.toFixed(3); lap('C12'); }
       let c11 = null;
       if (!legacy && !o.old) { yield; const rnd = rng((o.seed || 7) + 911), tg0 = performance.now(), G = groundIdx(), msIdx = Math.round(performance.now() - tg0); c11 = { ext: { starts: 0, n: 0, bad: 0, ex: [], byTag: {} }, int: { bldgs: 0, n: 0, bad: 0, ex: [] }, groundTris: G.tris };
         c11.msIdx = msIdx; const tx = performance.now(); const nd0 = need, sv = saveCam(); if (intMode) exitInterior(true); const starts = c11Starts(rnd); restoreCam(sv); need = nd0; c11.msStarts = Math.round(performance.now() - tx); let msE = 0, msI = 0;
@@ -838,7 +898,7 @@
         cnt.C11 = c11.ext.bad + c11.int.bad; if (cnt.C11) items.push('C11 外景 ' + c11.ext.bad + '/' + c11.ext.n + ' 步、室内 ' + c11.int.bad + '/' + c11.int.n + ' 步看得到地下/在实体内，例 ' + (c11.ext.ex[0] || c11.int.ex[0]));
         GI = null; lap('C11'); } // 渲染地面索引只给审计用，审计完释放
       const total = Object.values(cnt).reduce((s, v) => s + v, 0);
-      return { total, cnt, items, geo, gates, c7: tf, bridges: bu, interiors: bint, c11, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
+      return { total, cnt, items, geo, gates, c7: tf, bridges: bu, interiors: bint, c11, c12, fuzzChecked: fz.checked, near: +camera.near.toFixed(3), presetCost: Object.fromEntries(names.map(k => [k, PRE[k].cost])), maxLift: lifts.length ? +Math.max(...lifts).toFixed(1) : null, meanLift: lifts.length ? +(lifts.reduce((a, b) => a + b, 0) / lifts.length).toFixed(2) : null };
     }
     function showCamAudit(A) {
       const el = $('camaudit'); if (!el) return; const ok = A.total === 0;
@@ -870,6 +930,7 @@
     // B2：测试钩子
     state.keys = KEYS; state.walkUpdate = now => walkUpdate(now); state.walkMove = (dx, dy, dt) => walkMove(dx, dy, dt); state.lookYP = look; state.applyLook = applyLook; state.intValid = p => intValid(p);
     state.minimap = () => { const el = $('minimap'); return { visible: !!(el && el.style.display === 'block' && el.offsetWidth > 0), floor: MM.view && MM.view.f, camFloor: intMode ? camFloor(intMode.b) : null, rooms: (MM.rooms || []).map(r => ({ id: r.id, name: r.name, px: r.px, py: r.py })), cam: MM.cam, rect: el && MM.cv.getBoundingClientRect().toJSON() }; };
+    state.stairWalk = (id, si) => stairWalk(bw.list[id], si || 0); state.windowRays = id => windowRays(bw.list[id]); state.poseInt = (cam, tgt) => { if (!intMode) return false; teleportInt(cam, tgt); renderer.render(scene, camera); return true; }; state.bMats = () => !!bMats();
     state.mmJump = id => mmJump(id); state.drawMinimap = () => drawMinimap();
     state.hover = () => hover && hover.id; state.hlVisible = () => HL.visible; state.pick = (x, y) => { const b = pickBldg(x, y); return b ? b.id : null; };
     state.bldgScreen = id => { const b = bw.list[id], B = bObb(b), [x, y] = b.fr.w((B[0] + B[3]) / 2, (B[1] + B[4]) / 2), v = W(x, y, B[2] + (B[5] - B[2]) * 0.6).project(camera), r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, z: v.z }; };
