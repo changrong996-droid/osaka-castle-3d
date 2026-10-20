@@ -11,9 +11,9 @@
   // ---------- URL 参数（#seed=1&lost=1&view=aerial&labels=1&cell=1.5）----------
   function readHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', lmode: p.get('labels') === '0' ? 0 : p.get('labels') === '2' ? 2 : 1, cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0', roll: p.get('roll') || '' };
+    return { seed: +(p.get('seed') || 1), lost: p.get('lost') !== '0', view: p.get('view') || 'aerial', labels: p.get('labels') !== '0', lmode: p.get('labels') === '0' ? 0 : p.get('labels') === '2' ? 2 : 1, cell: +(p.get('cell') || SITE.SPEC.grid.cell), audit: p.get('audit') !== '0', camgeo: p.get('camgeo') === '1', fault: p.get('fault') || '', usePack: p.get('pack') !== '0', roll: p.get('roll') || '', q: p.get('q') === null ? -1 : +p.get('q'), tod: /^[mde]$/.test(p.get('tod') || '') ? p.get('tod') : 'd' };
   }
-  function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? (o.lmode === 2 ? 2 : 1) : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : '') + (o.roll ? '&roll=' + o.roll : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
+  function writeHash(o) { const h = '#seed=' + o.seed + '&lost=' + (o.lost ? 1 : 0) + '&view=' + o.view + '&labels=' + (o.labels ? (o.lmode === 2 ? 2 : 1) : 0) + (o.cell !== SITE.SPEC.grid.cell ? '&cell=' + o.cell : '') + (o.roll ? '&roll=' + o.roll : '') + (o.q >= 0 && o.qHash ? '&q=' + o.q : '') + (o.tod && o.tod !== 'd' ? '&tod=' + o.tod : ''); if (location.hash !== h) { try { history.replaceState(null, '', location.href.split('#')[0] + h); } catch (e) { try { location.hash = h; } catch (e2) {} } } }
 
   // r8a：预构建结果包（web/bake/，tools/bake.js 生成）。键 = site.js 源码哈希 + 数据哈希 + 选项，与清单（bake/manifest.js）里的一致才下载；
   // 下载与 three.js 的加载并行；任何一步失败（file://、没有 DecompressionStream、键不符、解码出错）都退回现场生成，结果相同。
@@ -72,11 +72,20 @@
     const T0 = T00 === undefined ? performance.now() : T00; // r8a：从 main() 开始计（含读包），不再从 run() 开始
     const P = readHash();
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
-    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // B5：画质 低/中/高（hash q=0/1/2 或 UI；默认按设备自动）：像素比上限 1/1.5/2、阴影图 1024/2048/4096（低 = PCF，中高 = PCFSoft）、着色器细节（凹凸/噪声倍频）
+    const FX = window.CASTLE_FX.make(THREE), QD = FX.detect(renderer, P.q); FX.q = QD.q; P.qHash = P.q >= 0; P.q = QD.q; state.quality = { q: QD.q, why: QD.why, gpu: QD.gpu };
+    const QS = [{ pr: 1, sm: 1024 }, { pr: 1.5, sm: 2048 }, { pr: 2, sm: 4096 }];
+    renderer.setPixelRatio(Math.min(devicePixelRatio, QS[FX.q].pr)); renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = FX.q ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.72;
     document.body.appendChild(renderer.domElement);
-    const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xbfc8cc, 1400, 4200);
+    // B5：阴影图只在“投/接阴影的可见物体集合、太阳、阴影相机、阴影图尺寸”变了时才重画（场景是静的；旧版每帧重画阴影图——软件渲染下占一帧 ~35%）。
+    //   签名 = 可见的投/接阴影网格 id 之和与个数（LOD 换级、建/拆室内、换世界都会变）+ 太阳/目标位置 + 阴影相机参数 + 尺寸；每次 renderer.render 之前比对。
+    renderer.shadowMap.autoUpdate = false; let SHSIG = ''; state.shadowUpdates = 0;
+    { const R0 = renderer.render.bind(renderer); renderer.render = (sc, cam) => { if (sc === scene) { let n = 0, k = 0; scene.traverseVisible(o => { if (o.isMesh && (o.castShadow || o.receiveShadow)) { n += o.id; k++; } });
+      const C = sun.shadow.camera, sig = n + '|' + k + '|' + sun.position.toArray().map(v => v.toFixed(3)) + '|' + sun.target.position.toArray().map(v => v.toFixed(3)) + '|' + [C.left, C.right, C.top, C.bottom, C.near, C.far, sun.shadow.mapSize.x, sun.shadow.normalBias, renderer.shadowMap.type].join(',');
+      if (sig !== SHSIG || !sun.shadow.map) { SHSIG = sig; renderer.shadowMap.needsUpdate = true; state.shadowUpdates++; } } R0(sc, cam); }; }
+    const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xbfc8cc, 900, 6500); // B5：雾色按时段设（屏幕 sRGB 值），起点拉近、终点放远 → 淡淡的空气透视
     const CAM_R = 1.5; // 相机球体半径（m）
     // 近裁剪面按规则：近平面四角到相机的距离 ≤ 0.9R（球体保证几何离相机 ≥R，所以近处墙面不会被近平面切掉），在此前提下取最大以保深度精度
     const nearFor = (fov, asp) => { const t = Math.tan(fov * Math.PI / 360); return 0.9 * CAM_R / Math.sqrt(1 + t * t * (1 + asp * asp)); };
@@ -85,8 +94,8 @@
     controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 3; controls.maxDistance = 3000;
     const sky = new Sky(); sky.scale.setScalar(8000); scene.add(sky);
     const su = sky.material.uniforms; su.turbidity.value = 6; su.rayleigh.value = 1.5; su.mieCoefficient.value = 0.005; su.mieDirectionalG.value = 0.8;
-    const sun = new THREE.DirectionalLight(0xfff0dc, 3.0); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
-    Object.assign(sun.shadow.camera, { left: -620, right: 620, top: 620, bottom: -620, near: 10, far: 3000 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.6;
+    const sun = new THREE.DirectionalLight(0xfff0dc, 3.0); sun.castShadow = true; sun.shadow.mapSize.set(QS[FX.q].sm, QS[FX.q].sm);
+    Object.assign(sun.shadow.camera, { left: -620, right: 620, top: 620, bottom: -620, near: 10, far: 3000 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.6 * 4096 / QS[FX.q].sm;
     scene.add(sun, sun.target); const hemi = new THREE.HemisphereLight(0xd6e4ff, 0x5d5545, 1.35); scene.add(hemi);
     const intLight = new THREE.PointLight(0xfff0d8, 0, 0, 1); camera.add(intLight); scene.add(camera); // B1：室内模式的灯（跟着相机；屋顶挡住了太阳）
     { const el = 0.6, az = THREE.MathUtils.degToRad(215), v = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - el, az); su.sunPosition.value.copy(v); sun.position.copy(v).multiplyScalar(1500); sun.target.position.set(0, 0, 0); }
@@ -96,18 +105,18 @@
 
     // ---------- 材质 ----------
     const M = {
-      plaster: new THREE.MeshStandardMaterial({ color: 0xf1ede2, roughness: 0.9 }),
-      stone: new THREE.MeshStandardMaterial({ color: 0x8b857a, roughness: 0.95 }),
-      tile: new THREE.MeshStandardMaterial({ color: 0x3d434b, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide }),
-      ridge: new THREE.MeshStandardMaterial({ color: 0x23272c, roughness: 0.6 }),
-      lacquer: new THREE.MeshStandardMaterial({ color: 0x1a1817, roughness: 0.5 }),
-      wood: new THREE.MeshStandardMaterial({ color: 0x5a3b26, roughness: 0.8 }),
+      plaster: new THREE.MeshStandardMaterial({ color: 0xebe6da, roughness: 0.92 }),
+      stone: new THREE.MeshStandardMaterial({ color: 0x8b857a, roughness: 0.92 }),
+      tile: new THREE.MeshStandardMaterial({ color: 0x3b3d42, roughness: 0.58, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.55 }), // B5：燻し瓦 = 中性深银灰（不偏蓝）
+      ridge: new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.55 }),
+      lacquer: new THREE.MeshStandardMaterial({ color: 0x1f1c1a, roughness: 0.5, envMapIntensity: 0.8 }),
+      wood: new THREE.MeshStandardMaterial({ color: 0x55402f, roughness: 0.8 }),
       iron: new THREE.MeshStandardMaterial({ color: 0x1e1f22, roughness: 0.45, metalness: 0.5 }),
       window: new THREE.MeshStandardMaterial({ color: 0x2b2622, roughness: 0.8 }),
       deck: new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.85 }),
       vermil: new THREE.MeshStandardMaterial({ color: 0x9a3b26, roughness: 0.7 }),
-      gold: new THREE.MeshStandardMaterial({ color: 0xd9a63a, metalness: 1, roughness: 0.3 }),
-      road: new THREE.MeshStandardMaterial({ color: 0xa39478, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+      gold: new THREE.MeshStandardMaterial({ color: 0xc8963c, metalness: 1, roughness: 0.38, envMapIntensity: 0.9 }),
+      road: new THREE.MeshStandardMaterial({ color: 0x9c8f78, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
       // B1：建筑语法（web/bldg.js）的材质
       shoji: new THREE.MeshStandardMaterial({ color: 0xece6d4, roughness: 0.95, emissive: 0x2a2620 }),
       tatami: new THREE.MeshStandardMaterial({ color: 0xbdb27a, roughness: 0.95 }),
@@ -118,6 +127,8 @@
       kabe: new THREE.MeshStandardMaterial({ color: 0xd9ccb0, roughness: 0.95 }),
       ceil: new THREE.MeshStandardMaterial({ color: 0x9b7b55, roughness: 0.8 }),
     };
+    // B5：程序材质（fx.js；世界坐标图案，不加纹理文件）
+    for (const k of ['plaster', 'stone', 'tile', 'lacquer', 'wood', 'road']) FX.patch(M[k], k, k === 'tile' || k === 'lacquer'); for (const k of ['gold', 'ridge', 'iron']) FX.spec(M[k]);
     const badMat = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.45, depthWrite: false });
     // ---------- B3：建筑材质的程序纹理（运行时在 canvas 上画，种子确定；不进包）。bldg.js 的盒子出米制 UV（木纹沿盒的最长边），畳/障子/襖 出 0–1 UV ----------
     //   木（柱/梁/阶段）：竖向木纹；床板：0.3 m 宽板 + 端接缝；灰泥：细噪点；畳：藺草纹 + 长边两侧的縁；天井：板 / 竿縁（0.45 m）/ 格天井（0.9 m）；障子：組子 + 透光纸（emissiveMap）
@@ -127,18 +138,18 @@
       const tex = (c, mx, my, srgb) => { const T = new THREE.CanvasTexture(c); T.wrapS = T.wrapT = THREE.RepeatWrapping; T.repeat.set(1 / mx, 1 / my); T.anisotropy = 4; if (srgb !== false) T.colorSpace = THREE.SRGBColorSpace; return T; };
       const grain = (g, w, h, base, dark, n, amp) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let k = 0; k < n; k++) { const y0 = rr() * h, ph = rr() * 6.28, f = 1 + rr() * 3, a = amp * (0.3 + rr()); g.strokeStyle = dark; g.globalAlpha = 0.08 + rr() * 0.22; g.lineWidth = 0.6 + rr() * 1.6; g.beginPath(); for (let x = 0; x <= w; x += 4) { const y = y0 + Math.sin(x / w * 6.283 * f + ph) * a; x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); } g.globalAlpha = 1; };
       const noise = (g, w, h, n, col, a) => { for (let k = 0; k < n; k++) { g.fillStyle = col; g.globalAlpha = rr() * a; const s = 1 + rr() * 3; g.fillRect(rr() * w, rr() * h, s, s); } g.globalAlpha = 1; };
-      const wood = cv(256, 128, (g, w, h) => { grain(g, w, h, '#8a6243', '#3e2614', 70, 3); noise(g, w, h, 600, '#2a180c', 0.12); });            // 1.0 m（纹向）× 0.25 m
-      const floor = cv(512, 256, (g, w, h) => { const nb = 4; for (let k = 0; k < nb; k++) { const y0 = k * h / nb, c = 150 + Math.floor(rr() * 30); g.save(); g.beginPath(); g.rect(0, y0, w, h / nb); g.clip(); grain(g, w, h, `rgb(${c},${Math.floor(c * 0.74)},${Math.floor(c * 0.5)})`, '#4a2e17', 40, 2.5); g.restore(); g.fillStyle = 'rgba(30,18,8,.55)'; g.fillRect(0, y0, w, 1.5); const jx = rr() * w; g.fillRect(jx, y0, 1.5, h / nb); } noise(g, w, h, 900, '#2a180c', 0.1); }); // 2 m × 1.2 m（4 块 0.3 m 板）
+      const wood = cv(256, 128, (g, w, h) => { grain(g, w, h, '#8f7a61', '#4a3a2a', 70, 3); noise(g, w, h, 600, '#2a2018', 0.12); });            // 1.0 m（纹向）× 0.25 m
+      const floor = cv(512, 256, (g, w, h) => { const nb = 4; for (let k = 0; k < nb; k++) { const y0 = k * h / nb, c = 150 + Math.floor(rr() * 30); g.save(); g.beginPath(); g.rect(0, y0, w, h / nb); g.clip(); grain(g, w, h, `rgb(${c},${Math.floor(c * 0.82)},${Math.floor(c * 0.63)})`, '#4d3a26', 40, 2.5); g.restore(); g.fillStyle = 'rgba(30,22,14,.5)'; g.fillRect(0, y0, w, 1.5); const jx = rr() * w; g.fillRect(jx, y0, 1.5, h / nb); } noise(g, w, h, 900, '#2a2018', 0.1); }); // 2 m × 1.2 m（4 块 0.3 m 板）
       const plaster = cv(256, 256, (g, w, h) => { g.fillStyle = '#efeadf'; g.fillRect(0, 0, w, h); noise(g, w, h, 4000, '#b8b0a0', 0.18); noise(g, w, h, 1500, '#ffffff', 0.35); });
       const tatami = cv(512, 256, (g, w, h) => { g.fillStyle = '#c3b67c'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = (y / 2) % 2 ? 'rgba(120,110,50,.18)' : 'rgba(255,250,200,.12)'; g.fillRect(0, y, w, 1); } for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(90,80,40,.18)'; g.fillRect(x, 0, 1, h); } const hb = Math.round(h * 0.045); g.fillStyle = '#2b2a26'; g.fillRect(0, 0, w, hb); g.fillRect(0, h - hb, w, hb); g.fillStyle = 'rgba(200,190,150,.25)'; g.fillRect(0, hb - 1, w, 1); g.fillRect(0, h - hb, w, 1); }); // 縁 = 长边两侧
-      const ceilS = cv(512, 512, (g, w, h) => { grain(g, w, h, '#a07c55', '#5a3c22', 50, 3); for (let k = 0; k < 4; k++) { g.fillStyle = 'rgba(40,24,10,.35)'; g.fillRect(0, k * h / 4, w, 1); } for (let k = 0; k < 4; k++) { const x = (k + 0.5) * w / 4; g.fillStyle = '#4a3019'; g.fillRect(x - 5, 0, 10, h); g.fillStyle = 'rgba(255,230,190,.2)'; g.fillRect(x - 5, 0, 2, h); } }); // 1.8 m：竿縁 0.45 m
-      const ceilK = cv(512, 512, (g, w, h) => { g.fillStyle = '#b89a62'; g.fillRect(0, 0, w, h); noise(g, w, h, 2000, '#7a5a30', 0.2); for (let k = 0; k <= 2; k++) { g.fillStyle = '#2a1a0e'; g.fillRect(k * w / 2 - 9, 0, 18, h); g.fillRect(0, k * h / 2 - 9, w, 18); } g.strokeStyle = 'rgba(210,170,80,.6)'; g.lineWidth = 3; for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) g.strokeRect(a * w / 2 + 24, c * h / 2 + 24, w / 2 - 48, h / 2 - 48); }); // 格天井 1.8 m（格 0.9 m）
+      const ceilS = cv(512, 512, (g, w, h) => { grain(g, w, h, '#a8947a', '#5e4a34', 50, 3); for (let k = 0; k < 4; k++) { g.fillStyle = 'rgba(40,24,10,.35)'; g.fillRect(0, k * h / 4, w, 1); } for (let k = 0; k < 4; k++) { const x = (k + 0.5) * w / 4; g.fillStyle = '#4e3d2b'; g.fillRect(x - 5, 0, 10, h); g.fillStyle = 'rgba(255,230,190,.2)'; g.fillRect(x - 5, 0, 2, h); } }); // 1.8 m：竿縁 0.45 m
+      const ceilK = cv(512, 512, (g, w, h) => { g.fillStyle = '#b89a62'; g.fillRect(0, 0, w, h); noise(g, w, h, 2000, '#7a5a30', 0.2); for (let k = 0; k <= 2; k++) { g.fillStyle = '#2e2418'; g.fillRect(k * w / 2 - 9, 0, 18, h); g.fillRect(0, k * h / 2 - 9, w, 18); } g.strokeStyle = 'rgba(210,170,80,.6)'; g.lineWidth = 3; for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) g.strokeRect(a * w / 2 + 24, c * h / 2 + 24, w / 2 - 48, h / 2 - 48); }); // 格天井 1.8 m（格 0.9 m）
       const shoji = cv(512, 256, (g, w, h) => { g.fillStyle = '#f4efe2'; g.fillRect(0, 0, w, h); noise(g, w, h, 1500, '#d8cfb8', 0.25); g.fillStyle = '#6b4e33'; for (let k = 1; k < 8; k++) g.fillRect(k * w / 8 - 2, 0, 4, h); for (let k = 1; k < 3; k++) g.fillRect(0, k * h / 3 - 2, w, 4); g.fillRect(0, 0, w, 10); g.fillRect(0, h - 10, w, 10); g.fillRect(0, 0, 10, h); g.fillRect(w - 10, 0, 10, h); g.fillRect(w - 64, 0, 3, h); }); // 長边 = 高
       const fusuma = cv(256, 256, (g, w, h) => { g.fillStyle = '#e2d6b4'; g.fillRect(0, 0, w, h); noise(g, w, h, 2500, '#b9a675', 0.2); g.strokeStyle = '#3a2a1a'; g.lineWidth = 8; g.strokeRect(0, 0, w, h); });
       const Tw = tex(wood, 1.0, 0.25), Tf = tex(floor, 2.0, 1.2), Tp = tex(plaster, 2, 2), Tt = tex(tatami, 1, 1), Tc = tex(ceilS, 1.8, 1.8), Tk = tex(ceilK, 1.8, 1.8), Ts = tex(shoji, 1, 1), Tu = tex(fusuma, 1, 1);
       const std = (o) => new THREE.MeshStandardMaterial(o);
-      MB = { wood: std({ map: Tw, color: 0xc0aa98, roughness: 0.72 }), beam: std({ map: Tw, color: 0xb09888, roughness: 0.78 }), step: std({ map: Tw, color: 0xe8d4bc, roughness: 0.7 }),
-        floorwood: std({ map: Tf, color: 0xd8c0a0, roughness: 0.62 }), ceil: std({ map: Tf, color: 0xc0a080, roughness: 0.8 }), ceilS: std({ map: Tc, roughness: 0.8 }), ceilK: std({ map: Tk, roughness: 0.6 }),
+      MB = { wood: std({ map: Tw, color: 0xc9beb2, roughness: 0.72 }), beam: std({ map: Tw, color: 0xb3a99c, roughness: 0.78 }), step: std({ map: Tw, color: 0xe6dccd, roughness: 0.7 }), // B5：木色去红、偏中性暖（旧桧/杉）
+        floorwood: std({ map: Tf, color: 0xe0d4c2, roughness: 0.6 }), ceil: std({ map: Tf, color: 0xcdbba2, roughness: 0.8 }), ceilS: std({ map: Tc, roughness: 0.8 }), ceilK: std({ map: Tk, roughness: 0.6 }),
         plaster: std({ map: Tp, roughness: 0.92 }), kabe: std({ map: Tp, color: 0xe2d2b0, roughness: 0.95 }), tatami: std({ map: Tt, roughness: 0.95 }), fusuma: std({ map: Tu, roughness: 0.85 }),
         shoji: std({ map: Ts, emissiveMap: Ts, emissive: 0x6a6458, roughness: 0.95 }), hazama: std({ map: Tp, color: 0x6a6052, roughness: 1 }) };
       state.texMs = Math.round(performance.now() - t0); return MB; }
@@ -266,7 +277,7 @@
       const { NX, NY, H, CLS, TAG, LOCK, cell } = S, n = NX * NY, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
       const nino = S.regions.filter(g => g.name === 'ninomaru').sort((a, b) => b.area - a.area)[0];
       const hash = (i, j) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-      const C = { bed: [0.20, 0.24, 0.20], stone: [0.50, 0.48, 0.44], gravel: [0.55, 0.51, 0.44], grass: [0.33, 0.43, 0.22], city: [0.55, 0.53, 0.49], earth: [0.48, 0.36, 0.22], road: [0.66, 0.58, 0.45], bank: [0.38, 0.40, 0.23] };
+      const C = { bed: [0.12, 0.14, 0.12], stone: [0.36, 0.34, 0.31], gravel: [0.40, 0.37, 0.32], grass: [0.20, 0.27, 0.11], city: [0.36, 0.35, 0.32], earth: [0.36, 0.27, 0.17], road: [0.46, 0.40, 0.31], bank: [0.24, 0.27, 0.13] }; // B5：反照率按实物量级（线性）——旧值偏亮 → 鸟瞰时砂利/城下一片发白
       for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
         const q = j * NX + i, h = H[q]; pos[q * 3] = S.X(i); pos[q * 3 + 1] = h; pos[q * 3 + 2] = -S.Y(j);
         const hx = (H[j * NX + Math.min(NX - 1, i + 1)] - H[j * NX + Math.max(0, i - 1)]) / (2 * cell), hy = (H[Math.min(NY - 1, j + 1) * NX + i] - H[Math.max(0, j - 1) * NX + i]) / (2 * cell), sl = Math.hypot(hx, hy);
@@ -293,43 +304,28 @@
       void nino; void LOCK; return m;
     }
     // 陡坡（石垣面）在片元着色器里画成错缝砌石：按世界坐标分层（层高 0.9 m、石长 1.7 m）
-    function stoneShader(mat) {
-      mat.onBeforeCompile = sh => {
-        sh.vertexShader = 'varying vec3 vWP; varying vec3 vWN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vWP = (modelMatrix * vec4(position, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * normal);');
-        sh.fragmentShader = 'varying vec3 vWP; varying vec3 vWN;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-          float steep = 1.0 - smoothstep(0.42, 0.62, abs(vWN.y));
-          if (steep > 0.0) {
-            vec2 hz = normalize(vWN.xz + 1e-5); float u = dot(vWP.xz, vec2(-hz.y, hz.x)), v = vWP.y;
-            float row = floor(v / 0.9), uu = u / 1.7 + row * 0.5, cu = fract(uu), cv = fract(v / 0.9);
-            float mortar = clamp(step(cu, 0.06) + step(cv, 0.09), 0.0, 1.0);
-            float rn = fract(sin(dot(vec2(floor(uu), row), vec2(12.9898, 78.233))) * 43758.5453);
-            vec3 sc = vec3(0.56, 0.53, 0.48) * (0.72 + 0.5 * rn);
-            sc = mix(sc, vec3(0.2, 0.19, 0.18), mortar);
-            diffuseColor.rgb = mix(diffuseColor.rgb, sc, steep);
-          }`);
-      };
-      return mat;
-    }
+    // B5：陡坡砌石 + 缓坡地面细节都在 fx.js 的 terrain 着色器里（面法线判定陡坡，棱线旁不再出噪点）
+    function stoneShader(mat) { return FX.patch(mat, 'terrain'); }
     function outerGround(S) { // 网格以外（±700 m 内）：4 m 粗网格，按 data 的曲轮多边形取高（r7b：各曲轮的拟合地面 T.P.；水体取该水体的堀底），与细网格边界对齐、只建细网格外的格子
       const grp = new THREE.Group(), gs = SITE.SPEC.grid, c = 4, R0 = 700, n = R0 * 2 / c + 1, pos = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3);
       const lv = (x, y) => { const g = S.regionAt(x, y); return g ? g.surf.at(x, y) : S.bodyAtPt(x, y).bed; }, wet = (x, y) => !S.regionAt(x, y);
       for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
         const x = -R0 + i * c, y = -R0 + j * c, q = j * n + i, inside = x > gs.x0 && x < gs.x1 && y > gs.y0 && y < gs.y1, gr = inside ? null : S.regionAt(x, y), h = inside ? 0 : gr ? gr.surf.at(x, y) : S.bodyAtPt(x, y).bed; // = lv(x, y)，曲轮只查一次
-        pos[q * 3] = x; pos[q * 3 + 1] = h - 0.02; pos[q * 3 + 2] = -y; const k = !inside && !gr ? [0.2, 0.24, 0.2] : [0.55, 0.53, 0.49], r = 0.9 + 0.12 * Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453 % 1);
+        pos[q * 3] = x; pos[q * 3 + 1] = h - 0.02; pos[q * 3 + 2] = -y; const k = !inside && !gr ? [0.12, 0.14, 0.12] : [0.36, 0.35, 0.32], r = 0.9 + 0.12 * Math.abs(Math.sin(i * 12.9898 + j * 78.233) * 43758.5453 % 1);
         col[q * 3] = k[0] * r; col[q * 3 + 1] = k[1] * r; col[q * 3 + 2] = k[2] * r;
       }
       const idx = new Uint32Array((n - 1) * (n - 1) * 6); let ni = 0; for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) { const x = -R0 + i * c, y = -R0 + j * c; if (x >= gs.x0 && x + c <= gs.x1 && y >= gs.y0 && y + c <= gs.y1) continue; const a = j * n + i, b = a + 1, cc = a + n, d = cc + 1; idx[ni++] = a; idx[ni++] = b; idx[ni++] = d; idx[ni++] = a; idx[ni++] = d; idx[ni++] = cc; }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(idx.slice(0, ni), 1)); fastNormals(g);
       const om = new THREE.Mesh(g, stoneShader(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }))); om.receiveShadow = true; om.name = 'outer'; grp.add(om);
       // ±700 m 以外：一圈大环（8 个顶点），外圈取内圈角点的城下拟合面高度（不把拟合平面外推到 9 km），与粗网格外缘接上
-      const mat = new THREE.MeshStandardMaterial({ color: 0x8a867c, roughness: 1 }), city = S.regions.find(g => g.name === 'city'), cz = (x, y) => city.surf.at(x, y) - 0.02;
+      const mat = FX.patch(new THREE.MeshStandardMaterial({ color: 0xa29f97, roughness: 1 }), 'ground'), city = S.regions.find(g => g.name === 'city'), cz = (x, y) => city.surf.at(x, y) - 0.02;
       const RO = 9000, ring = [[-RO, -RO], [RO, -RO], [RO, RO], [-RO, RO]], inn = [[-R0, -R0], [R0, -R0], [R0, R0], [-R0, R0]], fp = new Float32Array(8 * 3), fi = [];
       [...ring, ...inn].forEach((p, i) => { fp[i * 3] = p[0]; fp[i * 3 + 1] = i < 4 ? cz(inn[i][0], inn[i][1]) : lv(p[0], p[1]) - 0.02; fp[i * 3 + 2] = -p[1]; });
       for (let i = 0; i < 4; i++) { const a = i, b = (i + 1) % 4, c2 = 4 + i, d2 = 4 + (i + 1) % 4; fi.push(a, b, d2, a, d2, c2); }
       const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.BufferAttribute(fp, 3)); fg.setIndex(fi); fastNormals(fg); const m = new THREE.Mesh(fg, mat); m.material.side = THREE.DoubleSide; m.name = 'ring'; grp.add(m);
       { const oz = outerZFn(pos, n, c, R0, gs, fp, fi); OUTER_Z = oz.z; OUTER_T = oz.tris; } // B2：相机在网格外的地面 = 这里渲染的同一组三角形
       // r7b：水面 = 每个连通水体在自己的实测水位（T.P.）上一块多边形；再加一张最低水位的大水面兜底（只会在地面以下露出）
-      const wmat = new THREE.MeshStandardMaterial({ color: 0x3b6872, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.9 });
+      const wmat = FX.patch(new THREE.MeshStandardMaterial({ color: 0x2a4a48, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.94, envMapIntensity: 1.1 }), 'water', true); // B5：静态微波 + 天空环境反射（菲涅尔）
       // 兜底水面不是水体：放在全部渲染地面（网格 + 外圈拟合面的四角）以下，城下拟合平面外推到网格角时（东北角低于最低水位）不会被它淹掉
       let baseZ = S.WZ; for (let q = 0; q < S.H.length; q++) if (S.H[q] < baseZ) baseZ = S.H[q]; for (const p of [[-R0, -R0], [R0, -R0], [R0, R0], [-R0, R0]]) baseZ = Math.min(baseZ, lv(p[0], p[1]), cz(p[0], p[1])); baseZ -= 0.5;
       const base = new THREE.Mesh(new THREE.PlaneGeometry(18000, 18000), wmat); base.rotation.x = -Math.PI / 2; base.position.y = baseZ; base.name = 'water'; grp.add(base);
@@ -360,15 +356,15 @@
     function treesMesh(S, hide) {
       const T = hide && hide.size ? S.trees.filter((t, i) => !hide.has(i)) : S.trees;
       const grp = new THREE.Group(), N = T.length; grp.userData.trees = true; if (!N) return grp;
-      const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.38, 1, 6), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1 }), N);
-      const crownG = new THREE.IcosahedronGeometry(1, 1), crown = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ roughness: 0.9 }), N * 2);
+      const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.38, 1, 6), FX.patch(new THREE.MeshStandardMaterial({ color: 0x4a3828, roughness: 1 }), 'wood'), N);
+      const crownG = new THREE.IcosahedronGeometry(1, 1), crown = new THREE.InstancedMesh(crownG, FX.patch(new THREE.MeshStandardMaterial({ roughness: 0.85 }), 'crown'), N * 2);
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
       let ci = 0;
       T.forEach((t, i) => {
         const G = SITE.treeGeom(t), h = G.h; // 树的几何与 H18 净空审计共用
         m4.compose(W(t.x, t.y, t.z + h * 0.4), q, new THREE.Vector3(t.s, h * 0.8, t.s)); trunk.setMatrixAt(i, m4);
         const pine = t.kind === 'pine';
-        for (let k = 0; k < 2; k++) { const cr = G.crowns[k]; m4.compose(W(cr.x, cr.y, cr.z), q, new THREE.Vector3(cr.r, cr.rz, cr.r)); crown.setMatrixAt(ci, m4); col.setRGB(pine ? 0.13 : 0.22, pine ? 0.25 + 0.04 * k : 0.33 + 0.05 * k, pine ? 0.14 : 0.13); if (t.bad) col.setRGB(1, 0.1, 0.1); crown.setColorAt(ci, col); ci++; }
+        for (let k = 0; k < 2; k++) { const cr = G.crowns[k]; m4.compose(W(cr.x, cr.y, cr.z), q, new THREE.Vector3(cr.r, cr.rz, cr.r)); crown.setMatrixAt(ci, m4); { const v = 0.85 + 0.3 * ((i * 0.618034) % 1); col.setRGB((pine ? 0.07 : 0.13) * v, (pine ? 0.13 + 0.02 * k : 0.19 + 0.025 * k) * v, (pine ? 0.07 : 0.07) * v); } /* B5：树冠色压暗、降饱和，逐株明暗 */ if (t.bad) col.setRGB(1, 0.1, 0.1); crown.setColorAt(ci, col); ci++; }
       });
       trunk.castShadow = crown.castShadow = true; trunk.receiveShadow = crown.receiveShadow = true; grp.add(trunk, crown); return grp;
     }
@@ -477,13 +473,24 @@
     function entranceCam(b) { const c0 = camsOf(b)[0]; if (!c0) return null; const p = c0.path, t = p[Math.min(2, p.length - 1)]; return { name: b.name + '·入口', what: 'entrance', room: c0.room, cam: c0.door.slice(), tgt: [t[0], t[1], c0.door[2]] }; }
     // B3：竖向亮条的根因 = 全城阴影图（±620 m / 4096 → 纹素 0.30 m）+ normalBias 0.6 m，比 0.24 m 的墙和 0.22 m 的柱还粗：室内墙面在柱边的阴影查找落到遮挡体外 → 阳光“漏”成斜条。
     //   规则：进室内时阴影正交相机按本栋外接圆（+8 m）收紧，纹素 ≈ 2R/4096（~1–2 cm），normalBias/bias 按纹素取；出来恢复全城阴影。窓是真洞，阳光与窓外景色都从洞里进来。
-    const SH0 = { l: 620, near: 10, far: 3000, nb: 0.6, bias: -0.0005 }, sunDir = sun.position.clone().normalize();
+    const SH0 = { l: 620, near: 10, far: 3000, nb: 0.6 * 4096 / QS[FX.q].sm, bias: -0.0005 }, sunDir = sun.position.clone().normalize();
+    // B5：时段（朝/昼/夕）= 太阳方向/颜色/强度 + Sky 参数 + 雾色 + 程序环境图；室内另用“窗带”环境图（近似窗光与地板反弹）
+    const LT = { tod: P.tod, env: null, envI: null, exp: 0.72, expI: 0.95 };
+    function makeEnv() { const T = FX.TOD[LT.tod] || FX.TOD.d; LT.env = FX.env(renderer, 'ext', T, sunDir); FX.setEnv(LT.env); state.envMs = Math.round(FX.envMs); }
+    function applyTOD(k, init) { const T = FX.TOD[k] || FX.TOD.d; LT.tod = FX.TOD[k] ? k : 'd'; const v = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - THREE.MathUtils.degToRad(T.el), THREE.MathUtils.degToRad(T.az));
+      su.sunPosition.value.copy(v); su.turbidity.value = T.sky[0]; su.rayleigh.value = T.sky[1]; su.mieCoefficient.value = T.sky[2]; su.mieDirectionalG.value = T.sky[3];
+      sunDir.copy(v); sun.color.setRGB(T.sun[0], T.sun[1], T.sun[2]); sun.intensity = T.I; LT.sky = T.zen.map((z, i) => (z + T.hor[i]) * 0.5 * 1.2); LT.gnd = T.gnd.map(g => g * 1.3); scene.fog.color.setRGB(T.fog[0], T.fog[1], T.fog[2], THREE.LinearSRGBColorSpace); LT.exp = T.exp;
+      if (!init) makeEnv(); intLighting(intMode ? intMode.b : null); state.tod = LT.tod; }
+    function setQuality(q, save) { q = Math.max(0, Math.min(2, q | 0)); FX.setQ(q); P.q = q; const Q = QS[q]; renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pr)); renderer.setSize(innerWidth, innerHeight);
+      if (sun.shadow.mapSize.x !== Q.sm) { sun.shadow.mapSize.set(Q.sm, Q.sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+      const ty = q ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap; if (renderer.shadowMap.type !== ty) { renderer.shadowMap.type = ty; scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.needsUpdate = true; }); }); }
+      SH0.nb = 0.6 * 4096 / Q.sm; intLighting(intMode ? intMode.b : null); state.quality.q = q; if (save !== undefined) { try { if (save === null) localStorage.removeItem('castle.q'); else localStorage.setItem('castle.q', String(q)); } catch (e) { /* 无痕 */ } } }
     function intLighting(b) { const C = sun.shadow.camera; if (intGroup) intGroup.traverse(m => { if (m.isMesh) { m.castShadow = !!b; m.receiveShadow = !!b; } }); // 室内网格只在室内模式投/接阴影（外景的阴影图不多画这些三角形）
-      if (!b) { Object.assign(C, { left: -SH0.l, right: SH0.l, top: SH0.l, bottom: -SH0.l, near: SH0.near, far: SH0.far }); C.updateProjectionMatrix(); sun.shadow.normalBias = SH0.nb; sun.shadow.bias = SH0.bias; sun.target.position.set(0, 0, 0); sun.position.copy(sunDir).multiplyScalar(1500); sun.target.updateMatrixWorld(); intLight.intensity = 0; hemi.intensity = 1.35; hemi.color.setHex(0xd6e4ff); hemi.groundColor.setHex(0x5d5545); renderer.toneMappingExposure = 0.72; return; }
+      if (!b) { Object.assign(C, { left: -SH0.l, right: SH0.l, top: SH0.l, bottom: -SH0.l, near: SH0.near, far: SH0.far }); C.updateProjectionMatrix(); sun.shadow.normalBias = SH0.nb; sun.shadow.bias = SH0.bias; sun.target.position.set(0, 0, 0); sun.position.copy(sunDir).multiplyScalar(1500); sun.target.updateMatrixWorld(); intLight.intensity = 0; hemi.intensity = 1; hemi.color.setRGB(...LT.sky); hemi.groundColor.setRGB(...LT.gnd); renderer.toneMappingExposure = LT.exp; return; } // B5：半球光 = 程序天空的平均天顶/地平色（漫反射天光），镜面反射用环境图
       const [x0, y0, x1, y1] = b.bb, r = Math.hypot(x1 - x0, y1 - y0) / 2 + 8, zt = b.F[b.F.length - 1].z + 12, ctr = W((x0 + x1) / 2, (y0 + y1) / 2, (b.F[0].z + zt) / 2);
       sun.target.position.copy(ctr); sun.position.copy(ctr).addScaledVector(sunDir, 300); sun.target.updateMatrixWorld(); Object.assign(C, { left: -r, right: r, top: r, bottom: -r, near: 300 - r - 20, far: 300 + r + 20 }); C.updateProjectionMatrix();
       const tx = 2 * r / sun.shadow.mapSize.x; sun.shadow.normalBias = tx * 1.5; sun.shadow.bias = -0.0002;
-      intLight.intensity = 2.2; intLight.distance = 16; intLight.decay = 1; hemi.intensity = 2.1; hemi.color.setHex(0xeef0f4); hemi.groundColor.setHex(0xa89c88); renderer.toneMappingExposure = 0.88; }
+      intLight.intensity = 1.6; intLight.distance = 16; intLight.decay = 1; hemi.intensity = 2.0; hemi.color.setHex(0xf4f1ea); hemi.groundColor.setHex(0xc2b096); renderer.toneMappingExposure = LT.expI; } // B5：室内中性偏暖：天光偏白、地面色（地板反弹，照亮顶棚）偏暖且更亮，随身灯减弱
     function enterInterior(id, room, o) { o = o || {}; const b = bw && bw.list[id]; if (!b) return null; const cams = camsOf(b);
       const c = room === 'entrance' ? entranceCam(b) : (room === undefined || room === null ? cams.find(q => q.what === 'toko') || cams[0] : cams.find(q => q.room === room || q.name === room)) || cams[0]; if (!c) return null;
       if (!o.noMesh) { interiorFor(b); const sl = $('bsel'); if (sl) sl.value = b.id; } anim = null; setHover(null); intMode = { b, c }; intLighting(b); // B3：室内光照（阴影相机收紧到本栋；天光与外景同一套，窓外的景色不过曝/不发黑）
@@ -663,7 +670,7 @@
       roadsMesh(k, site);
       for (const m of k.meshes()) world.add(m);
       const tb = site.parts.find(p => p.fam === 'tenshu');
-      if (tb) { if (!tenshuProto) tenshuProto = window.CASTLE_TENSHU.build(THREE, { maxAniso: renderer.capabilities.getMaxAnisotropy() }); const t = tenshuProto; t.position.copy(W(tb.x, tb.y, tb.z)); t.rotation.y = tb.ang; world.add(t); }
+      if (tb) { if (!tenshuProto) { tenshuProto = window.CASTLE_TENSHU.build(THREE, { maxAniso: renderer.capabilities.getMaxAnisotropy() }); const TM = tenshuProto.userData.materials; if (TM) { FX.patch(TM.stone, 'stone'); FX.patch(TM.plaster, 'plaster'); for (const k of ['gold', 'tile', 'lacquer', 'ridge', 'rail', 'gable']) if (TM[k]) FX.spec(TM[k]); } } const t = tenshuProto; t.position.copy(W(tb.x, tb.y, tb.z)); t.rotation.y = tb.ang; world.add(t); }
       { const tw = performance.now(); const bg = bldgWorld(bw); world.add(bg); state.bldgSceneMs = Math.round(performance.now() - tw); state.bldgDetail = false; const b0 = bw; requestAnimationFrame(() => setTimeout(() => bldgDetail(bg, b0), 0)); } state.hideTrees = new Set(bw.hideTrees);
       world.add(treesMesh(site, state.hideTrees));
       if (A) world.add(badMarks()); state.signature = site.signature() + '|' + BLDG.signature(bw);
@@ -825,6 +832,7 @@
       return moved;
     }
     renderer.setAnimationLoop(now => {
+      if (!LT.env) { makeEnv(); intLighting(intMode ? intMode.b : null); need = true; } // B5：环境图在第一帧画之前生成（首帧计时之后），着色器第一次编译就带 envMap，不会再整体重编译
       if (step(now)) need = true;
       if (labelsTick(now)) need = true;
       if (need) { renderer.render(scene, camera); need = false; state.frames = (state.frames || 0) + 1; }
@@ -1018,6 +1026,9 @@
     $('seed').value = P.seed; $('seed').onchange = e => { P.seed = Math.max(1, +e.target.value | 0); writeHash(P); buildWorld(P); };
     $('hide').onclick = () => $('ui').classList.toggle('min');
 
+    { const qs = $('qsel'), ts = $('tod'); if (qs) { qs.value = P.qHash ? String(P.q) : '-1'; qs.onchange = e => { const v = +e.target.value; if (v < 0) { P.qHash = false; setQuality(FX.detect(renderer, -1).q, null); } else { P.qHash = true; setQuality(v, true); } writeHash(P); requestRender(); }; }
+      if (ts) { ts.value = P.tod; ts.onchange = e => { P.tod = e.target.value; applyTOD(P.tod); writeHash(P); requestRender(); }; } }
+    applyTOD(P.tod, true);
     buildWorld(P, true, PREBUILT); setView(P.view, true);
     state.THREE = THREE; state.scene = scene; state.camera = camera; state.renderer = renderer;
     state.setView = (v) => setView(v, true);
@@ -1039,6 +1050,7 @@
     state.bldgScreen = id => { const b = bw.list[id], B = bObb(b), [x, y] = b.fr.w((B[0] + B[3]) / 2, (B[1] + B[4]) / 2), v = W(x, y, B[2] + (B[5] - B[2]) * 0.6).project(camera), r = renderer.domElement.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, z: v.z }; };
     state.labelsVisible = () => { const l = world.getObjectByName('labels'); return !!(l && l.visible); };
     state.c11Ext = () => c11Ext(); state.c11Int = () => intMode ? c11Int() : null; state.groundZ = (x, y) => groundIdx().zAt(x, y);
+    state.setQuality = q => { setQuality(q); requestRender(); return P.q; }; state.setTOD = k => { applyTOD(k); requestRender(); return LT.tod; }; state.FX = FX;
     state.rebuild = o => { Object.assign(P, o); writeHash(P); buildWorld(P); };
     state.loadMs = Math.round(performance.now() - T0);
     state.ready = true; $('load').remove();
