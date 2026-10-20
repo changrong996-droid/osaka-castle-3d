@@ -42,12 +42,12 @@ input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid 
   <button id="hide">–</button>
   <h1>大阪城 全城</h1>
   <p class="sub">德川期城郭（OSM 实测布局）+ 丰臣式天守 · 部件按规则落位：防御线是一条闭合链（门/橹/土塀按槽位顺次相接），页面自带硬规则 + 物理规则审计（违规处标红）。高差为估值。</p>
-  <div id="views"><button data-v="aerial">鸟瞰</button><button data-v="top">俯视</button><button data-v="otemon">大手门</button><button data-v="tenshu">天守</button><button data-v="eastwall">东侧石垣</button><button data-v="otejoint">大手门枡形</button><button data-v="sakura">桜门</button><button data-v="otegate">大手门洞内</button><button data-v="bridge">極楽橋</button><button data-v="goten">本丸御殿</button></div>
+  <div id="views"><button data-v="ref2">金色天守</button><button data-v="ref3">晨雾内堀</button><button data-v="ref4">城下夕照</button><button data-v="ref6">金襖之间</button><br><button data-v="aerial">鸟瞰</button><button data-v="top">俯视</button><button data-v="otemon">大手门</button><button data-v="tenshu">天守</button><button data-v="eastwall">东侧石垣</button><button data-v="otejoint">大手门枡形</button><button data-v="sakura">桜门</button><button data-v="otegate">大手门洞内</button><button data-v="bridge">極楽橋</button><button data-v="goten">本丸御殿</button></div>
   <div><button id="walk">▶ 步行穿过大手门（眼高 1.6 m）</button></div>
   <div id="intbar"><select id="bsel"></select> <button id="benter">进入室内</button> <button id="bexit">离开</button></div>
   <div id="bstat" class="note"></div>
   <label>建筑标注 <select id="lmode"><option value="0">关</option><option value="1">重要（默认）</option><option value="2">全部（自动避让）</option></select></label>
-  <label>画质 <select id="qsel"><option value="-1">自动</option><option value="0">低</option><option value="1">中</option><option value="2">高</option></select> · 时段 <select id="tod"><option value="m">朝</option><option value="d">昼</option><option value="e">夕</option></select></label>
+  <label>画质 <select id="qsel"><option value="-1">自动</option><option value="0">低</option><option value="1">中</option><option value="2">高</option></select> · 时段 <select id="tod"><option value="m">朝</option><option value="d">昼</option><option value="e">夕</option><option value="g">黄金时刻</option></select></label>
   <label><input type="checkbox" id="lost"> 失传橹 · <span id="era"></span></label>
   <label>树木随机种子 <input type="number" id="seed" min="1" value="1"></label>
   <div id="audit"></div>
@@ -58,14 +58,15 @@ input[type=number]{width:64px;background:#1d1912;color:#f0d98c;border:1px solid 
 <div id="khint"><kbd>↑</kbd><kbd>↓</kbd>/<kbd>W</kbd><kbd>S</kbd> 前后走 · <kbd>←</kbd><kbd>→</kbd> 转身 · <kbd>A</kbd><kbd>D</kbd> 侧移 · <kbd>Shift</kbd> 快走 · 拖动鼠标环顾 · 滚轮前后 · <kbd>Esc</kbd> 出去</div>
 <div id="btip"></div>
 <div id="hint">左键旋转 · 右键平移 · 滚轮缩放 · 鼠标停在建筑上高亮、单击进入室内（相机是 1.5 m 球体：不会钻进地面/建筑、拖得再快也穿不过墙，但能从门洞、桥下穿过）· 视角/开关写入网址 # 参数，可复现</div>
-<script src="data.js?v=17"></script>
-<script src="pack.js?v=17"></script>
-<script src="bake/manifest.js?v=17"></script>
-<script src="site.js?v=17"></script>
-<script src="tenshu.js?v=17"></script>
-<script src="camera.js?v=17"></script>
-<script src="bldg.js?v=17"></script>
-<script src="fx.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="data.js?v=18"></script>
+<script src="pack.js?v=18"></script>
+<script src="bake/manifest.js?v=18"></script>
+<script src="site.js?v=18"></script>
+<script src="tenshu.js?v=18"></script>
+<script src="camera.js?v=18"></script>
+<script src="bldg.js?v=18"></script>
+<script src="fx.js?v=18"></script>
+<script src="look.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
