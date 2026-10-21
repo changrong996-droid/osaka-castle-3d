@@ -772,7 +772,7 @@
     // 低画质：远带不画；其余块只画离相机 ≤1.25 km 的（地面“瓦海”在 1.25 km 以外接上），室内不画（窓外看不到远处）；中/高画质全画、靠视锥按块剔除
     let townKey = ''; function townQ(force) { if (!TOWN) return; const c = camera.position, x = c.x, y = -c.z, key = FX.q + '|' + (intMode ? 1 : 0) + '|' + Math.round(x / 50) + ',' + Math.round(y / 50); if (!force && key === townKey) return; townKey = key;
       // r16：块级 LOD：近带町家块 = 全（墙 + 屋根）或 简（屋根棱柱），按相机到块包围盒的水平距离（高 700 m / 中 500 m / 低 350 m）二选一；幟只在全 LOD；炊烟/鸟群 中高画质
-      const LODD = [350, 500, 700][FX.q];
+      const LODD = intMode ? 150 : [350, 500, 700][FX.q]; // r17：室内（窓外的城下）只要屋根棱柱（150 m 外），省三角形
       for (const o of TOWN.group.children) { const b = o.userData.cb, ud = o.userData; if (ud.fx) { o.visible = FX.q > 0; continue; }
         const dd = b ? Math.hypot(Math.max(b[0] - x, 0, x - b[2]), Math.max(b[1] - y, 0, y - b[3])) : 0;
         if (FX.q === 0 && (ud.far || intMode || dd >= 1250)) { o.visible = false; continue; }
@@ -888,6 +888,8 @@
     // r15：ref6 = 金襖の間（室内机位）：本丸御殿（江戸盛期）最大殿舍的床の間机位；现状没有御殿 → 最高的橹的顶层
     function ref6View() { if (!bw) return false; const b = bw.list.find(q => q.type === 'goten') || bw.list.slice().sort((x, y) => y.F.length - x.F.length)[0]; if (!b) return false;
       if (!P.todLock && LT.tod !== 'g') { P.tod = 'g'; applyTOD('g', !LT.env); const ts = $('tod'); if (ts) ts.value = 'g'; } P.todLock = false;
+      const R17 = b.type === 'goten' && camsOf(b).find(q => q.name === '小広間·三之間'); // r17：西侧的小広間 → 面向低垂的黄金时刻太阳：障子缝里进来的光柱 + 尘埃，两侧金襖老松，开口里是被夕阳照亮的外景与天空
+      if (R17) { const r = enterInterior(b.id, R17.name); if (r) { const a = Math.atan2(-sunDir.z, sunDir.x), c = R17.cam; teleportInt(c, [c[0] + Math.cos(a) * 4, c[1] + Math.sin(a) * 4, c[2] - 0.25]); P.view = 'ref6'; writeHash(P); document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.v === 'ref6')); return true; } }
       const r = enterInterior(b.id, REF6_ROOM); if (!r) return false; if (b.type === 'goten') { const c = r.cam, t = r.tgt, a = Math.atan2(t[1] - c[1], t[0] - c[0]) - 75 * Math.PI / 180, L = Math.hypot(t[0] - c[0], t[1] - c[1]) || 3; teleportInt(c, [c[0] + Math.cos(a) * L, c[1] + Math.sin(a) * L, t[2]]); } /* r16：床の間机位右转 75° → 左 = 金襖墙（长卷老松），右 = 縁側与半开的障子（看得到外面） */ P.view = 'ref6'; writeHash(P); document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.v === 'ref6')); return true; }
     let REF6_ROOM;
     function setView(name, instant) {
