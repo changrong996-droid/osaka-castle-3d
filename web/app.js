@@ -134,38 +134,72 @@
     // B5：程序材质（fx.js；世界坐标图案，不加纹理文件）
     for (const k of ['plaster', 'stone', 'tile', 'lacquer', 'wood', 'road']) FX.patch(M[k], k, k === 'tile' || k === 'lacquer'); for (const k of ['gold', 'ridge', 'iron']) FX.spec(M[k]);
     // r15：金 = 读得出是金：更亮的金色 + 低粗糙 + 强环境反射 + 少量自发光（逆光里也有金边，泛光拾取）
-    function goldUp(m) { if (!m) return; m.color.setRGB(1.0, 0.72, 0.30); m.roughness = 0.22; m.metalness = 1; m.envMapIntensity = 1.7; m.emissive.setRGB(0.32, 0.19, 0.05); m.emissiveIntensity = 0.55; }
+    // r16：金的轮廓光：掠射角（法线⊥视线）加一层暖色菲涅尔（= 逆光里金饰的亮边，泛光拾取），强度随时段太阳色
+    const RIM = { value: new THREE.Vector3(1.0, 0.7, 0.35) };
+    function goldUp(m) { if (!m) return; m.color.setRGB(1.0, 0.70, 0.28); m.roughness = 0.24; m.metalness = 1; m.envMapIntensity = 1.9; m.emissive.setRGB(0.32, 0.19, 0.05); m.emissiveIntensity = 0.5;
+      if (m.userData.rim) return; m.userData.rim = 1; const ob = m.onBeforeCompile; m.onBeforeCompile = (sh, r) => { if (ob) ob(sh, r); sh.uniforms.rimC = RIM; sh.fragmentShader = 'uniform vec3 rimC;\n' + sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float fr = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0); reflectedLight.directSpecular += rimC * pow(fr, 3.0) * 1.6; }'); };
+      const ck = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : () => ''; m.customProgramCacheKey = () => ck() + '-rim'; m.needsUpdate = true; }
     goldUp(M.gold);
     const badMat = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.45, depthWrite: false });
     // ---------- B3：建筑材质的程序纹理（运行时在 canvas 上画，种子确定；不进包）。bldg.js 的盒子出米制 UV（木纹沿盒的最长边），畳/障子/襖 出 0–1 UV ----------
     //   木（柱/梁/阶段）：竖向木纹；床板：0.3 m 宽板 + 端接缝；灰泥：细噪点；畳：藺草纹 + 长边两侧的縁；天井：板 / 竿縁（0.45 m）/ 格天井（0.9 m）；障子：組子 + 透光纸（emissiveMap）
+    // r16：襖の着色：画面 = 长卷按世界坐标取（沿墙的水平坐标 / 14 m，竖向 = 襖的 v），每扇的黒漆縁（外框 + 中缝 = 两扇引違い）与引手在着色器里按 uv 画
+    function fusumaMat(m) { m.onBeforeCompile = sh => {
+        sh.vertexShader = 'varying vec3 vFW; varying vec3 vFN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvFW = (modelMatrix * vec4(transformed, 1.0)).xyz; vFN = normalize(mat3(modelMatrix) * objectNormal);');
+        sh.fragmentShader = 'varying vec3 vFW; varying vec3 vFN; vec3 fusC = vec3(1.0);\n' + sh.fragmentShader.replace('#include <map_fragment>', `
+          { vec3 fN = normalize(vFN); float sH = abs(fN.x) > abs(fN.z) ? -vFW.z * sign(fN.x) : vFW.x * sign(fN.z); vec2 uv = vMapUv;
+            vec3 pc = texture2D(map, vec2(sH / 14.0, uv.y)).rgb; float ux = fract(uv.x * 2.0);
+            float bd = min(min(ux, 1.0 - ux) * 1.0, min(uv.y, 1.0 - uv.y) * 1.8);   // 到本扇边缘（≈米）
+            float fr = 1.0 - smoothstep(0.022, 0.028, bd), lip = (1.0 - smoothstep(0.028, 0.034, bd)) * (1.0 - fr);
+            pc = mix(pc, vec3(0.018, 0.014, 0.011), fr); pc += lip * vec3(0.25, 0.18, 0.06);
+            vec2 hk = vec2((ux < 0.5 ? ux - 0.07 : ux - 0.93) * 1.0, (uv.y - 0.47) * 1.8); float hr = length(hk * vec2(1.0, 0.75));
+            pc = mix(pc, vec3(0.03, 0.022, 0.015), 1.0 - smoothstep(0.024, 0.03, hr)); pc = mix(pc, vec3(0.55, 0.38, 0.12), (1.0 - smoothstep(0.03, 0.036, hr)) * smoothstep(0.024, 0.03, hr));
+            fusC = pc; diffuseColor.rgb *= pc; }`).replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= fusC;'); };
+      m.customProgramCacheKey = () => 'fusuma16'; return m; }
     let MB = null;
     function bMats() { if (MB) return MB; const t0 = performance.now(), rr = (a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(20261020);
       const cv = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); draw(g, w, h); return c; };
       const tex = (c, mx, my, srgb) => { const T = new THREE.CanvasTexture(c); T.wrapS = T.wrapT = THREE.RepeatWrapping; T.repeat.set(1 / mx, 1 / my); T.anisotropy = 4; if (srgb !== false) T.colorSpace = THREE.SRGBColorSpace; return T; };
       const grain = (g, w, h, base, dark, n, amp) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let k = 0; k < n; k++) { const y0 = rr() * h, ph = rr() * 6.28, f = 1 + rr() * 3, a = amp * (0.3 + rr()); g.strokeStyle = dark; g.globalAlpha = 0.08 + rr() * 0.22; g.lineWidth = 0.6 + rr() * 1.6; g.beginPath(); for (let x = 0; x <= w; x += 4) { const y = y0 + Math.sin(x / w * 6.283 * f + ph) * a; x ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); } g.globalAlpha = 1; };
       const noise = (g, w, h, n, col, a) => { for (let k = 0; k < n; k++) { g.fillStyle = col; g.globalAlpha = rr() * a; const s = 1 + rr() * 3; g.fillRect(rr() * w, rr() * h, s, s); } g.globalAlpha = 1; };
-      const wood = cv(256, 128, (g, w, h) => { grain(g, w, h, '#8f7a61', '#4a3a2a', 70, 3); noise(g, w, h, 600, '#2a2018', 0.12); });            // 1.0 m（纹向）× 0.25 m
+      const wood = cv(256, 128, (g, w, h) => { grain(g, w, h, '#6e5a46', '#3a2a1c', 70, 3); noise(g, w, h, 600, '#2a2018', 0.12); });            // 1.0 m（纹向）× 0.25 m
       const floor = cv(512, 256, (g, w, h) => { const nb = 4; for (let k = 0; k < nb; k++) { const y0 = k * h / nb, c = 150 + Math.floor(rr() * 30); g.save(); g.beginPath(); g.rect(0, y0, w, h / nb); g.clip(); grain(g, w, h, `rgb(${c},${Math.floor(c * 0.82)},${Math.floor(c * 0.63)})`, '#4d3a26', 40, 2.5); g.restore(); g.fillStyle = 'rgba(30,22,14,.5)'; g.fillRect(0, y0, w, 1.5); const jx = rr() * w; g.fillRect(jx, y0, 1.5, h / nb); } noise(g, w, h, 900, '#2a2018', 0.1); }); // 2 m × 1.2 m（4 块 0.3 m 板）
       const plaster = cv(256, 256, (g, w, h) => { g.fillStyle = '#efeadf'; g.fillRect(0, 0, w, h); noise(g, w, h, 4000, '#b8b0a0', 0.18); noise(g, w, h, 1500, '#ffffff', 0.35); });
-      const tatami = cv(512, 256, (g, w, h) => { g.fillStyle = '#c3b67c'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = (y / 2) % 2 ? 'rgba(120,110,50,.18)' : 'rgba(255,250,200,.12)'; g.fillRect(0, y, w, 1); } for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(90,80,40,.18)'; g.fillRect(x, 0, 1, h); } const hb = Math.round(h * 0.045); g.fillStyle = '#2b2a26'; g.fillRect(0, 0, w, hb); g.fillRect(0, h - hb, w, hb); g.fillStyle = 'rgba(200,190,150,.25)'; g.fillRect(0, hb - 1, w, 1); g.fillRect(0, h - hb, w, 1); }); // 縁 = 长边两侧
+      const tatami = cv(512, 256, (g, w, h) => { g.fillStyle = '#ad9f6a'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = (y / 2) % 2 ? 'rgba(120,110,50,.18)' : 'rgba(255,250,200,.12)'; g.fillRect(0, y, w, 1); } for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(90,80,40,.18)'; g.fillRect(x, 0, 1, h); } const hb = Math.round(h * 0.045); g.fillStyle = '#2b2a26'; g.fillRect(0, 0, w, hb); g.fillRect(0, h - hb, w, hb); g.fillStyle = 'rgba(200,190,150,.25)'; g.fillRect(0, hb - 1, w, 1); g.fillRect(0, h - hb, w, 1); }); // 縁 = 长边两侧
       const ceilS = cv(512, 512, (g, w, h) => { grain(g, w, h, '#a8947a', '#5e4a34', 50, 3); for (let k = 0; k < 4; k++) { g.fillStyle = 'rgba(40,24,10,.35)'; g.fillRect(0, k * h / 4, w, 1); } for (let k = 0; k < 4; k++) { const x = (k + 0.5) * w / 4; g.fillStyle = '#4e3d2b'; g.fillRect(x - 5, 0, 10, h); g.fillStyle = 'rgba(255,230,190,.2)'; g.fillRect(x - 5, 0, 2, h); } }); // 1.8 m：竿縁 0.45 m
       const ceilK = cv(512, 512, (g, w, h) => { g.fillStyle = '#b89a62'; g.fillRect(0, 0, w, h); noise(g, w, h, 2000, '#7a5a30', 0.2); for (let k = 0; k <= 2; k++) { g.fillStyle = '#2e2418'; g.fillRect(k * w / 2 - 9, 0, 18, h); g.fillRect(0, k * h / 2 - 9, w, 18); } g.strokeStyle = 'rgba(210,170,80,.6)'; g.lineWidth = 3; for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) g.strokeRect(a * w / 2 + 24, c * h / 2 + 24, w / 2 - 48, h / 2 - 48); }); // 格天井 1.8 m（格 0.9 m）
       const shoji = cv(512, 256, (g, w, h) => { g.fillStyle = '#f4efe2'; g.fillRect(0, 0, w, h); noise(g, w, h, 1500, '#d8cfb8', 0.25); g.fillStyle = '#6b4e33'; for (let k = 1; k < 8; k++) g.fillRect(k * w / 8 - 2, 0, 4, h); for (let k = 1; k < 3; k++) g.fillRect(0, k * h / 3 - 2, w, 4); g.fillRect(0, 0, w, 10); g.fillRect(0, h - 10, w, 10); g.fillRect(0, 0, 10, h); g.fillRect(w - 10, 0, 10, h); g.fillRect(w - 64, 0, 3, h); }); // 長边 = 高
-      // r15（C1）：金碧障壁画の襖 —— 金箔（箔足 = 方格接缝、逐片色差）+ 金雲（すやり霞）+ 老松（幹・枝・葉叢，狩野派风）；黒漆の縁 + 引手。种子确定，运行时画
-      const fusuma = cv(512, 512, (g, w, h) => { const lg = g.createLinearGradient(0, 0, w, h); lg.addColorStop(0, '#b8862c'); lg.addColorStop(0.5, '#d4a548'); lg.addColorStop(1, '#a87a26'); g.fillStyle = lg; g.fillRect(0, 0, w, h);
-        const n = 8; for (let a = 0; a < n; a++) for (let b = 0; b < n; b++) { const v = rr(); g.fillStyle = v < 0.5 ? `rgba(120,80,10,${0.05 + 0.1 * v})` : `rgba(255,240,170,${0.06 + 0.1 * (v - 0.5)})`; g.fillRect(a * w / n, b * h / n, w / n, h / n); g.fillStyle = 'rgba(110,70,10,.25)'; g.fillRect(a * w / n, b * h / n, w / n, 1.2); g.fillRect(a * w / n, b * h / n, 1.2, h / n); }
-        for (let k = 0; k < 3; k++) { const y = h * (0.12 + 0.3 * k + 0.05 * rr()); g.fillStyle = 'rgba(255,226,130,.55)'; g.beginPath(); g.ellipse(w * (0.2 + 0.6 * rr()), y, w * (0.35 + 0.2 * rr()), h * 0.045, 0, 0, 6.283); g.fill(); }
-        const trunk = (x, y, ang, len, wd, dep) => { if (dep > 5 || len < 8) return; const x2 = x + Math.cos(ang) * len, y2 = y - Math.sin(ang) * len; g.strokeStyle = dep ? '#3b2a1c' : '#2c1f15'; g.lineWidth = wd; g.lineCap = 'round'; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo((x + x2) / 2 + (rr() - 0.5) * len * 0.5, (y + y2) / 2 + (rr() - 0.5) * len * 0.4, x2, y2); g.stroke();
-          if (dep >= 2) for (let q = 0; q < 3; q++) { g.fillStyle = q ? '#2f4a26' : '#22381c'; g.beginPath(); g.ellipse(x2 + (rr() - 0.5) * 30, y2 + (rr() - 0.5) * 12, 30 + 26 * rr(), 9 + 7 * rr(), (rr() - 0.5) * 0.4, 0, 6.283); g.fill(); g.fillStyle = 'rgba(90,130,60,.5)'; g.beginPath(); g.ellipse(x2 + (rr() - 0.5) * 20, y2 - 4, 22 + 10 * rr(), 5, 0, 0, 6.283); g.fill(); }
-          const nb = dep < 2 ? 2 : 2; for (let q = 0; q < nb; q++) trunk(x2, y2, ang + (rr() - 0.5) * 1.6 + (q ? 0.5 : -0.5), len * (0.55 + 0.25 * rr()), wd * 0.6, dep + 1); };
-        trunk(w * (0.25 + 0.5 * rr()), h * 1.02, 1.2 + rr() * 0.6, h * 0.35, 26, 0);
-        g.strokeStyle = '#1c1612'; g.lineWidth = 14; g.strokeRect(0, 0, w, h); g.fillStyle = '#2a2018'; g.beginPath(); g.ellipse(w * 0.9, h * 0.52, 9, 14, 0, 0, 6.283); g.fill(); g.strokeStyle = '#b8902e'; g.lineWidth = 2; g.stroke(); });
-      const Tw = tex(wood, 1.0, 0.25), Tf = tex(floor, 2.0, 1.2), Tp = tex(plaster, 2, 2), Tt = tex(tatami, 1, 1), Tc = tex(ceilS, 1.8, 1.8), Tk = tex(ceilK, 1.8, 1.8), Ts = tex(shoji, 1, 1), Tu = tex(fusuma, 1, 1);
+      // r16：金碧障壁画 = 一整幅 14 m 长卷（世界坐标沿墙接续：相邻襖的老松枝干跨过接缝，每一扇画面都不同）；燻し金（深金、不柠檬黄）+ 金雲 + 狩野风老松 + 土坡/流水。
+      //   画布 2048×512：横向 146 px/m；纵向 = 襖高（敷居→鴨居，0–1）。画时纵向按 1.95 倍缩放，使 2048×263 的“米制各向同性”坐标里画的松不变形；左右无缝（跨边元素画两次）
+      const fusuma = cv(2048, 512, (g, w, h) => { const H0 = 263, K = h / H0; g.save(); g.scale(1, K);
+        const lg = g.createLinearGradient(0, 0, 0, H0); lg.addColorStop(0, '#a4752a'); lg.addColorStop(0.55, '#b98a3a'); lg.addColorStop(1, '#8a5f1e'); g.fillStyle = lg; g.fillRect(0, 0, w, H0);
+        const sq = 16; for (let a = 0; a < w / sq; a++) for (let c = 0; c < H0 / sq + 1; c++) { const v = rr(); g.fillStyle = v < 0.5 ? `rgba(70,40,5,${0.05 + 0.14 * v})` : `rgba(255,225,140,${0.03 + 0.1 * (v - 0.5)})`; g.fillRect(a * sq, c * sq, sq, sq); g.fillStyle = 'rgba(60,35,5,.22)'; g.fillRect(a * sq, c * sq, sq, 0.8); g.fillRect(a * sq, c * sq, 0.8, sq); }
+        const twice = f => { f(0); f(-w); f(w); };
+        // 金雲（すやり霞）：上下两带，浮雕感（亮边 + 暗边）
+        for (let k = 0; k < 9; k++) { const x = rr() * w, y = (k % 2 ? 0.1 : 0.86) * H0 + (rr() - 0.5) * 30, rx = 140 + 160 * rr(), ry = 9 + 6 * rr();
+          twice(o => { g.fillStyle = 'rgba(80,48,8,.35)'; g.beginPath(); g.ellipse(x + o + 2, y + 3, rx, ry, 0, 0, 6.283); g.fill(); g.fillStyle = 'rgba(232,190,95,.75)'; g.beginPath(); g.ellipse(x + o, y, rx, ry, 0, 0, 6.283); g.fill(); g.fillStyle = 'rgba(255,230,150,.35)'; g.beginPath(); g.ellipse(x + o - rx * 0.1, y - ry * 0.35, rx * 0.8, ry * 0.35, 0, 0, 6.283); g.fill(); }); }
+        // 土坡 + 流水（群青）
+        for (let k = 0; k < 5; k++) { const x = rr() * w, r2 = 160 + 140 * rr(), q2 = 42 + 20 * rr(); twice(o => { g.fillStyle = '#4a3b22'; g.beginPath(); g.ellipse(x + o, H0 + 10, r2, q2, 0, 3.1416, 6.283); g.fill(); g.fillStyle = 'rgba(48,72,36,.85)'; g.beginPath(); g.ellipse(x + o, H0 + 14, r2 * 0.92, 36, 0, 3.1416, 6.283); g.fill(); }); }
+        twice(o => { g.strokeStyle = 'rgba(40,62,98,.85)'; g.lineWidth = 14; g.beginPath(); for (let x = 0; x <= w; x += 32) { const y = H0 - 14 + Math.sin(x / 210) * 7; x ? g.lineTo(x + o, y) : g.moveTo(x + o, y); } g.stroke(); g.strokeStyle = 'rgba(230,220,190,.35)'; g.lineWidth = 1.5; g.stroke(); });
+        // 老松：干从坡上起，S 形，长横枝；针叶团 = 扁平的深绿“雲形”叶群，上缘亮绿，墨线描边
+        const needles = (x, y, s) => { g.fillStyle = '#20361a'; g.beginPath(); g.ellipse(x, y, 34 * s, 10 * s, 0, 0, 6.283); g.fill(); g.fillStyle = '#35552a'; g.beginPath(); g.ellipse(x - 2 * s, y - 2 * s, 30 * s, 7 * s, 0, 0, 6.283); g.fill();
+          g.strokeStyle = 'rgba(120,160,80,.55)'; g.lineWidth = 1.1; for (let q = -5; q <= 5; q++) { g.beginPath(); g.moveTo(x + q * 5 * s, y - 6 * s); g.lineTo(x + q * 5.6 * s, y + 4 * s); g.stroke(); } g.strokeStyle = 'rgba(15,20,10,.6)'; g.lineWidth = 1; g.beginPath(); g.ellipse(x, y, 34 * s, 10 * s, 0, 0, 6.283); g.stroke(); };
+        const limb = (o, x, y, ang, len, wd, dep, R) => { if (dep > 3 || len < 14) { needles(x + o, y, 0.55 + 0.3 * R()); return; } const x2 = x + Math.cos(ang) * len, y2 = y - Math.sin(ang) * len, mx = (x + x2) / 2 + (R() - 0.5) * len * 0.35, my = (y + y2) / 2 + (R() - 0.5) * len * 0.3;
+          g.strokeStyle = '#4a3220'; g.lineWidth = wd; g.lineCap = 'round'; g.beginPath(); g.moveTo(x + o, y); g.quadraticCurveTo(mx + o, my, x2 + o, y2); g.stroke(); g.strokeStyle = 'rgba(190,140,80,.35)'; g.lineWidth = wd * 0.3; g.stroke();
+          if (dep >= 2) needles(x2 + o, y2, 0.7 + 0.4 * R());
+          const nb = dep < 1 ? 2 : (R() < 0.6 ? 2 : 1); for (let q = 0; q < nb; q++) { const side = q % 2 ? 1 : -1; limb(o, x2, y2, (dep < 1 ? (side > 0 ? 0.25 : 2.9) : ang) + (R() - 0.5) * 0.7, len * (0.6 + 0.3 * R()) * (dep < 1 ? 1.7 : 1), wd * 0.6, dep + 1, R); } };
+        const mkR = sd => { let s0 = (sd * 1e6) | 0 || 7; return () => { s0 = (s0 * 1103515245 + 12345) & 0x7fffffff; return s0 / 0x7fffffff; }; };
+        const pines = [0.07, 0.34, 0.58, 0.83].map(f => ({ x: (f + (rr() - 0.5) * 0.06) * w, seed: rr() }));
+        for (const P of pines) twice(o => { const R = mkR(P.seed);   // 同一棵松在左右接缝两侧画两次 → 用同一个种子
+            g.strokeStyle = '#3d2918'; g.lineWidth = 34; g.lineCap = 'round'; g.beginPath(); g.moveTo(P.x + o, H0 + 6); g.bezierCurveTo(P.x + o + 70, H0 * 0.7, P.x + o - 60, H0 * 0.45, P.x + o + 20, H0 * 0.3); g.stroke(); g.strokeStyle = 'rgba(160,120,70,.3)'; g.lineWidth = 7; g.stroke();
+            for (const [t, ang, len] of [[0.62, 0.15, 150], [0.48, 3.0, 170], [0.34, 0.35, 120], [0.3, 2.7, 110]]) { const yy = H0 * t, xx = P.x + 10 * Math.sin(t * 9); limb(o, xx, yy, ang, len, 12, 0, R); }
+            needles(P.x + o + 20, H0 * 0.24, 1.1); });
+        g.restore(); });
+      const Tw = tex(wood, 1.0, 0.25), Tf = tex(floor, 2.0, 1.2), Tp = tex(plaster, 2, 2), Tt = tex(tatami, 1, 1), Tc = tex(ceilS, 1.8, 1.8), Tk = tex(ceilK, 1.8, 1.8), Ts = tex(shoji, 1, 1), Tu = tex(fusuma, 1, 1); Tu.anisotropy = 8;
       const std = (o) => new THREE.MeshStandardMaterial(o);
       MB = { wood: std({ map: Tw, color: 0xc9beb2, roughness: 0.72 }), beam: std({ map: Tw, color: 0xb3a99c, roughness: 0.78 }), step: std({ map: Tw, color: 0xe6dccd, roughness: 0.7 }), // B5：木色去红、偏中性暖（旧桧/杉）
-        floorwood: std({ map: Tf, color: 0xe0d4c2, roughness: 0.6 }), ceil: std({ map: Tf, color: 0xcdbba2, roughness: 0.8 }), ceilS: std({ map: Tc, roughness: 0.8 }), ceilK: std({ map: Tk, roughness: 0.6 }),
-        plaster: std({ map: Tp, roughness: 0.92 }), kabe: std({ map: Tp, color: 0xe2d2b0, roughness: 0.95 }), tatami: std({ map: Tt, roughness: 0.95 }), fusuma: std({ map: Tu, roughness: 0.42, metalness: 0.35, emissive: 0xffffff, emissiveMap: Tu, emissiveIntensity: 0.05 }), // r15：金箔襖（微金属 + 少量自发光：暗处也读得出金）
+        floorwood: std({ map: Tf, color: 0x9a7e62, roughness: 0.42 }), ceil: std({ map: Tf, color: 0xcdbba2, roughness: 0.8 }), ceilS: std({ map: Tc, roughness: 0.8 }), ceilK: std({ map: Tk, roughness: 0.6 }),
+        plaster: std({ map: Tp, roughness: 0.92 }), kabe: std({ map: Tp, color: 0xe2d2b0, roughness: 0.95 }), tatami: std({ map: Tt, roughness: 0.95 }), fusuma: fusumaMat(std({ map: Tu, roughness: 0.4, metalness: 0.4, emissive: 0xffffff, emissiveMap: Tu, emissiveIntensity: 0.1 })), // r15：金箔襖（微金属 + 少量自发光）；r16：长卷按世界坐标接续 + 每扇縁/引手
         shoji: std({ map: Ts, emissiveMap: Ts, emissive: 0x6a6458, roughness: 0.95 }), hazama: std({ map: Tp, color: 0x6a6052, roughness: 1 }) };
       state.texMs = Math.round(performance.now() - t0); return MB; }
 
@@ -495,7 +529,7 @@
     function applyTOD(k, init) { const T = FX.TOD[k] || FX.TOD.d; LT.tod = FX.TOD[k] ? k : 'd'; const v = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - THREE.MathUtils.degToRad(T.el), THREE.MathUtils.degToRad(T.az));
       su.sunPosition.value.copy(v); su.turbidity.value = T.sky[0]; su.rayleigh.value = T.sky[1]; su.mieCoefficient.value = T.sky[2]; su.mieDirectionalG.value = T.sky[3];
       sunDir.copy(v); sun.color.setRGB(T.sun[0], T.sun[1], T.sun[2]); sun.intensity = T.I; LT.sky = T.zen.map((z, i) => (z + T.hor[i]) * 0.5 * 1.2); LT.gnd = T.gnd.map(g => g * 1.3); LT.exp = T.exp;
-      LOOK.setSky(T, sunDir, FX.q); MTN.material.uniforms.near.value.fromArray(T.mtn[0]); MTN.material.uniforms.far.value.fromArray(T.mtn[1]); LT.T = T; fogForQ();
+      RIM.value.fromArray(T.sun).multiplyScalar(T.el < 15 ? 1 : 0.45); LOOK.setSky(T, sunDir, FX.q); MTN.material.uniforms.near.value.fromArray(T.mtn[0]); MTN.material.uniforms.far.value.fromArray(T.mtn[1]); LT.T = T; fogForQ();
       if (!init) makeEnv(); intLighting(intMode ? intMode.b : null); state.tod = LT.tod; }
     // r15：雾：低 = three 线性雾（屏幕 sRGB 色，r14 同）；中 = 线性雾但画进 HDR 缓冲（色用线性 HDR 值）；高 = 关掉材质雾，后处理按深度做高度雾 + 薄雾
     function fogForQ() { const T = LT.T || FX.TOD.g, q = FX.q; if (q >= 2) { if (scene.fog) { scene.fog = null; scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.needsUpdate = true; }); }); } return; }
@@ -715,14 +749,34 @@
     }
 
     // r15：城下町在首帧之后生成（与审计同一个 rAF 里、排在审计之前 → 相机审计看到的就是带町屋 canopy 的相机）
-    function buildTown(s0) { if (site !== s0 || !F) return; const tt = performance.now();
+    // r16：石垣顶线高度图（3 m 格，值 = 周围 ±4.5 m 内最高地面）→ fx 着色器给石垣顶部画苔/草带；苇：堀里贴石垣墙脚的水格（成丛，按种子）
+    function lipAndReeds(S) { const gs = S.spec.grid, st = 3, nx = Math.ceil((gs.x1 - gs.x0) / st) + 1, ny = Math.ceil((gs.y1 - gs.y0) / st) + 1, h = new Float32Array(nx * ny), m = new Float32Array(nx * ny);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const z = S.heightAt(gs.x0 + i * st, gs.y0 + j * st); h[j * nx + i] = z > -1e8 ? z : 0; }
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { let v = -1e9; for (let b = Math.max(0, j - 2); b <= Math.min(ny - 1, j + 2); b++) for (let a = Math.max(0, i - 2); a <= Math.min(nx - 1, i + 2); a++) if (h[b * nx + a] > v) v = h[b * nx + a]; m[j * nx + i] = v; }
+      const hf = new Uint16Array(nx * ny); for (let k = 0; k < hf.length; k++) hf[k] = THREE.DataUtils.toHalfFloat(m[k]);
+      const T = new THREE.DataTexture(hf, nx, ny, THREE.RedFormat, THREE.HalfFloatType); T.minFilter = T.magFilter = THREE.LinearFilter; T.needsUpdate = true;
+      FX.U.fxLip.value = T; FX.U.fxLipB.value.set(gs.x0 - st / 2, gs.y0 - st / 2, nx * st, ny * st); FX.U.fxLipOn.value = 1;
+      const reeds = [], hs = (a, b) => { let q = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1); q = Math.imul(q ^ (q >>> 15), 0x2c1b3c6d); return ((q ^ (q >>> 12)) >>> 0) / 4294967296; };
+      for (let j = 2; j < ny - 2; j++) for (let i = 2; i < nx - 2; i++) { const x = gs.x0 + i * st, y = gs.y0 + j * st, w = S.wzAt(x, y), z = h[j * nx + i]; if (!(z < w - 0.3)) continue;
+        let wall = false; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (h[(j + b) * nx + i + a] > w + 2.5) { wall = true; break; } if (!wall) continue;
+        const cl = 0.5 + 0.5 * Math.sin(x * 0.031 + Math.cos(y * 0.027) * 2.3) * Math.cos(y * 0.019 - x * 0.007); if (hs(i, j) > cl * 1.1) continue;
+        for (let k = 0; k < 3; k++) reeds.push({ x: x + (hs(i * 3 + k, j) - 0.5) * 2.6, y: y + (hs(i, j * 3 + k) - 0.5) * 2.6, z: w, s: 0.8 + 0.6 * hs(i + k, j + 7) }); }
+      return reeds; }
+    function buildTown(s0) { if (site !== s0 || !F) return; const tt = performance.now(); const reeds = lipAndReeds(site);
       if (!LT.townMat) LT.townMat = FX.patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, envMapIntensity: 0.6 }), 'tile', true);
-      TOWN = LOOK.town(site, { seed: P.seed, zAt: (x, y) => { const z = OUTER_Z(x, y); return z > -1e8 ? z : site.surfaceAt(x, y); }, roofMat: LT.townMat, waterMat: WMAT, crownMat: LT.townCrown || (LT.townCrown = FX.patch(new THREE.MeshStandardMaterial({ roughness: 0.85 }), 'crown')) });
+      const gs = site.spec.grid, inG = (x, y) => x > gs.x0 + 2 && x < gs.x1 - 2 && y > gs.y0 + 2 && y < gs.y1 - 2;
+      const inner = { city: (x, y) => (g => !!g && g.name === 'city')(site.regionAt(x, y)), wet: (x, y) => inG(x, y) && site.heightAt(x, y) < site.wzAt(x, y) + 0.15,
+        gates: site.gates.filter(g => g.spec.to === 'city' && g.ramp).map(g => { const r = g.ramp, e = Math.hypot(r.p1[0], r.p1[1]) > Math.hypot(r.p0[0], r.p0[1]) ? r.p1 : r.p0, dx = e[0] - g.x, dy = e[1] - g.y, L = Math.hypot(dx, dy) || 1; return { x: e[0], y: e[1], ux: dx / L, uy: dy / L }; }) }; // r16：内环町家（外堀外 → 细网格边）
+      TOWN = LOOK.town(site, { inner, reeds, seed: P.seed, zAt: (x, y) => { const z = OUTER_Z(x, y); return z > -1e8 ? z : site.surfaceAt(x, y); }, roofMat: LT.townMat, waterMat: WMAT, crownMat: LT.townCrown || (LT.townCrown = FX.patch(new THREE.MeshStandardMaterial({ roughness: 0.85 }), 'crown')) });
       scene.add(TOWN.group); F.setCanopy(hasFault('ring') ? null : TOWN.canopy); /* 故障注入 ring（相机不认大环地面）时不加町屋 canopy：否则屋顶柱体会把大环地面的缺口盖住，C11 的 ring 起点抓不到故障 */ WATERS = null; townQ(true); if (!intMode) enforce(true); state.town = Object.assign({ ms: Math.round(performance.now() - tt) }, TOWN.stats); requestRender(); }
     // 低画质：远带不画；其余块只画离相机 ≤1.25 km 的（地面“瓦海”在 1.25 km 以外接上），室内不画（窓外看不到远处）；中/高画质全画、靠视锥按块剔除
     let townKey = ''; function townQ(force) { if (!TOWN) return; const c = camera.position, x = c.x, y = -c.z, key = FX.q + '|' + (intMode ? 1 : 0) + '|' + Math.round(x / 50) + ',' + Math.round(y / 50); if (!force && key === townKey) return; townKey = key;
-      for (const o of TOWN.group.children) { const b = o.userData.cb; if (FX.q > 0) { o.visible = true; continue; } if (o.userData.far || intMode) { o.visible = false; continue; } if (!b) { o.visible = true; continue; }
-        const dx = Math.max(b[0] - x, 0, x - b[2]), dy = Math.max(b[1] - y, 0, y - b[3]); o.visible = Math.hypot(dx, dy) < 1250; } }
+      // r16：块级 LOD：近带町家块 = 全（墙 + 屋根）或 简（屋根棱柱），按相机到块包围盒的水平距离（高 700 m / 中 500 m / 低 350 m）二选一；幟只在全 LOD；炊烟/鸟群 中高画质
+      const LODD = [350, 500, 700][FX.q];
+      for (const o of TOWN.group.children) { const b = o.userData.cb, ud = o.userData; if (ud.fx) { o.visible = FX.q > 0; continue; }
+        const dd = b ? Math.hypot(Math.max(b[0] - x, 0, x - b[2]), Math.max(b[1] - y, 0, y - b[3])) : 0;
+        if (FX.q === 0 && (ud.far || intMode || dd >= 1250)) { o.visible = false; continue; }
+        o.visible = ud.lod === 'full' ? dd < LODD : ud.lod === 'low' ? dd >= LODD : true; } }
     function badMarks() {
       const bad = new THREE.Group(); bad.name = 'bad';
       for (const p of site.parts) if (p.bad) { const bb = p.poly ? p.poly : [[p.x0, p.y0], [p.x1, p.y1]]; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of bb) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); } const z = (p.z !== undefined ? p.z : Math.min(p.z0, p.z1)); const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 2, 26, y1 - y0 + 2), badMat); m.position.copy(W((x0 + x1) / 2, (y0 + y1) / 2, z + 12)); bad.add(m); }
@@ -756,9 +810,9 @@
       bridge: { bridge: 'gokuraku', daz: 35, el: 14, dist: 75, rf: 12 },             // r5：極楽橋侧面（目标 = 跨中桥面下 3 m；方位 = 桥的横向 + 35°），看桥墩/跨度/桥台
       goten: { ref: { bldg: 'goten' }, az: -150, el: 26, dist: 170, rf: 20 },          // B1：本丸御殿（目标 = 御殿最大殿舍的屋脊高；现状里没有御殿 → 本丸中心）
       // r15（C1）：参考图机位（look-dev）。同样是“目标 + 方位 + 仰角 + 距离”的规则，由 fixPreset 找最近的合法、通视位置
-      ref2: { ref: { part: 'tenshu', dz: 20 }, az: 100, el: -13, dist: 125, rf: 26, tod: 'g' },     // 仰望天守（黄金时刻逆侧光）：相机在天守台下、低于目标
+      ref2: { ref: { part: 'tenshu', dz: 24 }, az: 130, el: -10, dist: 95, rf: 26, tod: 'g' },     // r16：更近（天守台石垣 + 天守占满画面高度的约 3/4；r15 = 100°/−13°/125 m）     // 仰望天守（黄金时刻逆侧光）：相机在天守台下、低于目标
       ref3: { ref: { abs: [130, -170, 25] }, az: 81.5, el: -2.7, dist: 283, rf: 20, tod: 'm' },  // 内堀东段：相机在堀面上 ~2.5 m 向南看，石垣在右、天守在右后 // 晨雾内堀：相机贴水面、沿堀看石垣 + 远处天守
-      ref4: { ref: { abs: [-1450, 380, 20] }, az: -18.3, el: 4.6, dist: 1590, rf: 120, tod: 'g' },      // 城下夕照：从本丸上空向西看城下町、大川与落日
+      ref4: { ref: { abs: [-1450, 380, 20] }, az: -18.3, el: 4.6, dist: 1590, rf: 120, tod: 'g', post: { exp: 0.6, fogA: 0.0001, con: 0.45, sat: 1.22 } }, // r16：机位自带调色（更暗、更透、对比更强）      // 城下夕照：从本丸上空向西看城下町、大川与落日
     };
     function refTarget(ref) {
       const main = name => site.regions.filter(g => g.name === name).sort((a, b) => b.area - a.area)[0];
@@ -834,7 +888,7 @@
     // r15：ref6 = 金襖の間（室内机位）：本丸御殿（江戸盛期）最大殿舍的床の間机位；现状没有御殿 → 最高的橹的顶层
     function ref6View() { if (!bw) return false; const b = bw.list.find(q => q.type === 'goten') || bw.list.slice().sort((x, y) => y.F.length - x.F.length)[0]; if (!b) return false;
       if (!P.todLock && LT.tod !== 'g') { P.tod = 'g'; applyTOD('g', !LT.env); const ts = $('tod'); if (ts) ts.value = 'g'; } P.todLock = false;
-      const r = enterInterior(b.id, REF6_ROOM); if (!r) return false; P.view = 'ref6'; writeHash(P); document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.v === 'ref6')); return true; }
+      const r = enterInterior(b.id, REF6_ROOM); if (!r) return false; if (b.type === 'goten') { const c = r.cam, t = r.tgt, a = Math.atan2(t[1] - c[1], t[0] - c[0]) - 75 * Math.PI / 180, L = Math.hypot(t[0] - c[0], t[1] - c[1]) || 3; teleportInt(c, [c[0] + Math.cos(a) * L, c[1] + Math.sin(a) * L, t[2]]); } /* r16：床の間机位右转 75° → 左 = 金襖墙（长卷老松），右 = 縁側与半开的障子（看得到外面） */ P.view = 'ref6'; writeHash(P); document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.v === 'ref6')); return true; }
     let REF6_ROOM;
     function setView(name, instant) {
       if (name === 'ref6' && ref6View()) return;
@@ -884,7 +938,7 @@
     function nearestWater() { const c = w3(camera.position), t = w3(controls.target); let dx = t[0] - c[0], dy = t[1] - c[1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
       for (const s of [0, 15, 35, 60, 100, 150, 220, 320, 450, 600]) { const x = c[0] + dx * s, y = c[1] + dy * s, w = site.wzAt(x, y), h = site.heightAt(x, y); if (h < w - 0.05 && h > -1e8) return { level: w }; }
       return null; }
-    function postOpts() { const T = LT.T || FX.TOD.g, Pp = T.post, int = !!intMode; return Object.assign({}, Pp, { sd: sunDir, sunC: T.sun, interior: int, exp: (int ? 1.1 * LT.expI / LT.exp : 1) * Pp.exp, tm: Pp.tm || 0, god: int ? Pp.god * 0.6 : Pp.god }); }
+    function postOpts() { const T = LT.T || FX.TOD.g, int = !!intMode, Vp = !int && VIEWS[P.view] && VIEWS[P.view].post, Pp = Vp ? Object.assign({}, T.post, Vp) : T.post; return Object.assign({}, Pp, { sd: sunDir, sunC: T.sun, interior: int, exp: (int ? (Pp.expI || 1.1) * LT.expI / LT.exp : 1) * Pp.exp, tm: Pp.tm || 0, god: int ? Pp.god * 0.6 : Pp.god, sat: int ? Pp.sat * (Pp.satI || 0.9) : Pp.sat, warm: int && Pp.warmI ? Pp.warmI : Pp.warm, ao: true, vol: int ? (Pp.vol || 0.06) : 0, dust: P.anim ? 1 : 0.0001, shT: sun.shadow.map ? sun.shadow.map.texture : null, shM: sun.shadow.matrix }); } // r16：室内降饱和/偏中性、体积光 + 尘埃、SSAO（高画质）
     function draw() {
       if (POST.level <= 0) { renderer.render(scene, camera); return; }
       if (POST.level >= 2 && !intMode && site) { const b = nearestWater(); if (b && camera.position.y - b.level < 450) {
@@ -892,7 +946,9 @@
           REFL.render(scene, camera, b.level, WATERS, 0.5); state.reflBody = b.level; } else REFL.off(); } else REFL.off();
       POST.render(scene, camera, postOpts()); }
     // 花瓣：高画质、外景、相机离目标 < 500 m 时显示；anim=0 时静止（截图/测试）
-    function step2(now) { townQ(); const show = FX.q >= 2 && !intMode && camera.position.distanceTo(controls.target) < 500; if (PET.visible !== show) { PET.visible = show; if (!show) return true; }
+    function step2(now) { townQ(); let anyFx = false; if (TOWN && FX.q > 0) for (const o of TOWN.group.children) if (o.userData.U && o.visible) { const U = o.userData.U; U.px.value = renderer.domElement.height || 600; if (P.anim) { U.time.value = now / 1000; anyFx = true; } else U.time.value = 12.3; } // r16：炊烟/鸟群动画
+      if (anyFx) { step2b(now); return true; } return step2b(now); }
+    function step2b(now) { const show = FX.q >= 2 && !intMode && camera.position.distanceTo(controls.target) < 500; if (PET.visible !== show) { PET.visible = show; if (!show) return true; }
       if (!show) return false; const U = PET.userData.U; U.ctr.value.copy(camera.position).lerp(controls.target, Math.min(0.5, 45 / Math.max(1, camera.position.distanceTo(controls.target)))); U.sunC.value.fromArray((LT.T || FX.TOD.g).sun); U.px.value = renderer.domElement.height || 600; if (P.anim) { U.time.value = now / 1000; return true; } U.time.value = 12.3; return false; }
     renderer.setAnimationLoop(now => {
       if (!LT.env) { makeEnv(); intLighting(intMode ? intMode.b : null); need = true; } // B5：环境图在第一帧画之前生成（首帧计时之后），着色器第一次编译就带 envMap，不会再整体重编译
