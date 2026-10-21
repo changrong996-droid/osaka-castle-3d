@@ -48,10 +48,14 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
           c += hor * 0.25 * exp(-hy * 25.0);                                                                                      // 地平白化
 #if LK_CLOUD > 0
           if (y > 0.0) { vec2 p = d.xz / (y + 0.06) * 0.9 + vec2(13.0, 7.0); float n = lkF(p * 0.55), n2 = lkF(p * 2.1 + 5.0);
-            float cov = smoothstep(0.5 - cloud * 0.25, 0.85, n * 0.8 + n2 * 0.28) * smoothstep(0.0, 0.12, y);
+            float cov = smoothstep(0.5 - cloud * 0.25, 0.85, n * 0.8 + n2 * 0.28) * smoothstep(0.0, 0.12, y) * (1.0 - 0.55 * smoothstep(0.25, 0.8, y));   // r16：天顶少云（蓝天露出来）
             float th = smoothstep(0.35, 0.95, n2);  // 厚度：薄边透光 → 金边
-            vec3 lit = sunC * cTint * (0.8 + 3.0 * pow(mu, 8.0) * (1.0 - th * 0.6)) + zen * 0.6, sh = mix(zen * 0.9, hor * 0.55, 0.5) * (0.7 + 0.3 * n);
-            vec3 cc = mix(lit, sh, th * 0.75); c = mix(c, cc, cov * 0.92); }
+            // r16：云体 = 冷灰蓝（天光），云底/云边 = 低太阳照亮的暖金（离太阳越近、越靠地平越暖）；不再把暖色与天顶蓝相加（r15 整片云发紫）
+            float low = 1.0 - smoothstep(0.04, 0.45, y), wk = (0.25 + 0.75 * pow(mu, 3.0)) * (0.35 + 0.65 * low);
+            vec3 body = mix(zen * 2.0 + vec3(0.07, 0.07, 0.08), hor * 0.7, 0.3) * (0.7 + 0.45 * n);
+            vec3 lit = sunC * cTint * (0.5 + 3.2 * pow(mu, 8.0)) * wk;
+            float under = (1.0 - th) * 0.7 + 0.3 * smoothstep(0.55, 0.9, n);   // 薄处/边缘 + 云底
+            vec3 cc = body + lit * under; c = mix(c, cc, cov * 0.92); }
 #endif
           if (y < 0.0) c = mix(hor * 0.7, gnd, smoothstep(0.0, 0.08, -y));
           float sdisc = smoothstep(0.99991, 0.99995, dot(d, sd)); c += sunC * disc * sdisc;
@@ -106,22 +110,47 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
         void main() { vec2 dt = (vUv - sun) * dens / 48.0; vec2 uv = vUv; float il = 1.0, s = 0.0, j = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
           uv -= dt * j; for (int i = 0; i < 48; i++) { uv -= dt; if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break; s += texture2D(t, uv).r * il; il *= decay; }
           gl_FragColor = vec4(vec3(s / 48.0), 1.0); }` });
+    // r16：室内体积光：1/4 分辨率，每像素沿视线 20 步（≤ 14 m）查太阳阴影图（同一张阴影图，室内时已收紧到本栋），抖动起点；之后一次可分离模糊
+    const volMat = new THREE.ShaderMaterial({ uniforms: { dpt: { value: null }, pInv: { value: new THREE.Matrix4() }, cW: { value: new THREE.Matrix4() }, cPos: { value: new THREE.Vector3() }, shT: { value: null }, shM: { value: new THREE.Matrix4() }, sd: { value: new THREE.Vector3() }, dens: { value: 0.05 } }, depthTest: false, depthWrite: false, vertexShader: FSQ,
+      fragmentShader: THREE.ShaderChunk.packing + `varying vec2 vUv; uniform sampler2D dpt, shT; uniform mat4 pInv, cW, shM; uniform vec3 cPos, sd; uniform float dens;
+        float lit(vec3 wp) { vec4 sc = shM * vec4(wp, 1.0); sc.xyz /= sc.w; if (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0 || sc.z > 1.0) return 0.0; return step(sc.z - 0.002, unpackRGBAToDepth(texture2D(shT, sc.xy))); }
+        void main() { float d = texture2D(dpt, vUv).x; vec4 v = pInv * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); v /= v.w; vec3 wp = (cW * vec4(v.xyz, 1.0)).xyz, rd = wp - cPos; float L = min(length(rd), 14.0); rd = normalize(rd);
+          float st = L / 20.0, j = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453), s = 0.0;
+          for (int i = 0; i < 20; i++) { vec3 p = cPos + rd * (st * (float(i) + j)); s += lit(p); }
+          float mu = dot(rd, sd), ph = 0.35 + 0.65 * pow(max(mu, 0.0), 6.0) * 3.0;   // 前向散射：迎着光柱看更亮
+          gl_FragColor = vec4(vec3(s * st * dens * ph), 1.0); }` });
     const compU = { t: { value: null }, dpt: { value: null }, b1: { value: null }, b2: { value: null }, b3: { value: null }, god: { value: null }, useGod: { value: 0 }, useFog: { value: 0 },
       pInv: { value: new THREE.Matrix4() }, cW: { value: new THREE.Matrix4() }, cPos: { value: new THREE.Vector3() }, sd: { value: new THREE.Vector3() }, sunC: { value: new THREE.Vector3() }, fogC: { value: new THREE.Vector3() },
       fogA: { value: 0.0003 }, fogH: { value: 60 }, fog0: { value: 0 }, mistA: { value: 0 }, mistY: { value: 9 }, mistH: { value: 4 }, expo: { value: 1 }, bloomK: { value: 0.12 }, godK: { value: 0.5 }, sat: { value: 1.05 },
-      warm: { value: new THREE.Vector3(1.04, 1.0, 0.94) }, cool: { value: new THREE.Vector3(0.95, 0.99, 1.06) }, vig: { value: 0.3 }, con: { value: 0.2 }, tm: { value: 0 }, near: { value: 1 }, far: { value: 30000 }, time: { value: 0 }, lift: { value: 0.0 } };
+      warm: { value: new THREE.Vector3(1.04, 1.0, 0.94) }, cool: { value: new THREE.Vector3(0.95, 0.99, 1.06) }, vig: { value: 0.3 }, con: { value: 0.2 }, tm: { value: 0 }, near: { value: 1 }, far: { value: 30000 }, time: { value: 0 }, lift: { value: 0.0 }, mistC: { value: new THREE.Vector3(0.7, 0.62, 0.52) }, useAO: { value: 0 }, aoK: { value: 0.6 }, aoR: { value: 1.2 }, vol: { value: null }, useVol: { value: 0 }, volK: { value: 1 },
+      shT: { value: null }, shM: { value: new THREE.Matrix4() }, dust: { value: 0 }, mistTop: { value: 1e4 } };
     const compMat = new THREE.ShaderMaterial({ uniforms: compU, depthTest: false, depthWrite: false, vertexShader: FSQ,
-      fragmentShader: NOISE + TONE + `varying vec2 vUv; uniform sampler2D t, dpt, b1, b2, b3, god; uniform float useGod, useFog, fogA, fogH, fog0, mistA, mistY, mistH, expo, bloomK, godK, sat, vig, con, tm, near, far, time, lift;
-        uniform mat4 pInv, cW; uniform vec3 cPos, sd, sunC, fogC, warm, cool;
+      fragmentShader: NOISE + TONE + THREE.ShaderChunk.packing + `varying vec2 vUv; uniform sampler2D t, dpt, b1, b2, b3, god, vol, shT; uniform float useGod, useFog, fogA, fogH, fog0, mistA, mistY, mistH, expo, bloomK, godK, sat, vig, con, tm, near, far, time, lift, useAO, aoK, aoR, useVol, volK, dust, mistTop;
+        uniform mat4 pInv, cW, shM; uniform vec3 cPos, sd, sunC, fogC, warm, cool, mistC;
+        vec3 vpos(vec2 uv) { float d = texture2D(dpt, uv).x; vec4 v = pInv * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return v.xyz / v.w; }
+        float shLit(vec3 wp) { vec4 sc = shM * vec4(wp, 1.0); sc.xyz /= sc.w; if (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0; return step(sc.z - 0.002, unpackRGBAToDepth(texture2D(shT, sc.xy))); }
         float odExp(float a, float H, float y0, float yc, float dy, float dist) { float k = dy * dist / H, e0 = clamp(-(yc - y0) / H, -80.0, 40.0), e1 = clamp(-(yc + dy * dist - y0) / H, -80.0, 40.0); return abs(k) < 1e-3 ? a * dist * exp(e0) * (1.0 - 0.5 * k) : a * dist * (exp(e0) - exp(e1)) / k; }
         void main() { vec3 c = texture2D(t, vUv).rgb; if (!(c.r + c.g + c.b >= 0.0)) c = vec3(0.0); c = min(c, vec3(1e3));
+          // r16：廉价 SSAO（高画质）：只用深度，12 个旋转圆盘采样（半径按观察深度换成屏幕尺寸），遮挡 = 采样点比中心更近且在半径内
+          if (useAO > 0.5) { float d0 = texture2D(dpt, vUv).x; if (d0 < 0.99999) { vec3 p0 = vpos(vUv); float rz = max(-p0.z, 0.5), rs = aoR / (rz * 2.0 * pInv[1][1]), oc = 0.0;
+              float a0 = lkH(gl_FragCoord.xy) * 6.2832; for (int i = 0; i < 12; i++) { float fi = float(i), a = a0 + fi * 2.39996, rr = rs * (0.2 + 0.8 * fract(fi * 0.618 + lkH(gl_FragCoord.yx))); vec2 o = vec2(cos(a), sin(a)) * rr; o.x *= float(textureSize(dpt, 0).y) / float(textureSize(dpt, 0).x);
+                vec3 q = vpos(vUv + o); float dz = q.z - p0.z; oc += smoothstep(0.02 + 0.0006 * rz, 0.25, dz) * (1.0 - smoothstep(aoR, aoR * 2.5, dz)); }
+              c *= 1.0 - aoK * clamp(oc / 12.0 * 1.6 - 0.15, 0.0, 1.0); } }
           if (useFog > 0.5) { float d = texture2D(dpt, vUv).x; vec4 v = pInv * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); v /= v.w; vec3 wp = (cW * vec4(v.xyz, 1.0)).xyz, rd = wp - cPos; float dist = length(rd); rd /= max(dist, 1e-4);
             bool sky = d > 0.99999; if (sky) dist = 22000.0;
-            float od = odExp(fogA, fogH, fog0, cPos.y, rd.y, dist);
-            if (mistA > 0.0) { float dm = min(dist, 800.0); vec3 mp = cPos + rd * dm * 0.5; float n = 0.45 + 0.9 * lkN(mp.xz * 0.012 + vec2(time * 0.01, 0.0)) * lkN(mp.xz * 0.05 - 3.0); od += odExp(mistA * n, mistH, mistY, cPos.y, rd.y, dm); }
-            if (sky) od *= 0.35;
+            float od = odExp(fogA, fogH, fog0, cPos.y, rd.y, dist), odm = 0.0;
+            if (mistA > 0.0) { float dm = min(dist, 800.0); vec3 mp = cPos + rd * dm * 0.5; float n = 0.45 + 0.9 * lkN(mp.xz * 0.012 + vec2(time * 0.01, 0.0)) * lkN(mp.xz * 0.05 - 3.0); odm = odExp(mistA * n, mistH, mistY, cPos.y, rd.y, dm); }
+            if (sky) { od *= 0.35; odm *= 0.5; }
             float mu = max(dot(rd, sd), 0.0); vec3 ins = fogC + sunC * (pow(mu, 6.0) * 0.6 + pow(mu, 32.0) * 1.2) * 0.4;
-            float tr = exp(-od); c = c * tr + ins * (1.0 - tr); }
+            float tr = exp(-od); c = c * tr + ins * (1.0 - tr);
+            // r16：堀上薄雾单独着色（暖、贴水面）：远处空气透视之后再叠（薄雾离相机近）
+            vec3 mi = mistC * (0.85 + 0.3 * pow(mu, 4.0)) + sunC * pow(mu, 12.0) * 0.25; float tm2 = exp(-odm); c = c * tm2 + mi * (1.0 - tm2); }
+          // r16：室内体积光（高画质）：1/4 分辨率沿视线步进、按太阳阴影图判断受光（窓洞里进来的光柱），这里叠加；尘埃 = 光柱里的世界坐标亮点
+          if (useVol > 0.5) { c += texture2D(vol, vUv).r * sunC * volK;
+            if (dust > 0.0) { float d = texture2D(dpt, vUv).x; vec4 v = pInv * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); v /= v.w; vec3 wp = (cW * vec4(v.xyz, 1.0)).xyz, rd = normalize(wp - cPos); float dist = length(wp - cPos);
+              for (int k = 0; k < 4; k++) { float dk = 1.2 + float(k) * 1.4; if (dk > dist - 0.2) break; vec3 pk = cPos + rd * dk + vec3(0.0, -time * 0.02, 0.0) * dust; vec3 cell = floor(pk / 0.03), f = fract(pk / 0.03) - 0.5;
+                float h = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453); if (h > 0.99) { float r = length(f.xy - vec2(fract(h * 97.0), fract(h * 57.0)) * 0.3 + 0.15); float sp = (1.0 - smoothstep(0.05, 0.14, r)) * shLit(pk);
+                  c += sp * sunC * 0.9 * (1.0 - float(k) * 0.18); } } } }
           vec3 bl = texture2D(b1, vUv).rgb * 0.5 + texture2D(b2, vUv).rgb * 0.3 + texture2D(b3, vUv).rgb * 0.35;
           c = c * expo + bl * bloomK;
           if (useGod > 0.5) c += texture2D(god, vUv).r * sunC * godK;
@@ -136,9 +165,9 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
     L.post = (renderer) => {
       const P = { level: 0, rt: null, w: 0, h: 0, b: [], god: null, occ: null, ms: 0 };
       P.resize = () => { const s = renderer.getDrawingBufferSize(new THREE.Vector2()), w = s.x | 0, h = s.y | 0; if (w === P.w && h === P.h && P.rt) return; P.w = w; P.h = h;
-        for (const r of [P.rt, P.occ, P.god, ...P.b.flat()]) if (r) r.dispose();
+        for (const r of [P.rt, P.occ, P.god, P.vol, P.vol2, ...P.b.flat()]) if (r) r.dispose();
         P.rt = mkRT(w, h, true, 0); P.b = [2, 4, 8].map(k => [mkRT(Math.max(1, w / k | 0), Math.max(1, h / k | 0)), mkRT(Math.max(1, w / k | 0), Math.max(1, h / k | 0))]);
-        P.occ = mkRT(Math.max(1, w / 4 | 0), Math.max(1, h / 4 | 0)); P.god = mkRT(Math.max(1, w / 4 | 0), Math.max(1, h / 4 | 0)); };
+        P.occ = mkRT(Math.max(1, w / 4 | 0), Math.max(1, h / 4 | 0)); P.god = mkRT(Math.max(1, w / 4 | 0), Math.max(1, h / 4 | 0)); P.vol = mkRT(Math.max(1, w / 4 | 0), Math.max(1, h / 4 | 0)); P.vol2 = mkRT(Math.max(1, w / 4 | 0), Math.max(1, h / 4 | 0)); };
       P.render = (scene, camera, o) => { const t0 = performance.now(); P.resize();
         renderer.setRenderTarget(P.rt); renderer.render(scene, camera);
         // 泛光：三级（1/2、1/4、1/8），每级 亮部 → 横 → 竖
@@ -150,7 +179,10 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
         const god = P.level >= 2 && o.god > 0 && front && Math.abs(sv.x) < 2.2 && Math.abs(sv.y) < 2.2;
         if (god) { occMat.uniforms.t.value = P.rt.texture; occMat.uniforms.dpt.value = P.rt.depthTexture; occMat.uniforms.sun.value.set(sv.x * 0.5 + 0.5, sv.y * 0.5 + 0.5); occMat.uniforms.asp.value = P.w / P.h; occMat.uniforms.intr.value = o.interior ? 1 : 0; pass(renderer, occMat, P.occ);
           godMat.uniforms.t.value = P.occ.texture; godMat.uniforms.sun.value.copy(occMat.uniforms.sun.value); pass(renderer, godMat, P.god); }
-        const U = compU; U.t.value = P.rt.texture; U.dpt.value = P.rt.depthTexture; U.b1.value = P.b[0][0].texture; U.b2.value = P.b[1][0].texture; U.b3.value = P.b[2][0].texture; U.god.value = P.god.texture; U.useGod.value = god ? 1 : 0;
+        const vol = P.level >= 2 && o.interior && o.shT && o.vol > 0; if (vol) { const V = volMat.uniforms; V.dpt.value = P.rt.depthTexture; V.pInv.value.copy(camera.projectionMatrixInverse); V.cW.value.copy(camera.matrixWorld); V.cPos.value.copy(camera.position); V.shT.value = o.shT; V.shM.value.copy(o.shM); V.sd.value.copy(o.sd); V.dens.value = o.vol;
+          pass(renderer, volMat, P.vol); blurMat.uniforms.t.value = P.vol.texture; blurMat.uniforms.dir.value.set(1, 0); pass(renderer, blurMat, P.vol2); blurMat.uniforms.t.value = P.vol2.texture; blurMat.uniforms.dir.value.set(0, 1); pass(renderer, blurMat, P.vol); }
+        const U = compU; U.t.value = P.rt.texture; U.vol.value = P.vol.texture; U.useVol.value = vol ? 1 : 0; U.volK.value = 1; U.dust.value = vol ? (o.dust || 0) : 0; if (o.shT) { U.shT.value = o.shT; U.shM.value.copy(o.shM); }
+        U.useAO.value = P.level >= 2 && o.ao ? 1 : 0; U.aoK.value = o.interior ? 0.55 : 0.5; U.aoR.value = o.interior ? 0.45 : 1.6; if (o.mistC) U.mistC.value.fromArray(o.mistC); else U.mistC.value.fromArray(o.fogC); U.dpt.value = P.rt.depthTexture; U.b1.value = P.b[0][0].texture; U.b2.value = P.b[1][0].texture; U.b3.value = P.b[2][0].texture; U.god.value = P.god.texture; U.useGod.value = god ? 1 : 0;
         U.useFog.value = P.level >= 2 && !o.interior ? 1 : 0; U.pInv.value.copy(camera.projectionMatrixInverse); U.cW.value.copy(camera.matrixWorld); U.cPos.value.copy(camera.position); U.sd.value.copy(o.sd); U.sunC.value.fromArray(o.sunC); U.fogC.value.fromArray(o.fogC);
         U.fogA.value = o.fogA; U.fogH.value = o.fogH; U.fog0.value = o.fog0 || 0; U.mistA.value = o.interior ? 0 : (o.mistA || 0); U.mistY.value = o.mistY || 9; U.mistH.value = o.mistH || 4; U.expo.value = o.exp; U.bloomK.value = o.bloom; U.godK.value = o.god; U.sat.value = o.sat; U.vig.value = o.vig; U.con.value = o.con === undefined ? 0.2 : o.con; U.tm.value = o.tm || 0; U.time.value = (performance.now() / 1000) % 1000; U.lift.value = o.lift || 0;
         U.warm.value.fromArray(o.warm); U.cool.value.fromArray(o.cool); pass(renderer, compMat, null); P.ms = performance.now() - t0; };
@@ -163,8 +195,8 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
       R.patch = (mat) => { const ob = mat.onBeforeCompile; mat.onBeforeCompile = sh => { ob(sh); Object.assign(sh.uniforms, U);
           sh.fragmentShader = 'uniform sampler2D reflT; uniform mat4 reflM; uniform float reflH, reflOn;\n' + sh.fragmentShader.replace('#include <opaque_fragment>', `
           if (reflOn > 0.5 && abs(vWP.y - reflH) < 0.08) { vec3 nW = fxNk > 0.0 ? fxNW : vec3(0.0, 1.0, 0.0); vec4 rc = reflM * vec4(vWP + vec3(nW.x, 0.0, nW.z) * 0.8, 1.0); vec2 ru = rc.xy / rc.w;
-            vec3 V = normalize(cameraPosition - vWP); float fr = 0.03 + 0.97 * pow(1.0 - max(dot(V, nW), 0.0), 5.0); fr = clamp(fr * 1.0 + 0.35, 0.0, 0.92);
-            vec3 rcol = texture2D(reflT, clamp(ru, 0.001, 0.999)).rgb; outgoingLight = mix(outgoingLight, rcol * vec3(0.86, 0.9, 0.88), fr); }
+            vec3 V = normalize(cameraPosition - vWP); float fr = 0.03 + 0.97 * pow(1.0 - max(dot(V, nW), 0.0), 5.0); fr = clamp(fr * 1.0 + 0.3, 0.0, 0.9);
+            vec3 rcol = texture2D(reflT, clamp(ru, 0.001, 0.999)).rgb; outgoingLight = mix(outgoingLight * 0.7, rcol * vec3(0.6, 0.66, 0.58), fr); }   // r16：倒影更深（暗绿水）
           #include <opaque_fragment>`); };
         mat.customProgramCacheKey = (k => () => k + '-refl')(mat.customProgramCacheKey ? mat.customProgramCacheKey() : 'w'); mat.needsUpdate = true; };
       const v = new THREE.Vector3(), tgt = new THREE.Vector3(), lookAt = new THREE.Vector3(), rot = new THREE.Matrix4(), N = new THREE.Vector3(0, 1, 0), plane = new THREE.Plane(), cp = new THREE.Vector4(), q = new THREE.Vector4(), up = new THREE.Vector3();
@@ -222,7 +254,7 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
       for (const D of DIST) { const ca = Math.cos(D.a), sa = Math.sin(D.a), toW = (u, v) => [u * ca - v * sa, u * sa + v * ca];
       for (let j = -36; j <= 36; j++) for (let i = -36; i <= 36; i++) {
         const u0 = i * (BW + ST), v0 = j * (BH + ST), C = toW(u0 + BW / 2, v0 + BH / 2), cx = C[0], cy = C[1], d = Math.hypot(cx, cy); if (d > R2 + 100) continue;
-        if (!D.s(Math.atan2(cy, cx))) continue; const K4 = [toW(u0, v0), toW(u0 + BW, v0), toW(u0, v0 + BH), toW(u0 + BW, v0 + BH)];
+        if (!D.s(Math.atan2(cy, cx))) continue; const K4 = [toW(u0, v0), toW(u0 + BW, v0), toW(u0, v0 + BH), toW(u0 + BW, v0 + BH), toW(u0 + BW / 2, v0), toW(u0 + BW / 2, v0 + BH), toW(u0, v0 + BH / 2), toW(u0 + BW, v0 + BH / 2)]; // r16：加边中点（内环町割在内框里，外区斜网格不能伸进去）
         if (!K4.every(k => keep(k[0], k[1])) || !keep(cx, cy)) continue;
         if (inRiver(cx, cy, 70) || K4.some(k => inRiver(k[0], k[1], 10))) continue;
         nBlk++; const far = d > R1, hb = H2(i * 7 + 3, j * 13 + seed + D.a * 1000);
@@ -236,10 +268,27 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
         if (!far && r() < 0.45) { const nt = 1 + ((r() * 3) | 0); for (let k = 0; k < nt; k++) { const P = toW(u0 + 20 + r() * (BW - 40), v0 + 36 + r() * (BH - 72)); trees.push({ x: P[0], y: P[1], r: 2.5 + 2 * r(), h: 7 + 4 * r(), sak: r() < 0.35 }); } }
         const nk = 1 + ((r() * 3) | 0); for (let k = 0; k < nk; k++) { const Pk = toW(u0 + 25 + r() * (BW - 50), v0 + 34 + r() * (BH - 68)); kura.push({ x: Pk[0], y: Pk[1], w: 5.5, d: 8, a: D.a + (r() < 0.5 ? 0 : Math.PI / 2), h: 6.5, far }); }
       } }
+
+      // r16：内环（外堀外岸 → 细网格 + 60 m 的空环）也建町家：正交町割（0°），街区 116×76 m、街路 16 m，原点对齐相机 canopy 的 4 m 格 → 街路上至少两列 4 m 格空着（相机可沿街通行）。
+      //   每栋按足迹（含出檐 + 2 m）逐点检查：在“城下”区（细网格内 = 城下带格、外 = city 区）、地面平（四角高差 < 0.5 m）、不近水；城门土桥外端 55 m 内与门前大路（沿土桥方向 160 m、宽 24 m）不建。
+      if (opt.inner) { const I = opt.inner, bx0 = gs.x0 - 50, bx1 = gs.x1 + 50, by0 = gs.y0 - 50, by1 = gs.y1 + 50, PX = 132, PY = 92, IBW = 116, IBH = 76;
+        const okPt = (x, y) => { if (x < bx0 || x > bx1 || y < by0 || y > by1) return false; if (!I.city(x, y)) return false; for (const g of I.gates) { const dx = x - g.x, dy = y - g.y, a = dx * g.ux + dy * g.uy, b = Math.abs(dx * g.uy - dy * g.ux); if (Math.hypot(dx, dy) < 55 || (a > -10 && a < 160 && b < 12)) return false; } return true; };
+        const okFoot = (x, y, w, d, a, m) => { const ca = Math.cos(a), sa = Math.sin(a), z0 = zAt(x, y); if (I.wet(x, y)) return false;
+          for (const [p, q] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0], [0, -1], [0, 1], [-1, 0], [1, 0]]) { const lx = p * (w / 2 + m), ly = q * (d / 2 + m), X = x + lx * ca - ly * sa, Y = y + lx * sa + ly * ca; if (!okPt(X, Y) || Math.abs(zAt(X, Y) - z0) > 0.5 || I.wet(X, Y)) return false; } return true; };
+        const i0 = Math.floor(bx0 / PX) - 1, i1 = Math.ceil(bx1 / PX), j0 = Math.floor(by0 / PY) - 1, j1 = Math.ceil(by1 / PY); let nIn = 0;
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const u0 = i * PX, v0 = j * PY, C = [u0 + IBW / 2, v0 + IBH / 2]; let any = false;
+          for (const [a, b] of [[u0, v0], [u0 + IBW, v0], [u0, v0 + IBH], [u0 + IBW, v0 + IBH], C]) if (okPt(a, b)) { any = true; break; } if (!any) continue; nBlk++;
+          const sides = [[u0, v0, 1, 0, IBW, 0, 0], [u0 + IBW, v0 + IBH, -1, 0, IBW, Math.PI, 0], [u0, v0 + IBH, 0, -1, IBH, Math.PI / 2, 0], [u0 + IBW, v0, 0, 1, IBH, -Math.PI / 2, 0], [u0, v0 + 20, 1, 0, IBW, 0, 1], [u0 + IBW, v0 + IBH - 20, -1, 0, IBW, Math.PI, 1]];
+          for (let si = 0; si < 6; si++) { const [sx, sy, ux, uy, len, ang, back] = sides[si], nx = -uy, ny = ux; let u = si === 2 || si === 3 ? 20 : back ? 22 : 0; const uEnd = si === 2 || si === 3 ? len - 20 : back ? len - 22 : len;
+            while (u < uEnd - 4) { const w = (back ? 7 : 5) + 4 * r(); if (u + w > uEnd) break; const dep = back ? 11 + 3 * r() : 13 + 6 * r(), x = sx + ux * (u + w / 2) + nx * dep / 2, y = sy + uy * (u + w / 2) + ny * dep / 2, two = !back && r() < 0.45, a2 = ang + (back ? Math.PI : 0);
+              if (okFoot(x, y, w, dep, a2, 2)) { houses.push({ x, y, w: w - 0.25, d: dep, a: a2, h: two ? 6.4 : back ? 3.8 : 4.2, t: 0.8 + 0.35 * r(), far: false, inner: true, fx: sx + ux * (u + w / 2), fy: sy + uy * (u + w / 2), nx, ny, back }); nIn++; } u += w; } }
+          const nk = 1 + ((r() * 2) | 0); for (let k = 0; k < nk; k++) { const x = u0 + 25 + r() * (IBW - 50), y = v0 + 34 + r() * (IBH - 68); if (okFoot(x, y, 5.5, 8, 0, 2)) kura.push({ x, y, w: 5.5, d: 8, a: r() < 0.5 ? 0 : Math.PI / 2, h: 6.5, far: false }); }
+          if (r() < 0.5) { const x = u0 + 30 + r() * (IBW - 60), y = v0 + 36 + r() * (IBH - 72), tr = 2.5 + 2 * r(); if (okFoot(x, y, tr * 2, tr * 2, 0, 1)) trees.push({ x, y, r: tr, h: 7 + 4 * r(), sak: r() < 0.45 }); } }
+        I.n = nIn; }
       // 堀川：在选中的街路行上（街区之间的街路换成 14 m 水道），舟
       for (const j of canalRows) { const y = j * (BH + ST) - ST / 2; canals.push({ y, x0: -R2 - 200, x1: gs.x0 - 160 }); }
-      for (let k = 0; k < 140; k++) { const x = -R2 + r() * (R2 * 2), y = riverY(x) + (r() - 0.5) * RW * 0.7; if (Math.hypot(x, y) < R2 && keep(x, y)) boats.push({ x, y, a: (r() - 0.5) * 0.3, s: 1 + r() }); }
-      for (const c of canals) for (let k = 0; k < 10; k++) { const x = c.x0 + 300 + r() * (c.x1 - c.x0 - 300); if (Math.hypot(x, c.y) < R2 && keep(x, c.y)) boats.push({ x, y: c.y + (r() - 0.5) * 6, a: 0, s: 0.8 }); }
+      for (let k = 0; k < 360; k++) { const x = -R2 + r() * (R2 * 2), y = riverY(x) + (r() - 0.5) * RW * 0.75; if (Math.hypot(x, y) < R2 && keep(x, y)) boats.push({ x, y, a: (r() - 0.5) * 0.3 + (r() < 0.5 ? Math.PI : 0), s: 1 + r(), roof: r() < 0.3 }); } // r16：舟 140 → 360（约三成屋形船）
+      for (const c of canals) for (let k = 0; k < 22; k++) { const x = c.x0 + 300 + r() * (c.x1 - c.x0 - 300); if (Math.hypot(x, c.y) < R2 && keep(x, c.y)) boats.push({ x, y: c.y + (r() - 0.5) * 6, a: r() < 0.5 ? 0 : Math.PI, s: 0.8, roof: false }); }
       // 町家不建在水道上
       const wet = (x, y) => inRiver(x, y, 6) || canals.some(c => x > c.x0 && x < c.x1 && Math.abs(y - c.y) < 12);
       const H = houses.filter(h => !wet(h.x, h.y)), K = kura.filter(h => !wet(h.x, h.y));
@@ -266,7 +315,10 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
       const wallM = { f: [0.42, 0.34, 0.26], s: [0.62, 0.58, 0.52] }, wallK = { f: [0.86, 0.84, 0.8], s: [0.86, 0.84, 0.8] };
       const Hn = H.filter(h => !h.far), Hf = H.filter(h => h.far), Kn = K.filter(h => !h.far);
       const tint = (h, c) => c.setRGB(h.t, h.t * 0.98, h.t * 0.95);
-      inst(Hn, houseGeo(0.12, wallM, false), tint, 1); for (const f of inst(Hf, houseGeo(0.1, wallM, true), tint, 1)) f.userData.far = true; inst(Kn, houseGeo(0.08, wallK, false), (h, c) => c.setRGB(1, 1, 1), 1);
+      // r16：真 LOD：近带町家每个 600 m 块有两套实例（全：墙 + 屋根；简：只有屋根棱柱），app 的 townQ 按相机到块的距离二选一；出檐 0.12 → 0.06（≈1 m，町家的庇）
+      const EH = 0.06, gFull = houseGeo(EH, wallM, false), gLow = houseGeo(EH, wallM, true);
+      for (const f of inst(Hn, gFull, tint, 1)) f.userData.lod = 'full'; for (const f of inst(Hn, gLow, tint, 1)) f.userData.lod = 'low'; for (const f of inst(Hf, gLow, tint, 1)) f.userData.far = true;
+      for (const f of inst(Kn, houseGeo(0.08, wallK, false), (h, c) => c.setRGB(1, 1, 1), 1)) f.userData.lod = 'full';
       // 寺院：大屋根（入母屋近似 = 切妻 + 大出檐），高 14 m
       temples.forEach(t => { t.h = 9; }); inst(temples, houseGeo(0.16, { f: [0.38, 0.27, 0.18], s: [0.5, 0.4, 0.3] }, false), (h, c) => c.setRGB(1, 1, 1), 1);
       // 五重塔：5 层叠盒 + 屋根片（实例化一个合并几何）
@@ -279,8 +331,20 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
       if (trees.length && opt.crownMat) { const g = new THREE.IcosahedronGeometry(1, 1); let kk = 0;
         chunked(trees, g, opt.crownMat, (t, k, im) => { m4.compose(ps.set(t.x, zAt(t.x, t.y) + t.h - t.r * 0.8, -t.y), qt.identity(), sc.set(t.r, t.r * 0.85, t.r)); im.setMatrixAt(k, m4); const v = 0.85 + 0.3 * H2(kk++, 5); if (t.sak) cl.setRGB(0.78 * v, 0.47 * v, 0.53 * v); else cl.setRGB(0.12 * v, 0.19 * v, 0.07 * v); im.setColorAt(k, cl); }); }
       // 舟
-      if (boats.length) { const g = new THREE.BoxGeometry(2.2, 0.7, 9); g.translate(0, 0.2, 0); const im = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: 0x3b2c20, roughness: 0.8 }), boats.length);
-        boats.forEach((b, k) => { m4.compose(ps.set(b.x, zAt(b.x, b.y) + 0.06, -b.y), qt.setFromAxisAngle(up, b.a + Math.PI / 2), sc.set(b.s, 1, b.s)); im.setMatrixAt(k, m4); }); grp.add(im); }
+      // r16：舟 = 尖头船身（舷侧收窄）+ 约三成带屋形（屋形船）；顶点色
+      if (boats.length) { const mk = roof => { const pos = [], col = [], ix = []; const V = (x, y, z, c) => { pos.push(x, y, z); col.push(...c); return pos.length / 3 - 1; }, Q = (a, b, c, d, cc) => { const i = [a, b, c, d].map(p => V(...p, cc)); ix.push(i[0], i[1], i[2], i[0], i[2], i[3]); };
+          const hc = [0.24, 0.17, 0.11], dk = [0.16, 0.11, 0.07], L = 4.6, Wd = 1.1, Hh = 0.75;
+          Q([-Wd, Hh, -L + 1.2], [Wd, Hh, -L + 1.2], [Wd, Hh, L - 1.6], [-Wd, Hh, L - 1.6], dk);                              // 甲板
+          Q([-Wd, Hh, L - 1.6], [Wd, Hh, L - 1.6], [0, Hh + 0.25, L], [0, Hh + 0.25, L], dk);                                  // 舳先甲板
+          for (const sg of [-1, 1]) { Q([sg * Wd, Hh, -L + 1.2], [sg * 0.7, 0, -L + 1.4], [sg * 0.7, 0, L - 1.8], [sg * Wd, Hh, L - 1.6], hc); Q([sg * Wd, Hh, L - 1.6], [sg * 0.7, 0, L - 1.8], [0, 0.1, L - 0.4], [0, Hh + 0.25, L], hc); }
+          Q([-Wd, Hh, -L + 1.2], [Wd, Hh, -L + 1.2], [0.7, 0, -L + 1.4], [-0.7, 0, -L + 1.4], hc);                               // 艫
+          if (roof) { const rc = [0.12, 0.11, 0.11], wc = [0.8, 0.74, 0.62]; for (const sg of [-1, 1]) Q([sg * 0.95, Hh, -1.8], [sg * 0.95, Hh, 1.6], [sg * 0.95, Hh + 1.5, 1.6], [sg * 0.95, Hh + 1.5, -1.8], wc);
+            Q([-0.95, Hh, 1.6], [0.95, Hh, 1.6], [0.95, Hh + 1.5, 1.6], [-0.95, Hh + 1.5, 1.6], wc); Q([0.95, Hh, -1.8], [-0.95, Hh, -1.8], [-0.95, Hh + 1.5, -1.8], [0.95, Hh + 1.5, -1.8], wc);
+            Q([-1.25, Hh + 1.45, -2.1], [0, Hh + 1.95, -2.1], [0, Hh + 1.95, 1.9], [-1.25, Hh + 1.45, 1.9], rc); Q([0, Hh + 1.95, -2.1], [1.25, Hh + 1.45, -2.1], [1.25, Hh + 1.45, 1.9], [0, Hh + 1.95, 1.9], rc); }
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(ix); g.computeVertexNormals(); return g; };
+        const bm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
+        for (const roof of [false, true]) { const L = boats.filter(b => !!b.roof === roof); if (!L.length) continue; const im = new THREE.InstancedMesh(mk(roof), bm, L.length);
+          L.forEach((b, k) => { m4.compose(ps.set(b.x, zAt(b.x, b.y) - 0.15, -b.y), qt.setFromAxisAngle(up, b.a + Math.PI / 2), sc.set(b.s * 0.8, 1, b.s)); im.setMatrixAt(k, m4); }); im.computeBoundingSphere(); grp.add(im); } }
       // 水面（大川 + 堀川）：地面以上 4 cm 的水带（地面在这里是平的城下面），用同一种水材质
       { const pos = [], ix = []; const strip = (pts, wFn) => { const o = pos.length / 3; for (let k = 0; k < pts.length; k++) { const [x, y] = pts[k], [x2, y2] = pts[Math.min(pts.length - 1, k + 1)], [x1, y1] = pts[Math.max(0, k - 1)], dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l, w = wFn(x, y) / 2;
             pos.push(x + nx * w, zAt(x + nx * w, y + ny * w) + 0.04, -(y + ny * w), x - nx * w, zAt(x - nx * w, y - ny * w) + 0.04, -(y - ny * w)); if (k) { const a = o + (k - 1) * 2; ix.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } } };
@@ -290,14 +354,63 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
         for (const c of canals) { const pts = []; for (let x = c.x0; x <= c.x1; x += 40) pts.push([x, c.y]); if (pts.length > 1) strip(pts, () => 14); }
         const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(ix); g.computeVertexNormals();
         const wm = new THREE.Mesh(g, opt.waterMat); wm.name = 'town-water'; grp.add(wm); }
+      // r16：幟（のぼり）：内环与近带沿街的部分店家门前（墙外 0.4 m、高 3.6 m < 庇下沿 → 不穿庇），竿 + 竖长布（白/藍/朱/黄土，逐面色）；在房屋柱体内（canopy 已覆盖）
+      const banners = []; { const near = H.filter(h => !h.far && !h.back && h.fx !== undefined); for (const h of near) if (H2(Math.round(h.x * 3), Math.round(h.y * 3)) < 0.16) banners.push(h);
+        const outerNear = H.filter(h => !h.far && h.fx === undefined && Math.hypot(h.x, h.y) < 1300 && h.h > 4 && H2(Math.round(h.x * 7), Math.round(h.y * 5)) < 0.05); for (const h of outerNear) { const ca = Math.cos(h.a), sa = Math.sin(h.a); banners.push(Object.assign({}, h, { fx: h.x + sa * h.d / 2, fy: h.y - ca * h.d / 2, nx: -sa, ny: ca })); } }
+      if (banners.length) { const pos = [], col = [], ix = []; const V = (x, y, z, c) => { pos.push(x, y, z); col.push(...c); return pos.length / 3 - 1; }, Q = (a, b, c, d, cc) => { const i = [a, b, c, d].map(p => V(...p, cc)); ix.push(i[0], i[1], i[2], i[0], i[2], i[3]); };
+        const pc = [0.18, 0.13, 0.09], cw = [1, 1, 1]; Q([-0.03, 0, 0], [0.03, 0, 0], [0.03, 3.6, 0], [-0.03, 3.6, 0], pc); Q([0, 0, -0.03], [0, 0, 0.03], [0, 3.6, 0.03], [0, 3.6, -0.03], pc);
+        Q([0.03, 1.2, 0], [0.5, 1.2, 0], [0.5, 3.45, 0], [0.03, 3.45, 0], cw); Q([0.03, 3.45, 0], [0.5, 3.45, 0], [0.5, 3.5, 0], [0.03, 3.5, 0], pc);
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(ix); g.computeVertexNormals();
+        const COLS = [[0.92, 0.9, 0.84], [0.12, 0.2, 0.42], [0.72, 0.16, 0.1], [0.75, 0.58, 0.25], [0.9, 0.88, 0.8]], bmat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
+        chunked(banners, g, bmat, (h, k, im) => { const x = h.fx + h.nx * -0.4 + (h.ny || 0) * 0, y = h.fy + h.ny * -0.4; qt.setFromAxisAngle(up, Math.atan2(h.ny, h.nx) + Math.PI / 2); m4.compose(ps.set(x, zAt(x, y), -y), qt, sc.set(1, 1, 1)); im.setMatrixAt(k, m4); const c = COLS[(H2(k, 77) * COLS.length) | 0]; cl.setRGB(c[0], c[1], c[2]); im.setColorAt(k, cl); }).forEach(m => { m.userData.lod = 'full'; m.userData.ban = true; }); }
+      // r16：炊烟：约 70 户（内环 + 近带）屋顶上升起的烟柱（点精灵，世界坐标上升 + 随高度向东北飘散、变大变淡；anim=0 冻结）；中/高画质
+      { const src = H.filter(h => !h.far && Math.hypot(h.x, h.y) < 1700 && H2(Math.round(h.x * 11), Math.round(h.y * 13)) < 0.0016 + (h.inner ? 0.02 : 0)).slice(0, 90), N = 22, n = src.length * N;
+        if (n) { const P = new Float32Array(n * 3), A = new Float32Array(n * 2); let k = 0; for (const h of src) { const z = zAt(h.x, h.y) + h.h * 1.45; for (let i = 0; i < N; i++, k++) { P[k * 3] = h.x; P[k * 3 + 1] = z; P[k * 3 + 2] = -h.y; A[k * 2] = i / N; A[k * 2 + 1] = H2(k, 31); } }
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('ph', new THREE.BufferAttribute(A, 2)); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3000);
+          const U = { time: { value: 12.3 }, px: { value: 720 }, sunC: { value: new THREE.Vector3(1, 0.7, 0.45) }, amb: { value: new THREE.Vector3(0.35, 0.35, 0.4) } };
+          const sm = new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, fog: false,
+            vertexShader: `attribute vec2 ph; uniform float time, px; varying float vA; varying float vT;
+              void main() { float t = fract(ph.x + time * 0.03 + ph.y * 0.37), hgt = t * 38.0; vec3 p = position + vec3(0.0, hgt, 0.0) + vec3(1.0, 0.0, -0.6) * pow(t, 1.6) * 26.0 + vec3(sin(t * 9.0 + ph.y * 6.0), 0.0, cos(t * 7.0 + ph.y * 5.0)) * t * 3.0;
+                vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(px * (1.2 + t * 9.0) / -mv.z, 0.0, 90.0); vA = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.45, 1.0, t)) * 0.33; vT = t; }`,
+            fragmentShader: `varying float vA; varying float vT; uniform vec3 sunC, amb;
+              void main() { vec2 q = gl_PointCoord - 0.5; float d = dot(q, q); if (d > 0.25) discard; vec3 c = amb + sunC * 0.35 * (0.6 + 0.4 * (0.5 - q.y)); gl_FragColor = vec4(c * 0.9, vA * (1.0 - smoothstep(0.05, 0.25, d)));
+              #include <tonemapping_fragment>
+              #include <colorspace_fragment>
+              }` });
+          const pts = new THREE.Points(g, sm); pts.name = 'smoke'; pts.frustumCulled = false; pts.userData.U = U; pts.userData.fx = 'smoke'; grp.add(pts); } }
+      // r16：鸟群：6 群（每群 14–22 只）在城与城下上空盘旋（V 形散开，扑翼 = 点精灵里的“∧”形随时间开合）；anim=0 冻结
+      { const flocks = [[20, 60, 95, 140], [-300, 250, 120, 220], [380, -200, 110, 180], [-1200, 300, 150, 260], [-700, -500, 130, 240], [150, -420, 85, 120]], pos = [], ph = [];
+        flocks.forEach((F, fi) => { const nb = 14 + ((H2(fi, 3) * 9) | 0); for (let i = 0; i < nb; i++) { pos.push(F[0], F[2], -F[1]); ph.push(fi + 0.5, i, F[3], H2(fi * 31 + i, 9)); } });
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('ph', new THREE.Float32BufferAttribute(ph, 4)); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3000);
+        const U = { time: { value: 12.3 }, px: { value: 720 } };
+        const bm = new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, fog: false,
+          vertexShader: `attribute vec4 ph; uniform float time, px; varying float vF;
+            void main() { float fi = ph.x, i = ph.y, R = ph.z, a = time * (0.05 + 0.01 * fi) + fi * 1.7; vec3 c = position + vec3(cos(a) * R, sin(time * 0.3 + fi) * 6.0, sin(a) * R);
+              vec3 tg = normalize(vec3(-sin(a), 0.0, cos(a))), sd = vec3(-tg.z, 0.0, tg.x); float row = floor(sqrt(i)), col = i - row * row - row;
+              vec3 p = c - tg * row * 4.5 + sd * col * 3.2 + vec3(ph.w - 0.5, (ph.w - 0.5) * 0.6, fract(ph.w * 7.0) - 0.5) * 6.0;
+              vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = clamp(px * 1.3 / -mv.z, 2.0, 14.0); vF = sin(time * 9.0 + ph.w * 20.0); }`,
+          fragmentShader: `varying float vF;
+            void main() { vec2 q = gl_PointCoord - 0.5; q.y = -q.y; float wing = abs(q.x) * (0.55 + 0.45 * vF) - q.y * 0.9; float d = abs(wing - 0.04) - 0.055 * (1.0 - abs(q.x) * 1.6); if (d > 0.0 || abs(q.x) > 0.48) discard;
+              gl_FragColor = vec4(0.05, 0.045, 0.04, 0.85);
+              #include <tonemapping_fragment>
+              #include <colorspace_fragment>
+            }` });
+        const pts = new THREE.Points(g, bm); pts.name = 'birds'; pts.frustumCulled = false; pts.userData.U = U; pts.userData.fx = 'birds'; grp.add(pts); }
+      // r16：苇（堀里贴石垣墙脚，app 给点）：每丛 7 片交叉的细叶（底绿 → 梢黄褐、微弯），高 1.1–2.0 m；进 canopy（水位 + 2.3 m）
+      const reeds = opt.reeds || []; if (reeds.length) { const pos = [], col = [], ix = []; for (let b = 0; b < 16; b++) { const a = b / 16 * Math.PI * 2 + 0.4 * Math.sin(b * 3.1), lean = 0.15 + 0.2 * ((b * 0.618) % 1), hh = 1.3 + 0.9 * ((b * 0.37) % 1), w0 = 0.07; const ox = 0.35 * Math.cos(b * 2.4), oz = 0.35 * Math.sin(b * 2.4);
+          const dx = Math.cos(a), dz = Math.sin(a), o = pos.length / 3; for (let k = 0; k <= 3; k++) { const t = k / 3, bx = ox + dx * lean * t * t * hh, bz = oz + dz * lean * t * t * hh, wy = w0 * (1 - t * 0.85); pos.push(bx - dz * wy, t * hh, bz + dx * wy, bx + dz * wy, t * hh, bz - dx * wy); const c = [0.12 + 0.3 * t, 0.2 + 0.18 * t, 0.06 + 0.05 * t]; col.push(...c, ...c); if (k) { const q = o + (k - 1) * 2; ix.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); } } }
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(ix); g.computeVertexNormals();
+        const rm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
+        chunked(reeds, g, rm, (t, k, im) => { qt.setFromAxisAngle(up, H2(k, 3) * 6.28); m4.compose(ps.set(t.x, t.z - 0.1, -t.y), qt, sc.set(t.s, t.s, t.s)); im.setMatrixAt(k, m4); }).forEach(m => { m.userData.lod = 'full'; m.userData.reed = true; }); }
       // ---- 相机 canopy：4 m 格上每格最高屋顶（町家按柱体 = 保守），给相机碰撞用（物理规则不放松：相机球不会进入房屋）----
       const CC = 4, half = R2 + 200, n = Math.ceil(half * 2 / CC), top = new Float32Array(n * n).fill(-1e9);
-      const stamp = (h, hh) => { const ca = Math.cos(h.a), sa = Math.sin(h.a), ex = Math.abs(ca) * h.w / 2 + Math.abs(sa) * h.d / 2 + 0.5, ey = Math.abs(sa) * h.w / 2 + Math.abs(ca) * h.d / 2 + 0.5, z = zAt(h.x, h.y) + hh;
+      const stamp = (h, hh) => { const ca = Math.cos(h.a), sa = Math.sin(h.a), ex = Math.abs(ca) * h.w / 2 + Math.abs(sa) * h.d / 2 + 0.5, ey = Math.abs(sa) * h.w / 2 + Math.abs(ca) * h.d / 2 + 0.5, z = (h.zz !== undefined ? h.zz : zAt(h.x, h.y)) + hh;
         for (let j = Math.floor((h.y - ey + half) / CC); j <= Math.floor((h.y + ey + half) / CC); j++) for (let i = Math.floor((h.x - ex + half) / CC); i <= Math.floor((h.x + ex + half) / CC); i++) if (i >= 0 && j >= 0 && i < n && j < n) { const q = j * n + i; if (z > top[q]) top[q] = z; } };
-      for (const h of H) stamp(h, h.h * 1.45 + 0.5); for (const h of K) stamp(h, h.h * 1.45 + 0.5); for (const t of temples) stamp(t, t.h * 1.45 + 0.5); for (const p of pagodas) stamp(p, 37); for (const t of trees) stamp({ x: t.x, y: t.y, w: t.r * 2, d: t.r * 2, a: 0 }, t.h + 0.3);
+      const eav = (h, e) => ({ x: h.x, y: h.y, a: h.a, w: h.w * (1 + 2 * e), d: h.d * (1 + 2 * e) }); // r16：足迹含出檐（r15 只按墙体足迹 + 0.5 m，出檐 ~2 m 不在柱体里）
+      for (const h of H) stamp(eav(h, EH), h.h * 1.45 + 0.5); for (const h of K) stamp(eav(h, 0.08), h.h * 1.45 + 0.5); for (const t of temples) stamp(eav(t, 0.16), t.h * 1.45 + 0.5); for (const p of pagodas) stamp(p, 37); for (const t of trees) stamp({ x: t.x, y: t.y, w: t.r * 2, d: t.r * 2, a: 0 }, t.h + 0.3); for (const b of boats) stamp({ x: b.x, y: b.y, w: 9.5 * b.s, d: 2.5 * b.s, a: b.a }, 3.2); /* r16：舟也进 canopy（r15 漏了） */ for (const t of reeds) stamp({ x: t.x, y: t.y, w: 2.0 * t.s, d: 2.0 * t.s, a: 0, zz: t.z }, 2.4 * t.s);
       const canopy = (x, y, rad) => { rad = rad || 0; let m = -1e9; const i0 = Math.floor((x - rad + half) / CC), i1 = Math.floor((x + rad + half) / CC), j0 = Math.floor((y - rad + half) / CC), j1 = Math.floor((y + rad + half) / CC);
         if (i1 < 0 || j1 < 0 || i0 >= n || j0 >= n) return m; for (let j = Math.max(0, j0); j <= Math.min(n - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(n - 1, i1); i++) { const v = top[j * n + i]; if (v > m) m = v; } return m; };
-      const stats = { blocks: nBlk, houses: H.length, kura: K.length, temples: temples.length, pagodas: pagodas.length, boats: boats.length, canals: canals.length, trees: trees.length, ms: Math.round(performance.now() - T0) };
+      const stats = { reeds: reeds.length, inner: opt.inner ? opt.inner.n : 0, banners: banners.length, blocks: nBlk, houses: H.length, kura: K.length, temples: temples.length, pagodas: pagodas.length, boats: boats.length, canals: canals.length, trees: trees.length, ms: Math.round(performance.now() - T0) };
       return { group: grp, canopy, stats, riverY, R2, keep };
     };
     return L;
