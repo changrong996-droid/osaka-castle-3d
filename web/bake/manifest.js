@@ -14,14 +14,14 @@
  }
 };
 (typeof window !== "undefined" ? window : globalThis).CASTLE_BAKE_B = {
- "b1-129d16f5-k1-c4fb186b-01ae13a6-s1-l1-c1.5-r": {
+ "b1-22baec66-k1-c4fb186b-01ae13a6-s1-l1-c1.5-r": {
   "file": "bake/b-s1-l1.json.gz",
   "bytes": 29032,
   "raw": 353866,
   "sig": "8bb0d4d3-27",
   "n": 27
  },
- "b1-129d16f5-k1-c4fb186b-01ae13a6-s1-l0-c1.5-r": {
+ "b1-22baec66-k1-c4fb186b-01ae13a6-s1-l0-c1.5-r": {
   "file": "bake/b-s1-l0.json.gz",
   "bytes": 3695,
   "raw": 22967,
