@@ -27,12 +27,13 @@
 2026-10-20 起本项目**不再是教学/考据模型**：写实可选、允许想象与夸张，只要大致像大阪城；目标是实时浏览器里让人第一眼就想问“这是怎么做出来的”（不做视频）。物理规则（不穿插、可通行、相机不进实体/地下）与全部 H/C 审计照旧 = 0；史料拟合类审计只在视觉改动确实需要时放松并逐条记录（r15 没有放松任何审计）。规则与参数见 [docs/RULES.md §11](docs/RULES.md)。
 - **打开即是**黄金时刻仰望天守（`#view=ref2`），另有参考图机位 `ref3`（晨雾内堀，镜面倒影）、`ref4`（城下夕照）、`ref6`（金碧障壁画的御殿大広間）。
 - **画质**：低 = 与 r14 同价（直接渲染，手机可用）；中 = HDR + 泛光 + 调色 + 程序云；高 = 再加深度高度雾/堀上薄雾、光束、堀面平面反射、飘落花瓣（目标：桌面独显 1080p 约 60 fps）。城下町（规则生成，约 10 万栋实例化町家 + 寺塔 + 大川/堀川 + 舟，远处地面“瓦海”）各画质都有，低画质只画近带；房屋按柱体进相机碰撞。
+- **web-r16（phase B：密度 + 打磨）**：城下町填满外堀外岸到细网格边的空环（正交町割、16 m 街路对齐相机 4 m 柱格 → 街上可走）；炊烟、屋形船、鸟群、幟；城下町按 600 m 块做两级 LOD；石垣顶部/砌缝长苔、堀里墙脚长苇；ref2 机位更近（天守占画面约 3/4 高）、天空更蓝（云体冷灰蓝 + 被低太阳照亮的暖云底）、金饰轮廓光；ref3 薄雾更暖更低更浓、水更暗；ref6 燻し金 + 深色木、襖画成一整幅按世界坐标接续的老松长卷（每扇画面不同、枝干跨过接缝）、室内体积光 + 尘埃；高画质加廉价 SSAO。物理规则与 H/C 审计照旧 = 0（详见 RULES §11.8）。
 - `python3 tests/test_visual.py`：按四张参考图渲染对应机位（1280×720 高画质），输出 参考|渲染 并排图与亮度/色相直方图/边缘密度统计（只报告，不判失败）。
 
-![黄金时刻仰望天守（web-r15 默认）](web/shots/visual/ref2_side.jpg)
-![晨雾内堀（web-r15）](web/shots/visual/ref3_side.jpg)
-![城下夕照（web-r15）](web/shots/visual/ref4_side.jpg)
-![金碧障壁画（web-r15）](web/shots/visual/ref6_side.jpg)
+![黄金时刻仰望天守（web-r16 默认）](web/shots/visual/ref2_side.jpg)
+![晨雾内堀（web-r16）](web/shots/visual/ref3_side.jpg)
+![城下夕照（web-r16）](web/shots/visual/ref4_side.jpg)
+![金碧障壁画（web-r16）](web/shots/visual/ref6_side.jpg)
 
 ## 浏览器版（规则驱动 + 物理自检，web-r15）
 在线：<https://htmlpreview.github.io/?https://github.com/changrong996-droid/osaka-castle-3d/blob/main/web/index.html>（也可直接用 GitHub Pages / 任意静态服务器打开 `web/index.html`）
