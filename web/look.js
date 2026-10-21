@@ -291,6 +291,15 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
       for (let k = 0; k < 360; k++) { const x = -R2 + r() * (R2 * 2), y = riverY(x) + (r() - 0.5) * RW * 0.75; if (Math.hypot(x, y) < R2 && keep(x, y)) boats.push({ x, y, a: (r() - 0.5) * 0.3 + (r() < 0.5 ? Math.PI : 0), s: 1 + r(), roof: r() < 0.3 }); } // r16：舟 140 → 360（约三成屋形船）
       for (const c of canals) for (let k = 0; k < 22; k++) { const x = c.x0 + 300 + r() * (c.x1 - c.x0 - 300); if (Math.hypot(x, c.y) < R2 && keep(x, c.y)) boats.push({ x, y: c.y + (r() - 0.5) * 6, a: r() < 0.5 ? 0 : Math.PI, s: 0.8, roof: false }); }
       // 町家不建在水道上
+      // r17：远景城下剪影（R2 → 8.5 km）：地面“瓦海”的同一街区格（127×88 m，街路 9 m）上放真屋根块（合并低模：每块 4 列切妻屋根），寺院大屋根 + 少量五重塔突出天际线；
+      //   近带（< 4.2 km）每列 3–5 栋高低错落 + 外侧墙线，远带每列一条屋根；离大川 50 m 以内不建；中/高画质画（低画质仍走地面瓦海），后处理的高度雾把它们淡进远霞
+      const farB = [], farPag = [], FR0 = R2 + 60, FR1 = opt.farR || 8500, FRM = 4200;
+      if (opt.far !== false) { const CW = 127, CD = 88, i0 = Math.floor(-FR1 / CW), i1 = Math.ceil(FR1 / CW), j0 = Math.floor(-FR1 / CD), j1 = Math.ceil(FR1 / CD);
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const cx = i * CW + 68, cz = j * CD + 48.5, cy = -cz, d = Math.hypot(cx, cy);
+          if (d < FR0 || d > FR1 || inRiver(cx, cy, 50) || !keep(cx, cy)) continue; const h = H2(i * 31 + 7, j * 17 + seed * 3);
+          if (h < 0.022) { temples.push({ x: cx, y: cy, w: 40 + 14 * H2(j, i), d: 30 + 10 * H2(i + 3, j), a: 0, far: true, fs: true }); if (h < 0.006) farPag.push({ x: cx + 38, y: cy + 22 }); continue; }
+          if (h > 0.975) continue;   // 空地/庭
+          farB.push({ x: cx, y: cy, v: (H2(i, j * 3 + 1) * 3) | 0, flip: H2(j, i * 5) < 0.5, t: 0.72 + 0.5 * H2(i + 11, j), near: d < FRM }); } }
       const wet = (x, y) => inRiver(x, y, 6) || canals.some(c => x > c.x0 && x < c.x1 && Math.abs(y - c.y) < 12);
       const H = houses.filter(h => !wet(h.x, h.y)), K = kura.filter(h => !wet(h.x, h.y));
       // ---- 几何：一栋 = 墙体盒（白/木色顶点色）+ 切妻屋根（出檐），合并成一个几何；实例化 ----
@@ -321,13 +330,30 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
       for (const f of inst(Hn, gFull, tint, 1)) f.userData.lod = 'full'; for (const f of inst(Hn, gLow, tint, 1)) f.userData.lod = 'low'; for (const f of inst(Hf, gLow, tint, 1)) f.userData.far = true;
       for (const f of inst(Kn, houseGeo(0.08, wallK, false), (h, c) => c.setRGB(1, 1, 1), 1)) f.userData.lod = 'full';
       // 寺院：大屋根（入母屋近似 = 切妻 + 大出檐），高 14 m
-      temples.forEach(t => { t.h = 9; }); inst(temples, houseGeo(0.16, { f: [0.38, 0.27, 0.18], s: [0.5, 0.4, 0.3] }, false), (h, c) => c.setRGB(1, 1, 1), 1);
+      temples.forEach(t => { t.h = 9; }); { const tg = houseGeo(0.16, { f: [0.38, 0.27, 0.18], s: [0.5, 0.4, 0.3] }, false); inst(temples.filter(t => !t.fs), tg, (h, c) => c.setRGB(1, 1, 1), 1); for (const f of inst(temples.filter(t => t.fs), tg, (h, c) => c.setRGB(1, 1, 1), 1)) { f.userData.far = true; f.userData.farSil = true; } }
       // 五重塔：5 层叠盒 + 屋根片（实例化一个合并几何）
-      if (pagodas.length) { const pos = [], ix = [], col = []; const add = (g, y0) => { const p = g.attributes.position.array, o = pos.length / 3; for (let k = 0; k < p.length; k += 3) { pos.push(p[k], p[k + 1] + y0, p[k + 2]); col.push(0.2, 0.18, 0.17); } for (const q of g.index.array) ix.push(q + o); };
+      if (pagodas.length || farPag.length) { const pos = [], ix = [], col = []; const add = (g, y0) => { const p = g.attributes.position.array, o = pos.length / 3; for (let k = 0; k < p.length; k += 3) { pos.push(p[k], p[k + 1] + y0, p[k + 2]); col.push(0.2, 0.18, 0.17); } for (const q of g.index.array) ix.push(q + o); };
         for (let k = 0; k < 5; k++) { const s = 1 - k * 0.1; add(new THREE.BoxGeometry(6.5 * s, 4.2, 6.5 * s).translate(0, 2.1, 0), k * 5.4); add(new THREE.CylinderGeometry(4.2 * s, 7.6 * s, 1.3, 4, 1).rotateY(Math.PI / 4).translate(0, 4.6, 0), k * 5.4); }
         add(new THREE.CylinderGeometry(0.25, 0.25, 9, 6).translate(0, 4.5, 0), 27);
         const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(ix); g.computeVertexNormals();
-        const im = new THREE.InstancedMesh(g, mat, pagodas.length); pagodas.forEach((p, k) => { m4.compose(ps.set(p.x, zAt(p.x, p.y) - 0.2, -p.y), qt.identity(), sc.set(1, 1, 1)); im.setMatrixAt(k, m4); p.h = 36; p.w = p.d = 12; p.a = 0; }); grp.add(im); }
+        for (const [L, far] of [[pagodas, false], [farPag, true]]) { if (!L.length) continue; const im = new THREE.InstancedMesh(g, mat, L.length); L.forEach((p, k) => { m4.compose(ps.set(p.x, zAt(p.x, p.y) - 0.2, -p.y), qt.identity(), sc.set(1, 1, 1)); im.setMatrixAt(k, m4); p.h = 36; p.w = p.d = 12; p.a = 0; }); im.computeBoundingSphere(); if (far) { im.userData.far = true; im.userData.farSil = true; } grp.add(im); } }
+      // r17：远景街区块几何（三种变体 × 近/远两级），按 1.2 km 块实例化（视锥剔除按块）；绕序按外法线自动校正
+      if (farB.length) { const blockGeo = (v, coarse) => { const pos = [], col = [], ix = [], rr = rng(991 + v * 17), A = new THREE.Vector3(), B = new THREE.Vector3(), N = new THREE.Vector3();
+          const P = (p, c) => { pos.push(p[0], p[1], p[2]); col.push(c[0], c[1], c[2]); return pos.length / 3 - 1; };
+          const T = (a, b, c, o, cc) => { A.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); B.set(c[0] - a[0], c[1] - a[1], c[2] - a[2]); N.crossVectors(A, B); if (N.x * o[0] + N.y * o[1] + N.z * o[2] < 0) { const t = b; b = c; c = t; } ix.push(P(a, cc), P(b, cc), P(c, cc)); };
+          const Q = (a, b, c, d, o, cc) => { T(a, b, c, o, cc); T(a, c, d, o, cc); };
+          const roofC = [0.17, 0.17, 0.18], wallC = [0.5, 0.46, 0.4], gabC = [0.36, 0.32, 0.28];
+          for (let row = 0; row < 4; row++) { const z0 = -39.5 + row * 19.75, z1 = z0 + 19.75, zm = (z0 + z1) / 2, segs = [];
+            if (coarse) segs.push([-59, 59, row % 2 ? 5.2 : 4.4]); else { let x = -59; while (x < 58) { const w = Math.min(59 - x, 20 + rr() * 26); segs.push([x, x + w, rr() < 0.35 ? 6.4 : 4.2]); x += w; } }
+            for (const [xa, xb, h] of segs) { const e = 0.9, rh = h + 3.0 + (coarse ? 0 : rr() * 0.6);
+              Q([xa, h - 0.3, z0 - e], [xb, h - 0.3, z0 - e], [xb, rh, zm], [xa, rh, zm], [0, 1, -1], roofC); Q([xa, h - 0.3, z1 + e], [xb, h - 0.3, z1 + e], [xb, rh, zm], [xa, rh, zm], [0, 1, 1], roofC);
+              if (!coarse) { T([xa, h, z0], [xa, h, z1], [xa, rh, zm], [-1, 0, 0], gabC); T([xb, h, z0], [xb, h, z1], [xb, rh, zm], [1, 0, 0], gabC);
+                if (row === 0) Q([xa, 0, z0], [xb, 0, z0], [xb, h, z0], [xa, h, z0], [0, 0, -1], wallC); if (row === 3) Q([xa, 0, z1], [xb, 0, z1], [xb, h, z1], [xa, h, z1], [0, 0, 1], wallC); } } }
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(ix); g.computeVertexNormals(); return g; };
+        const FCH = 1200, groups = new Map(); for (const b of farB) { const k = b.v + (b.near ? 'n' : 'c') + Math.floor(b.x / FCH) + ',' + Math.floor(b.y / FCH); let L = groups.get(k); if (!L) groups.set(k, L = []); L.push(b); }
+        const geos = {}; for (const [k, L] of groups) { const gk = L[0].v + (L[0].near ? 'n' : 'c'), geo = geos[gk] || (geos[gk] = blockGeo(L[0].v, !L[0].near)); const im = new THREE.InstancedMesh(geo, mat, L.length); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+          L.forEach((b, q) => { qt.setFromAxisAngle(up, b.flip ? Math.PI : 0); m4.compose(ps.set(b.x, zAt(b.x, b.y) - 0.3, -b.y), qt, sc.set(1, 1, 1)); im.setMatrixAt(q, m4); im.setColorAt(q, cl.setRGB(b.t, b.t * 0.98, b.t * 0.95)); x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x); y0 = Math.min(y0, b.y); y1 = Math.max(y1, b.y); });
+          im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; im.computeBoundingSphere(); Object.assign(im.userData, { far: true, farSil: true, cb: [x0 - 70, y0 - 70, x1 + 70, y1 + 70] }); im.name = 'town-far'; grp.add(im); } }
       // 町中の木（寺院の境内 + 中庭）：冠のみ（遠景），桜 ≈ 35–40 %
       if (trees.length && opt.crownMat) { const g = new THREE.IcosahedronGeometry(1, 1); let kk = 0;
         chunked(trees, g, opt.crownMat, (t, k, im) => { m4.compose(ps.set(t.x, zAt(t.x, t.y) + t.h - t.r * 0.8, -t.y), qt.identity(), sc.set(t.r, t.r * 0.85, t.r)); im.setMatrixAt(k, m4); const v = 0.85 + 0.3 * H2(kk++, 5); if (t.sak) cl.setRGB(0.78 * v, 0.47 * v, 0.53 * v); else cl.setRGB(0.12 * v, 0.19 * v, 0.07 * v); im.setColorAt(k, cl); }); }
@@ -409,9 +435,14 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
         for (let j = Math.floor((h.y - ey + half) / CC); j <= Math.floor((h.y + ey + half) / CC); j++) for (let i = Math.floor((h.x - ex + half) / CC); i <= Math.floor((h.x + ex + half) / CC); i++) if (i >= 0 && j >= 0 && i < n && j < n) { const q = j * n + i; if (z > top[q]) top[q] = z; } };
       const eav = (h, e) => ({ x: h.x, y: h.y, a: h.a, w: h.w * (1 + 2 * e), d: h.d * (1 + 2 * e) }); // r16：足迹含出檐（r15 只按墙体足迹 + 0.5 m，出檐 ~2 m 不在柱体里）
       for (const h of H) stamp(eav(h, EH), h.h * 1.45 + 0.5); for (const h of K) stamp(eav(h, 0.08), h.h * 1.45 + 0.5); for (const t of temples) stamp(eav(t, 0.16), t.h * 1.45 + 0.5); for (const p of pagodas) stamp(p, 37); for (const t of trees) stamp({ x: t.x, y: t.y, w: t.r * 2, d: t.r * 2, a: 0 }, t.h + 0.3); for (const b of boats) stamp({ x: b.x, y: b.y, w: 9.5 * b.s, d: 2.5 * b.s, a: b.a }, 3.2); /* r16：舟也进 canopy（r15 漏了） */ for (const t of reeds) stamp({ x: t.x, y: t.y, w: 2.0 * t.s, d: 2.0 * t.s, a: 0, zz: t.z }, 2.4 * t.s);
-      const canopy = (x, y, rad) => { rad = rad || 0; let m = -1e9; const i0 = Math.floor((x - rad + half) / CC), i1 = Math.floor((x + rad + half) / CC), j0 = Math.floor((y - rad + half) / CC), j1 = Math.floor((y + rad + half) / CC);
+      for (const b of farB) stamp({ x: b.x, y: b.y, a: 0, w: 120, d: 81 }, 10.6); for (const p of farPag) stamp(p, 37);   // r17：远景块（细网格 canopy 范围内的部分）
+      // r17：canopy 方格（±(R2+200)）以外：远景环带内一律按“地面 + 14 m”（块最高 ≈ 10 m、寺院 ≈ 13 m）保守封顶，五重塔 37 m；大川水面（离块足够远）不封
+      const farCap = (x, y, rad) => { if (!farB.length) return -1e9; const d = Math.hypot(x, y); if (d + rad < FR0 - 75 || d - rad > FR1 + 75) return -1e9; if (Math.abs(y - riverY(x)) + rad < RW / 2 + 5) return -1e9;
+        let hh = 14; for (const p of farPag) if (Math.hypot(p.x - x, p.y - y) < 12 + rad) hh = 37; return zAt(x, y) + hh; };
+      const canopy0 = (x, y, rad) => { rad = rad || 0; let m = -1e9; const i0 = Math.floor((x - rad + half) / CC), i1 = Math.floor((x + rad + half) / CC), j0 = Math.floor((y - rad + half) / CC), j1 = Math.floor((y + rad + half) / CC);
         if (i1 < 0 || j1 < 0 || i0 >= n || j0 >= n) return m; for (let j = Math.max(0, j0); j <= Math.min(n - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(n - 1, i1); i++) { const v = top[j * n + i]; if (v > m) m = v; } return m; };
-      const stats = { reeds: reeds.length, inner: opt.inner ? opt.inner.n : 0, banners: banners.length, blocks: nBlk, houses: H.length, kura: K.length, temples: temples.length, pagodas: pagodas.length, boats: boats.length, canals: canals.length, trees: trees.length, ms: Math.round(performance.now() - T0) };
+      const canopy = (x, y, rad) => { rad = rad || 0; const m = canopy0(x, y, rad); return Math.abs(x) + rad > half - CC || Math.abs(y) + rad > half - CC ? Math.max(m, farCap(x, y, rad)) : m; };
+      const stats = { reeds: reeds.length, inner: opt.inner ? opt.inner.n : 0, banners: banners.length, blocks: nBlk, houses: H.length, kura: K.length, temples: temples.length, pagodas: pagodas.length, boats: boats.length, canals: canals.length, trees: trees.length, far: farB.length, farPag: farPag.length, ms: Math.round(performance.now() - T0) };
       return { group: grp, canopy, stats, riverY, R2, keep };
     };
     return L;
