@@ -37,10 +37,10 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
     const pass = (renderer, mat, rt) => { fsMesh.material = mat; renderer.setRenderTarget(rt); renderer.render(fsScene, fsCam); };
 
     // ---------------- 天空穹顶 ----------------
-    const skyU = { sd: { value: new THREE.Vector3(0, 0.1, -1) }, zen: { value: new THREE.Vector3() }, hor: { value: new THREE.Vector3() }, sunC: { value: new THREE.Vector3(1, 0.7, 0.4) }, disc: { value: 40 }, cloud: { value: 0.5 }, cTint: { value: new THREE.Vector3(1, 0.8, 0.6) }, gnd: { value: new THREE.Vector3(0.1, 0.09, 0.08) } };
+    const skyU = { sd: { value: new THREE.Vector3(0, 0.1, -1) }, zen: { value: new THREE.Vector3() }, hor: { value: new THREE.Vector3() }, sunC: { value: new THREE.Vector3(1, 0.7, 0.4) }, disc: { value: 40 }, cloud: { value: 0.5 }, cTint: { value: new THREE.Vector3(1, 0.8, 0.6) }, gnd: { value: new THREE.Vector3(0.1, 0.09, 0.08) }, cGold: { value: 1 } };
     L.skyMat = new THREE.ShaderMaterial({ uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false, defines: { LK_CLOUD: 1 },
       vertexShader: 'varying vec3 vD; void main() { vD = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
-      fragmentShader: NOISE + `varying vec3 vD; uniform vec3 sd, zen, hor, sunC, cTint, gnd; uniform float disc, cloud;
+      fragmentShader: NOISE + `varying vec3 vD; uniform vec3 sd, zen, hor, sunC, cTint, gnd; uniform float disc, cloud, cGold;
 
         void main() { vec3 d = normalize(vD); float y = d.y, mu = max(dot(d, sd), 0.0);
           float hy = max(y, 0.0); vec3 c = mix(hor, zen, 1.0 - exp(-hy * 13.0));
@@ -51,11 +51,12 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
             float cov = smoothstep(0.5 - cloud * 0.25, 0.85, n * 0.8 + n2 * 0.28) * smoothstep(0.0, 0.12, y) * (1.0 - 0.55 * smoothstep(0.25, 0.8, y));   // r16：天顶少云（蓝天露出来）
             float th = smoothstep(0.35, 0.95, n2);  // 厚度：薄边透光 → 金边
             // r16：云体 = 冷灰蓝（天光），云底/云边 = 低太阳照亮的暖金（离太阳越近、越靠地平越暖）；不再把暖色与天顶蓝相加（r15 整片云发紫）
-            float low = 1.0 - smoothstep(0.04, 0.45, y), wk = (0.25 + 0.75 * pow(mu, 3.0)) * (0.35 + 0.65 * low);
-            vec3 body = mix(zen * 2.0 + vec3(0.07, 0.07, 0.08), hor * 0.7, 0.3) * (0.7 + 0.45 * n);
-            vec3 lit = sunC * cTint * (0.5 + 3.2 * pow(mu, 8.0)) * wk;
-            float under = (1.0 - th) * 0.7 + 0.3 * smoothstep(0.55, 0.9, n);   // 薄处/边缘 + 云底
-            vec3 cc = body + lit * under; c = mix(c, cc, cov * 0.92); }
+            // r17：黄金时刻云 = 暗石板蓝云顶 + 被低太阳照亮的暖金云底（逆光侧最亮，顺光侧也有暖色正面光，c2 的“金色云底 + 深蓝天顶”）
+            float low = 1.0 - smoothstep(0.04, 0.5, y), wk = (0.6 + 0.4 * pow(mu, 3.0)) * (0.45 + 0.55 * low);
+            vec3 body = mix(zen * vec3(1.2, 1.35, 1.25) + vec3(0.02, 0.035, 0.05), hor * 0.5, 0.45 * low * low) * (0.55 + 0.5 * n);
+            vec3 lit = sunC * cTint * (0.8 + 3.2 * pow(mu, 8.0)) * wk * cGold;
+            float under = (1.0 - th) * 0.75 + 0.45 * smoothstep(0.5, 0.95, n) * low;   // 薄处/边缘 + 低处云底
+            under = clamp(under, 0.0, 1.0); vec3 cc = body * (1.0 - 0.75 * under) + lit * under; c = mix(c, cc, cov * 0.92); }   // r17：受光处换成金色（不叠加在蓝灰云体上 → 不再发粉紫）
 #endif
           if (y < 0.0) c = mix(hor * 0.7, gnd, smoothstep(0.0, 0.08, -y));
           float sdisc = smoothstep(0.99991, 0.99995, dot(d, sd)); c += sunC * disc * sdisc;
@@ -64,7 +65,7 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
           #include <colorspace_fragment>
         }` });
     L.sky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), L.skyMat); L.sky.scale.setScalar(26000); L.sky.frustumCulled = false; L.sky.renderOrder = -10; L.sky.name = 'sky';
-    L.setSky = (T, sd, q) => { skyU.sd.value.copy(sd); skyU.zen.value.fromArray(T.skyZ); skyU.hor.value.fromArray(T.skyH); skyU.sunC.value.fromArray(T.sun); skyU.disc.value = T.disc || 30; skyU.cloud.value = T.cloud || 0.5; skyU.cTint.value.fromArray(T.cTint || [1, 0.85, 0.7]); skyU.gnd.value.fromArray(T.gnd);
+    L.setSky = (T, sd, q) => { skyU.sd.value.copy(sd); skyU.zen.value.fromArray(T.skyZ); skyU.hor.value.fromArray(T.skyH); skyU.sunC.value.fromArray(T.sun); skyU.disc.value = T.disc || 30; skyU.cloud.value = T.cloud || 0.5; skyU.cGold.value = T.cGold || 1; skyU.cTint.value.fromArray(T.cTint || [1, 0.85, 0.7]); skyU.gnd.value.fromArray(T.gnd);
       const want = q > 0 ? 1 : 0; if (L.skyMat.defines.LK_CLOUD !== want) { L.skyMat.defines.LK_CLOUD = want; L.skyMat.needsUpdate = true; } };
 
     // ---------------- 远山：11–17 km 剪影环（不受场景雾，自带空气透视色；后处理再按深度加雾）----------------
@@ -140,7 +141,7 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
             bool sky = d > 0.99999; if (sky) dist = 22000.0;
             float od = odExp(fogA, fogH, fog0, cPos.y, rd.y, dist), odm = 0.0;
             if (mistA > 0.0) { float dm = min(dist, 800.0); vec3 mp = cPos + rd * dm * 0.5; float n = 0.45 + 0.9 * lkN(mp.xz * 0.012 + vec2(time * 0.01, 0.0)) * lkN(mp.xz * 0.05 - 3.0); odm = odExp(mistA * n, mistH, mistY, cPos.y, rd.y, dm); }
-            if (sky) { od *= 0.35; odm *= 0.5; }
+            if (sky) { od *= 0.35 * (1.0 - 0.93 * smoothstep(0.02, 0.3, rd.y)); odm *= 0.5; }   // r17：天顶上方少霾（深蓝天顶不被暖雾冲淡成紫灰）
             float mu = max(dot(rd, sd), 0.0); vec3 ins = fogC + sunC * (pow(mu, 6.0) * 0.6 + pow(mu, 32.0) * 1.2) * 0.4;
             float tr = exp(-od); c = c * tr + ins * (1.0 - tr);
             // r16：堀上薄雾单独着色（暖、贴水面）：远处空气透视之后再叠（薄雾离相机近）
@@ -148,9 +149,9 @@ vec3 lkSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, 0.0), vec3(1.0 / 
           // r16：室内体积光（高画质）：1/4 分辨率沿视线步进、按太阳阴影图判断受光（窓洞里进来的光柱），这里叠加；尘埃 = 光柱里的世界坐标亮点
           if (useVol > 0.5) { c += texture2D(vol, vUv).r * sunC * volK;
             if (dust > 0.0) { float d = texture2D(dpt, vUv).x; vec4 v = pInv * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); v /= v.w; vec3 wp = (cW * vec4(v.xyz, 1.0)).xyz, rd = normalize(wp - cPos); float dist = length(wp - cPos);
-              for (int k = 0; k < 4; k++) { float dk = 1.2 + float(k) * 1.4; if (dk > dist - 0.2) break; vec3 pk = cPos + rd * dk + vec3(0.0, -time * 0.02, 0.0) * dust; vec3 cell = floor(pk / 0.03), f = fract(pk / 0.03) - 0.5;
-                float h = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453); if (h > 0.99) { float r = length(f.xy - vec2(fract(h * 97.0), fract(h * 57.0)) * 0.3 + 0.15); float sp = (1.0 - smoothstep(0.05, 0.14, r)) * shLit(pk);
-                  c += sp * sunC * 0.9 * (1.0 - float(k) * 0.18); } } } }
+              for (int k = 0; k < 6; k++) { float dk = 1.0 + float(k) * 1.1; if (dk > dist - 0.2) break; vec3 pk = cPos + rd * dk + vec3(0.0, -time * 0.02, 0.0) * dust; vec3 cell = floor(pk / 0.045), f = fract(pk / 0.045) - 0.5;   // r17：尘埃更大更密（静止截图也看得见）
+                float h = fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453); if (h > 0.986) { float r = length(f.xy - vec2(fract(h * 97.0), fract(h * 57.0)) * 0.3 + 0.15); float sp = (1.0 - smoothstep(0.05, 0.14, r)) * shLit(pk);
+                  c += sp * sunC * 1.3 * (1.0 - float(k) * 0.13); } } } }
           vec3 bl = texture2D(b1, vUv).rgb * 0.5 + texture2D(b2, vUv).rgb * 0.3 + texture2D(b3, vUv).rgb * 0.35;
           c = c * expo + bl * bloomK;
           if (useGod > 0.5) c += texture2D(god, vUv).r * sunC * godK;
