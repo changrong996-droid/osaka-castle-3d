@@ -230,9 +230,9 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
         post: { tm: 1, exp: 1.0, thr: 1.4, bloom: 0.13, god: 0.5, sat: 1.08, warm: [1.06, 1.0, 0.92], cool: [0.94, 0.98, 1.06], vig: 0.3, fogA: 0.0003, fogH: 70, fogC: [0.60, 0.44, 0.33], mistA: 0.006, mistY: 3, mistH: 5 } },
       // web-r15（C1）：黄金时刻（默认）：太阳低（7.5°）、偏西南；天空上蓝下金，云底被照亮；暖逆光 + 冷阴影
       g: { name: '黄金时刻', el: 7.5, az: 238, sun: [1.0, 0.66, 0.38], I: 3.6, sky: [7, 2.6, 0.007, 0.84], zen: [0.10, 0.17, 0.36], hor: [0.68, 0.50, 0.38], gnd: [0.12, 0.10, 0.08], glow: [0.9, 0.5, 0.22], fog: [0.88, 0.74, 0.60], exp: 0.95,
-        skyZ: [0.05, 0.18, 0.6], skyH: [1.15, 0.72, 0.42], disc: 40, cloud: 0.72, cTint: [1.0, 0.74, 0.48], mtn: [[0.24, 0.22, 0.27], [0.98, 0.74, 0.55]],
+        skyZ: [0.0, 0.12, 0.38], skyH: [1.2, 0.72, 0.38], disc: 40, cloud: 0.62, cGold: 2.0, cTint: [1.0, 0.82, 0.52], mtn: [[0.24, 0.22, 0.27], [0.98, 0.74, 0.55]],   // r17：天顶深青蓝（色相 ~210°，r16 偏紫），云底金色更强
         // r16：天顶更蓝（云体冷灰蓝、云底暖金，见 look.js）；室内：降饱和、高光不再偏柠檬黄（warmI）、体积光 vol
-        post: { tm: 1, exp: 0.8, thr: 1.3, bloom: 0.16, god: 0.6, sat: 1.12, con: 0.35, warm: [1.07, 1.0, 0.9], cool: [0.93, 0.98, 1.08], vig: 0.32, fogA: 0.00016, fogH: 80, fogC: [0.50, 0.36, 0.26], mistA: 0.008, mistY: 3, mistH: 5, mistC: [0.6, 0.45, 0.33], satI: 0.82, warmI: [1.03, 0.99, 0.95], expI: 0.88, vol: 0.25 } },
+        post: { tm: 1, exp: 0.8, thr: 1.3, bloom: 0.16, god: 0.6, sat: 1.12, con: 0.35, warm: [1.08, 1.0, 0.88], cool: [0.92, 1.0, 1.05], vig: 0.32, fogA: 0.00016, fogH: 80, fogC: [0.50, 0.36, 0.26], mistA: 0.008, mistY: 3, mistH: 5, mistC: [0.6, 0.45, 0.33], satI: 0.95, warmI: [1.12, 0.96, 0.8], expI: 0.8, vol: 0.4 } },
     };
     // 程序环境图：一个球 + 渐变着色器 → PMREM（立方体 UV 贴图，同尺寸 → 换室内/外景不重编译着色器）
     const envMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, depthTest: false,
