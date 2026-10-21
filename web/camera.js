@@ -142,11 +142,12 @@
     function outNeedTop(x, y) { let m = outTop(x, y); if (CAN) { const cv = CAN(x, y, R); if (cv > m) m = cv; } if (OT) OT(x - R, y - R, x + R, y + R, (k, o) => { const ax = k[o], ay = k[o + 1], az = k[o + 2], ux = k[o + 3] - ax, uy = k[o + 4] - ay, uz = k[o + 5] - az, vx = k[o + 6] - ax, vy = k[o + 7] - ay, vz = k[o + 8] - az, nz = ux * vy - uy * vx; if (Math.abs(nz) < 1e-12) { m = Math.max(m, az, k[o + 5], k[o + 8]); return; }
       const gx = -(uy * vz - uz * vy) / nz, gy = -(uz * vx - ux * vz) / nz, zc = az + gx * (x - ax) + gy * (y - ay) + R * Math.hypot(gx, gy); if (zc > m) m = Math.min(zc, Math.max(az, k[o + 5], k[o + 8])); }); return m; }
     const outTop = (x, y) => { const g = S.regionAt ? S.regionAt(x, y) : null, h = g ? (g.surf ? g.surf.at(x, y) : g.z) : S.BED; let r = Math.max(h, WL(x, y)); if (OZ) { const o = OZ(x, y); if (o > r) r = o; } return r; };
-    const top = (x, y) => { const i = ci(x), j = cj(y); return (i < 0 || j < 0 || i >= NXc || j >= NYc) ? (CAN ? Math.max(outTop(x, y), CAN(x, y, 0)) : outTop(x, y)) : T[j * NXc + i]; };
-    const need = (x, y) => { const i = ci(x), j = cj(y); return (i < K || j < K || i >= NXc - K || j >= NYc - K) ? Math.max(outNeedTop(x, y) + R, i >= -K && j >= -K && i < NXc + K && j < NYc + K ? (() => { let m = -1e9; for (let b = j - K; b <= j + K; b++) for (let a = i - K; a <= i + K; a++) if (a >= 0 && b >= 0 && a < NXc && b < NYc) m = Math.max(m, T[b * NXc + a]); return m + R; })() : -1e9) : C[j * NXc + i]; };
+    // r16：城下町也建到细网格里（外堀外岸的城下带）→ 网格内同样并入 canopy（没有房屋的格 CAN = −1e9，不影响）
+    const top = (x, y) => { const i = ci(x), j = cj(y); return (i < 0 || j < 0 || i >= NXc || j >= NYc) ? (CAN ? Math.max(outTop(x, y), CAN(x, y, 0)) : outTop(x, y)) : (CAN ? Math.max(T[j * NXc + i], CAN(x, y, 0)) : T[j * NXc + i]); };
+    const need = (x, y) => { const i = ci(x), j = cj(y); return (i < K || j < K || i >= NXc - K || j >= NYc - K) ? Math.max(outNeedTop(x, y) + R, i >= -K && j >= -K && i < NXc + K && j < NYc + K ? (() => { let m = -1e9; for (let b = j - K; b <= j + K; b++) for (let a = i - K; a <= i + K; a++) if (a >= 0 && b >= 0 && a < NXc && b < NYc) m = Math.max(m, T[b * NXc + a]); return m + R; })() : -1e9) : (CAN ? Math.max(C[j * NXc + i], CAN(x, y, R) + R) : C[j * NXc + i]); };
     const above = (p, m) => p[2] >= need(p[0], p[1]) + (m || 0); // 柱状场：充分条件（在一切几何之上 ≥R）
     const inGrid = (x, y) => x >= gs.x0 && y >= gs.y0 && x <= gs.x0 + NXc * c && y <= gs.y0 + NYc * c;
-    const terrZ = (x, y) => inGrid(x, y) ? S.heightAt(x, y) : (CAN ? Math.max(outTop(x, y), CAN(x, y, 0)) : outTop(x, y));
+    const terrZ = (x, y) => inGrid(x, y) ? (CAN ? Math.max(S.heightAt(x, y), CAN(x, y, 0)) : S.heightAt(x, y)) : (CAN ? Math.max(outTop(x, y), CAN(x, y, 0)) : outTop(x, y));
     // ---- 精确间隙 ----
     const NRM = [0, 0, 1], TK = new Float32Array(9);
     function clearance(p, cap) {
@@ -164,6 +165,7 @@
           tk[3] = X1; tk[4] = Y1; tk[5] = H[a + NX + 1]; tk[6] = X0; tk[7] = Y1; tk[8] = H[a + NX];
           d2 = ptTri2(px, py, pz, tk, 0); if (d2 < d * d) { d = Math.sqrt(d2); nx = px - CP[0]; ny = py - CP[1]; nz = pz - CP[2]; } }
       }
+      if (fullIn && CAN) { const o = CAN(px, py, cap); if (pz - o < d) { d = pz - o; nx = 0; ny = 0; nz = 1; } } // r16：网格内的町家柱体
       if (!fullIn) { const o = Math.max(outTop(px, py), outTop(px + cap, py), outTop(px - cap, py), outTop(px, py + cap), outTop(px, py - cap), tz, CAN ? CAN(px, py, cap) : -1e9); if (pz - o < d) { d = pz - o; nx = 0; ny = 0; nz = 1; }
         if (OT && d > 0) OT(px - cap, py - cap, px + cap, py + cap, (k, o2) => { const d2 = ptTri2(px, py, pz, k, o2); if (d2 < d * d) { d = Math.sqrt(d2); nx = px - CP[0]; ny = py - CP[1]; nz = pz - CP[2]; } }); } // B2：网格外 = 渲染外圈地面三角形的精确距离
       // 树柱
