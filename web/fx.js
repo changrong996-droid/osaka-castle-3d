@@ -43,7 +43,7 @@ vec3 fxStone(vec2 q, float foot, float seed, out vec2 bump) {
   base *= mix(0.7, 1.0, smoothstep(0.0, 0.1, d));
   float px = (x - xa) / (xb - xa) * 2.0 - 1.0, py = (q.y - yb) / (yt - yb) * 2.0 - 1.0;
   bump = vec2(px * smoothstep(0.45, 1.0, abs(px)), py * smoothstep(0.45, 1.0, abs(py))) * 0.6 + (vec2(h2, h3) - 0.5) * 0.3;
-  return mix(base, vec3(0.09, 0.085, 0.08), gap);
+  return mix(base, mix(vec3(0.09, 0.085, 0.08), vec3(0.05, 0.075, 0.028), smoothstep(0.38, 0.72, fxN(q * 0.4 + seed * 3.1))), gap);   // r16：缝里长苔（成片）
 }
 // 低画质的砌石：同样按面法线 + 15° 档取切向（棱线旁不出噪点），但只用错缝 + 每块一个随机灰度（软件渲染下与 r12 的开销同级）
 vec3 fxWall0(vec3 fN, float foot) {
@@ -57,7 +57,7 @@ vec3 fxWall0(vec3 fN, float foot) {
 }
 // 墙面（陡面）砌石：fN = 面法线（世界），nW = 带凹凸的法线
 vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
-  float farK = smoothstep(0.05, 0.2, foot), macro = 0.84 + 0.26 * fxN(vec2((vWP.x - vWP.z) * 0.21, vWP.y * 0.05));
+  float farK = smoothstep(0.1, 0.4, foot), macro = 0.84 + 0.26 * fxN(vec2((vWP.x - vWP.z) * 0.21, vWP.y * 0.05));
   nW = fN; vec3 col = vec3(0.40, 0.38, 0.355);
   if (farK < 0.999) {
     vec2 hz = fN.xz; if (dot(hz, hz) < 1e-6) hz = vec2(1.0, 0.0);
@@ -86,7 +86,7 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
     fxw = instanceMatrix * fxw; fxn = mat3(instanceMatrix) * fxn;
   #endif
     fxw = modelMatrix * fxw; vWP = fxw.xyz; vWN = normalize(mat3(modelMatrix) * fxn); vLP = position; }`;
-  const PRE = `float fxFoot = max(length(dFdx(vWP)), length(dFdy(vWP))); vec3 fxFN = normalize(cross(dFdx(vWP), dFdy(vWP))); vec3 fxNW = fxFN; float fxNk = 0.0; float fxR = 1.0;`;
+  const PRE = `float fxFoot = min(max(length(dFdx(vWP)), length(dFdy(vWP))), 1.6 * sqrt(length(dFdx(vWP)) * length(dFdy(vWP)))); vec3 fxFN = normalize(cross(dFdx(vWP), dFdy(vWP))); vec3 fxNW = fxFN; float fxNk = 0.0; float fxR = 1.0;`;
   // 各类材质的片元代码（插在 color_fragment 之后；diffuseColor 已含顶点色/贴图）
   const KIND = {
     // 地形：缓坡 = 地面细节；陡坡 = 砌石（面法线判定）。光照法线：远离棱线用插值顶点法线（光滑），棱线旁（顶点法线与面法线差大）切到面法线（棱线锐利），陡面加凹凸
@@ -108,6 +108,10 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
       float edge = smoothstep(0.985, 0.88, dot(vN, fxFN));
       vec3 nW = normalize(mix(vN, fxFN, edge));
       if (steep > 0.0) { vec3 nS; vec3 sc = fxWall(fxFN, fxFoot, nS); g1 = mix(g1, sc, steep); nW = normalize(mix(nW, nS, steep)); fxR = mix(1.0, 0.92, steep); }
+      // r16：石垣顶部 0.4–3 m 的苔/草带（“顶线高度图” fxLip = 周围 4.5 m 内最高地面；离顶越近越绿）+ 墙面零星苔斑
+      if (steep > 0.0 && fxLipOn > 0.5) { vec2 lu = (vec2(vWP.x, -vWP.z) - fxLipB.xy) / fxLipB.zw; float lip = texture2D(fxLip, lu).r, dz = lip - vWP.y, mn = fxF(vWP.xz * 0.23 + vec2(vWP.y * 0.31, -vWP.y * 0.17));
+        float topK = (1.0 - smoothstep(0.3, 3.0 + 1.5 * mn, dz)) * smoothstep(-0.3, 0.2, dz), mK = clamp(topK * (0.5 + 0.8 * mn) + smoothstep(0.64, 0.84, mn) * 0.5, 0.0, 1.0) * steep;
+        g1 = mix(g1, mix(vec3(0.06, 0.09, 0.03), vec3(0.15, 0.2, 0.065), mn), mK); fxR = mix(fxR, 1.0, mK); }
       diffuseColor.rgb = g1; fxNW = nW; fxNk = 1.0;
 #endif
     }`,
@@ -181,6 +185,7 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
   };
   function make(THREE) {
     const FX = { q: 2, kinds: KIND, mats: [] };
+    { const t = new THREE.DataTexture(new Uint8Array(4), 1, 1); t.needsUpdate = true; FX.U = { fxLip: { value: t }, fxLipB: { value: new THREE.Vector4(0, 0, 1, 1) }, fxLipOn: { value: 0 } }; } // r16：石垣顶线高度图（app 在首帧后算）
     // 画质：hash q=0/1/2 > localStorage > 自动（软件渲染 → 低；手机/平板 → 中；桌面 → 高）
     FX.detect = (renderer, hashQ) => {
       if (hashQ === 0 || hashQ === 1 || hashQ === 2) return { q: hashQ, why: 'hash' };
@@ -201,8 +206,8 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
       mat.userData.fx = kind; mat.defines = Object.assign(mat.defines || {}, { FX_Q: FX.q, FX_BUMP: FX.q > 0 ? '1.0' : '0.0' });
       mat.customProgramCacheKey = () => 'fx-' + kind + '-' + FX.q;
       if (spec) FX.spec(mat);
-      mat.onBeforeCompile = sh => {
-        sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_maps>', LFM);
+      mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, FX.U);
+        sh.fragmentShader = 'uniform sampler2D fxLip; uniform vec4 fxLipB; uniform float fxLipOn;\n' + sh.fragmentShader.replace('#include <lights_fragment_maps>', LFM);
         sh.vertexShader = 'varying vec3 vWP; varying vec3 vWN; varying vec3 vLP;\n' + sh.vertexShader.replace('#include <begin_vertex>', VERT);
         sh.fragmentShader = COMMON + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + PRE + '\n' + KIND[kind])
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * fxR, 0.04, 1.0);')
@@ -214,8 +219,9 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
     // 时段预设（太阳高度/方位 度；天空/环境/雾的颜色是线性值；fog 是屏幕 sRGB 值——three r160 的雾在色彩空间转换之后混合）
     FX.TOD = {
       m: { name: '朝', el: 18, az: 112, sun: [1.0, 0.86, 0.70], I: 3.0, sky: [3.5, 2.2, 0.006, 0.8], zen: [0.15, 0.24, 0.45], hor: [0.58, 0.55, 0.53], gnd: [0.14, 0.125, 0.10], glow: [0.5, 0.36, 0.24], fog: [0.84, 0.81, 0.78], exp: 0.92,
-        skyZ: [0.16, 0.30, 0.62], skyH: [0.95, 0.88, 0.80], disc: 25, cloud: 0.45, cTint: [1.0, 0.92, 0.85], mtn: [[0.34, 0.36, 0.42], [0.72, 0.72, 0.74]],
-        post: { tm: 1, exp: 1.0, thr: 1.6, bloom: 0.10, god: 0.35, sat: 1.05, warm: [1.03, 1.0, 0.96], cool: [0.97, 1.0, 1.04], vig: 0.25, fogA: 0.00028, fogH: 70, fogC: [0.62, 0.64, 0.68], mistA: 0.035, mistY: 3, mistH: 6 } },
+        skyZ: [0.28, 0.29, 0.4], skyH: [1.06, 0.82, 0.66], disc: 25, cloud: 0.45, cTint: [1.0, 0.88, 0.76], mtn: [[0.30, 0.31, 0.34], [0.74, 0.68, 0.62]],
+        // r16：薄雾更暖、更低、更浓（贴水面），整体压暗 → 水面暗、倒影深（r15 的雾偏亮偏冷）
+        post: { tm: 1, exp: 0.84, thr: 1.6, bloom: 0.10, god: 0.35, sat: 1.18, warm: [1.08, 1.0, 0.9], cool: [0.98, 1.0, 1.02], vig: 0.3, con: 0.28, fogA: 0.00032, fogH: 70, fogC: [0.68, 0.6, 0.52], mistA: 0.13, mistY: 2.5, mistH: 3.2, mistC: [0.84, 0.7, 0.56] } },
       d: { name: '昼', el: 34.38, az: 215, sun: [1.0, 0.93, 0.84], I: 3.3, sky: [6, 1.5, 0.005, 0.8], zen: [0.13, 0.24, 0.50], hor: [0.48, 0.55, 0.64], gnd: [0.16, 0.15, 0.12], glow: [0.35, 0.3, 0.24], fog: [0.80, 0.85, 0.89], exp: 0.78,
         skyZ: [0.10, 0.24, 0.62], skyH: [0.72, 0.82, 0.95], disc: 20, cloud: 0.4, cTint: [1.0, 1.0, 1.0], mtn: [[0.30, 0.36, 0.44], [0.66, 0.74, 0.84]],
         post: { tm: 1, exp: 0.95, thr: 1.8, bloom: 0.08, god: 0.2, sat: 1.03, warm: [1.02, 1.0, 0.98], cool: [0.98, 1.0, 1.02], vig: 0.22, fogA: 0.00022, fogH: 90, fogC: [0.52, 0.60, 0.72], mistA: 0.0, mistY: 3, mistH: 4 } },
@@ -224,8 +230,9 @@ vec3 fxWall(vec3 fN, float foot, out vec3 nW) {
         post: { tm: 1, exp: 1.0, thr: 1.4, bloom: 0.13, god: 0.5, sat: 1.08, warm: [1.06, 1.0, 0.92], cool: [0.94, 0.98, 1.06], vig: 0.3, fogA: 0.0003, fogH: 70, fogC: [0.60, 0.44, 0.33], mistA: 0.006, mistY: 3, mistH: 5 } },
       // web-r15（C1）：黄金时刻（默认）：太阳低（7.5°）、偏西南；天空上蓝下金，云底被照亮；暖逆光 + 冷阴影
       g: { name: '黄金时刻', el: 7.5, az: 238, sun: [1.0, 0.66, 0.38], I: 3.6, sky: [7, 2.6, 0.007, 0.84], zen: [0.10, 0.17, 0.36], hor: [0.68, 0.50, 0.38], gnd: [0.12, 0.10, 0.08], glow: [0.9, 0.5, 0.22], fog: [0.88, 0.74, 0.60], exp: 0.95,
-        skyZ: [0.05, 0.15, 0.48], skyH: [1.15, 0.72, 0.42], disc: 40, cloud: 0.55, cTint: [1.0, 0.78, 0.55], mtn: [[0.24, 0.22, 0.27], [0.98, 0.74, 0.55]],
-        post: { tm: 1, exp: 0.8, thr: 1.3, bloom: 0.16, god: 0.6, sat: 1.12, con: 0.35, warm: [1.07, 1.0, 0.9], cool: [0.93, 0.98, 1.08], vig: 0.32, fogA: 0.00016, fogH: 80, fogC: [0.50, 0.36, 0.26], mistA: 0.008, mistY: 3, mistH: 5 } },
+        skyZ: [0.05, 0.18, 0.6], skyH: [1.15, 0.72, 0.42], disc: 40, cloud: 0.72, cTint: [1.0, 0.74, 0.48], mtn: [[0.24, 0.22, 0.27], [0.98, 0.74, 0.55]],
+        // r16：天顶更蓝（云体冷灰蓝、云底暖金，见 look.js）；室内：降饱和、高光不再偏柠檬黄（warmI）、体积光 vol
+        post: { tm: 1, exp: 0.8, thr: 1.3, bloom: 0.16, god: 0.6, sat: 1.12, con: 0.35, warm: [1.07, 1.0, 0.9], cool: [0.93, 0.98, 1.08], vig: 0.32, fogA: 0.00016, fogH: 80, fogC: [0.50, 0.36, 0.26], mistA: 0.008, mistY: 3, mistH: 5, mistC: [0.6, 0.45, 0.33], satI: 0.82, warmI: [1.03, 0.99, 0.95], expI: 0.88, vol: 0.25 } },
     };
     // 程序环境图：一个球 + 渐变着色器 → PMREM（立方体 UV 贴图，同尺寸 → 换室内/外景不重编译着色器）
     const envMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, depthTest: false,
