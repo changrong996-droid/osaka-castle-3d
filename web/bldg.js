@@ -591,7 +591,7 @@
     // 盒的面：角点局部坐标 L[k]，面内两轴 (a1, a2)；木纹轴 g = 盒最长边（在面内时），否则面内较长轴
     function box(m, u0, v0, z0, u1, v1, z1) { if (u1 - u0 < 1e-6 || v1 - v0 < 1e-6 || z1 - z0 < 1e-6) return; const L = [[u0, v0, z0], [u1, v0, z0], [u1, v1, z0], [u0, v1, z0], [u0, v0, z1], [u1, v0, z1], [u1, v1, z1], [u0, v1, z1]], p = L.map(q => Pw(q[0], q[1], q[2])), D = [u1 - u0, v1 - v0, z1 - z0], g = D.indexOf(Math.max(...D)), nrm = NORM_UV.has(m), lo = [u0, v0, z0];
       const F6 = [[4, 5, 6, 7, 0, 1], [0, 3, 2, 1, 0, 1], [0, 1, 5, 4, 0, 2], [1, 2, 6, 5, 1, 2], [2, 3, 7, 6, 0, 2], [3, 0, 4, 7, 1, 2]];
-      for (const [a, c, d, e, a1, a2] of F6) { let ga = g === a1 || g === a2 ? g : (D[a1] >= D[a2] ? a1 : a2); const oa = ga === a1 ? a2 : a1; if (nrm) ga = D[a1] >= D[a2] ? a1 : a2;
+      for (const [a, c, d, e, a1, a2] of F6) { let ga = g === a1 || g === a2 ? g : (D[a1] >= D[a2] ? a1 : a2); const oa = ga === a1 ? a2 : a1; if (nrm) ga = m === 'fusuma' && (a1 === 2 || a2 === 2) ? (a1 === 2 ? a2 : a1) : (D[a1] >= D[a2] ? a1 : a2); /* r16：襖的 u 恒为水平、v 恒为竖直（0 = 敷居，1 = 鴨居）→ 着色器按世界坐标接续画面 */
         const uvOf = k => nrm ? [(L[k][ga] - lo[ga]) / D[ga], (L[k][ga === a1 ? a2 : a1] - lo[ga === a1 ? a2 : a1]) / D[ga === a1 ? a2 : a1]] : [L[k][ga], L[k][oa]];
         const ua = [].concat(uvOf(a), uvOf(c), uvOf(d), uvOf(e)); quad(m, p[a], p[c], p[d], p[e], ua); } }
     // 斜放的盒：原点 o（局部 u,v,z）+ 三条边向量 A, B, C（A = 木纹方向）
