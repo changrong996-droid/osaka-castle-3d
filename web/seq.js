@@ -134,7 +134,7 @@ SEQ.plan = function (parts, rules) {
       if (p <= 0) continue;
       if (s.kind === 'remove') { r.removed += s.vol * p; continue; }
       r.mass += s.mass * p;
-      for (const k in s.tally) r.tally[k] = (r.tally[k] || 0) + s.tally[k] * p;
+      for (const k in s.tally) r.tally[k] = (r.tally[k] || 0) + Math.floor(s.tally[k] * p + 1e-9);   // 计数取整：未完成的一块不算
       if (s.kind === 'build') { const e = s.bb.min[1] + (s.bb.max[1] - s.bb.min[1]) * p; if (r.elev === null || e > r.elev) r.elev = e; }
     }
     if (!r.cur) { const last = seq.filter(s => s.end <= tt).pop(); r.stage = last ? last.stage : seq[0] && seq[0].stage; } else r.stage = r.cur.stage;
