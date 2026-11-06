@@ -1,5 +1,5 @@
 'use strict';
-// ===== 筑城图 小样：界面 + 渲染（proto-build2）。读 SEQ（通用核心）+ SEQ_OSAKA（构件规格）。
+// ===== 筑城图 小样：界面 + 渲染（proto-build3：破風 / 足場 / 吊具；proto-build2 版式）。读 SEQ（通用核心）+ SEQ_OSAKA（构件规格）。
 // 经典脚本 + 运行时 importmap（同 app.js），htmlpreview.github.io 下可用。
 // build2：版式按窗口实测排布（3D 区保底高度，叠层逐级收起、互不重叠）；控制条移出 3D 区；
 //        叠层按钮不再被 OrbitControls 的指针捕获吞掉；图纸渲染到缓存纹理（时间变化时才重画，播放中限 30 Hz）。
@@ -33,7 +33,7 @@
     const gl = renderer.getContext(); let gpu = '—';
     try { const e = gl.getExtension('WEBGL_debug_renderer_info'); const r = e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); S.renderer = r; const m = /Apple M\d\w*( (Pro|Max|Ultra))?|SwiftShader|Intel[^,)]*|NVIDIA[^,)]*|AMD[^,)]*|Radeon[^,)]*|Mali[^,)]*|Adreno[^,)]*/.exec(r); gpu = m ? m[0].replace(/\s+/g, ' ').slice(0, 16) : String(r).slice(0, 16); } catch (e) { }
     const scene = new THREE.Scene();
-    const C = window.SEQ.compile(THREE, plan, { rise: 1.4 });
+    const C = window.SEQ.compile(THREE, plan, { rise: 1.4, rig: B.rig });
     scene.add(C.group);
     const cam = new THREE.PerspectiveCamera(30, 1, 1, 3000);
     const view = $('view3d'), vp = $('vp');
@@ -45,8 +45,8 @@
     home(HOME.az, HOME.el, HOME.d);
     // 图纸用正交相机（看北：从 +z 看向 −z）；渲染进缓存纹理，每帧只贴图
     const sheets = [
-      { el: $('sh1'), cam: new THREE.OrthographicCamera(), cut: [0, 0, 1, 39], win: [-27, 43, -21, 63] },
-      { el: $('sh2'), cam: new THREE.OrthographicCamera(), cut: [0, 0, 1, 0], win: [-25, 41, -2, 62] },
+      { el: $('sh1'), cam: new THREE.OrthographicCamera(), cut: [0, 0, 1, 39], win: [-27, 43, -21, 64], marks: true },
+      { el: $('sh2'), cam: new THREE.OrthographicCamera(), cut: [0, 0, 1, 0], win: [-25, 41, -2, 64] },
     ];
     const CACHE = hp.get('sheetcache') !== '0';
     const blitMat = new THREE.ShaderMaterial({ uniforms: { map: { value: null } }, vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = vec4(position.xy * 2., 0., 1.); }', fragmentShader: 'uniform sampler2D map; varying vec2 vU; void main(){ gl_FragColor = texture2D(map, vU); }', transparent: true, depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor });
@@ -70,15 +70,18 @@
     for (const b of bands) tr.insertAdjacentHTML('beforeend', `<span class="tick" style="left:${b.a / total * 100}%"></span><span class="lab" style="left:${b.a / total * 100}%;display:none">${b.name}</span>`);
     const tLabs = [...tr.querySelectorAll('.lab')];
     const A = plan.audit, RR = plan.rules;
-    $('chk').innerHTML = `R1 支承 ${A.nSup} 条 · R2 先挖后建 ${A.nDig} 条 · R3 阶段 after ${A.nAfter} 条<br>无支承步骤 <b class="${A.unsupported.length ? 'ng' : ''}">${A.unsupported.length}</b> · 依赖成环 <b class="${A.cyclic ? 'ng' : ''}">${A.cyclic}</b> · 排序 ${S.planMs} ms<br>数量全部由几何推出：石 = 生成的石块数 · 瓦 = 瓦面面积 × ${B.ruleParams.tilePerM2.toFixed(1)} 枚/m² · 吨 = 体积 × 密度`;
+    const R4 = A.r4 || { temps: 0, pairs: 0, violations: 0, leftover: 0 }, CL = A.clear || { members: 0, hits: 0, rigPoses: 0, rigHits: 0, ms: 0 };
+    S.r4 = R4; S.clear = CL;
+    $('chk').innerHTML = `R1 支承 ${A.nSup} · R2 先挖后建 ${A.nDig} · R3 after ${A.nAfter} · R4 临时支承 ${A.nTemp || 0} 条<br>无支承步骤 <b class="${A.unsupported.length ? 'ng' : ''}">${A.unsupported.length}</b> · 依赖成环 <b class="${A.cyclic ? 'ng' : ''}">${A.cyclic}</b> · R4 违例 <b class="${R4.violations || R4.leftover ? 'ng' : ''}">${R4.violations}</b> · 竣工残留足場 <b class="${R4.leftover ? 'ng' : ''}">${R4.leftover}</b><br>净空：足場杆件 ${fmt(CL.members)} 根碰撞 <b class="${CL.hits ? 'ng' : ''}">${CL.hits}</b> · 吊具 ${CL.rigPoses} 位姿碰撞 <b class="${CL.rigHits ? 'ng' : ''}">${CL.rigHits}</b> · 排序+检查 ${S.planMs} ms<br>数量全部由几何推出：石 = 生成的石块数 · 瓦 = 瓦面面积 × ${B.ruleParams.tilePerM2.toFixed(1)} 枚/m² · 破風 = 生成的破風数 · 丸太 = 生成的建地数 · 吨 = 体积 × 密度`;
     {
       const no = k => String(stageKeys.indexOf(k) + 1).padStart(2, '0');
       const rate = sk => sk === 'dig' ? fmt(RR.digRate) + ' m³' : sk === 'water' ? fmt(RR.fillRate) + ' m³' : fmt((RR.rates || {})[plan.stages[sk].trade], (RR.rates || {})[plan.stages[sk].trade] < 1 ? 1 : 0) + ' t';
       const rows = bands.map(b => { const sg = plan.stages[b.key]; return `<tr><td>${no(b.key)}</td><td>${sg.name}</td><td>${sg.trade}</td><td class="n">${rate(b.key)}</td><td>${(sg.on || []).map(no).join('·') || '—'}${sg.after ? ' ⊳' + sg.after.map(no).join('·') : ''}</td><td class="n">${b.steps.length}</td><td class="n">${fmt(b.steps.reduce((a, x) => a + x.dur, 0))}</td></tr>`; }).join('');
-      $('rules').innerHTML = `<h4>依赖（从几何推出）</h4><p><b>R1 支承</b> B 的底面落在 A 的高度范围内、平面投影重叠 → A 先；阶段可声明“落在”哪些阶段上。· <b>${A.nSup}</b> 条</p><p><b>R2 先挖后建</b> 掘削先于与其包围盒相交的一切建造。· <b>${A.nDig}</b> 条</p><p><b>R3 阶段 after</b> 注水在 ${RR.stages.find(x => x.key === 'water').near} m 内的石垣完成之后。· <b>${A.nAfter}</b> 条</p>
+      $('rules').innerHTML = `<h4>依赖（从几何推出）</h4><p><b>R1 支承</b> B 的底面落在 A 的高度范围内、平面投影重叠 → A 先；阶段可声明“落在”哪些阶段上。· <b>${A.nSup}</b> 条</p><p><b>R2 先挖后建</b> 掘削先于与其包围盒相交的一切建造。· <b>${A.nDig}</b> 条</p><p><b>R3 阶段 after</b> 注水在 ${RR.stages.find(x => x.key === 'water').near} m 内的石垣完成之后。· <b>${A.nAfter}</b> 条</p><p><b>R4 临时支承</b> 足場（临时构件）在它服务的工序（同一重的 柱/梁/屋根/壁/葺瓦，首重另含金具）开工前搭好、全部完成后才解体；解体一旦允许立即进行（下层葺瓦因此在上层足場拆完后）。足場立柱落在已有构件上、柱顶距檐下皮 ≥ ${B.scaf.clear} m；杆件与同时在场的构件求交检查。· <b>${A.nTemp || 0}</b> 条 · ${R4.temps} 座足場 · 违例 <b>${R4.violations}</b></p>
 <h4>排序与工期</h4><p>可开工步骤取（阶段序，阶段内由下而上 / 葺瓦由上而下，原序）最小者；串行单工作面。工期 = 质量 ÷ 工种效率，掘削 ÷ ${fmt(RR.digRate)} m³/日，注水 ÷ ${fmt(RR.fillRate)} m³/日，下限 ${RR.minDays} 日 —— 推算值。</p>
 <table><tr><th>#</th><th>阶段</th><th>工种</th><th>效率/日</th><th>落在⊳之后</th><th>步</th><th>工日</th></tr>${rows}</table>`;
     }
+    $('eg-ridge').textContent = sgn(B.levels.find(l => l.n === '大棟').y) + ' 大棟';
     $('h-tr').textContent = fmt(C.tris); $('h-sg').textContent = fmt(C.segs); $('h-pr').textContent = PR.toFixed(2); $('h-gpu').textContent = gpu; $('h-gpu').title = S.renderer || '';
 
     // ---------- 交互 ----------
@@ -179,8 +182,18 @@
         for (const l of keep) { const y = py(l.y), xl = r.w - GUT + 2;
           h += `<line x1="${xl}" x2="${r.w - 2}" y1="${y}" y2="${y}" stroke="#b3202a" stroke-width=".6" stroke-dasharray="3 2"/><path d="M${xl + 4} ${y}l-3 -3.5h6z" fill="#b3202a"/><text x="${xl + 9}" y="${y - 2}" font-size="8" font-family="monospace" fill="#b3202a" ${halo}>${sgn(l.y)} ${l.n}</text>`; }
         for (const gx of [-14, 0, 14]) { const x = px(gx); if (x < 8 || x > r.w - GUT - 6) continue; h += `<line x1="${x}" x2="${x}" y1="${13}" y2="${r.h - 2}" stroke="#5d564c" stroke-width=".4" stroke-dasharray="8 2 1 2"/><circle cx="${x}" cy="8" r="5" fill="#f6f2ea" stroke="#5d564c" stroke-width=".6"/><text x="${x}" y="10.5" font-size="6.5" text-anchor="middle" font-family="monospace" fill="#1d1a17">${gx < 0 ? 'A' : gx ? 'C' : 'B'}</text>`; }
+        // 破風标注（A-201 南立面）：标在破风顶上方、建筑区内；按高度排、最小间距 11 px，放不下就不标；构件开工后才显示
+        const marks = [];
+        if (s.marks && B.hafuMarks) { const used = [];
+          // 标签放在建筑左侧（x = −26 m 处起），引线指到破风顶；放不下（太窄 / 太挤）就不标
+          const lx = 4;
+          for (const m of B.hafuMarks) { const x = px(m.x), y = py(m.y), tw = textW(m.n, '8px monospace') + 2, ty = Math.max(TOP + 8, y - 6);
+            if (lx + tw + 3 > Math.min(x - 4, px(-m.xl)) || ty < TOP + 8 || ty > r.h - 6 || used.some(u => Math.abs(u - ty) < 11)) continue; used.push(ty);
+            const st0 = plan.steps.find(q => q.parts.some(p => p.id === m.part)); marks.push({ t: st0 ? st0.start : 0, ty });
+            h += `<g class="hm" style="display:none"><polyline style="display:none" points="${lx},${ty + 2} ${lx + tw},${ty + 2} ${x - 1.5},${y - 1.5}" fill="none" stroke="#1d1a17" stroke-width=".55"/><circle style="display:none" cx="${x}" cy="${y}" r="1.4" fill="#1d1a17"/><text style="display:none" x="${lx}" y="${ty}" font-size="8" font-family="monospace" fill="#1d1a17" ${halo}>${m.n}</text></g>`; } }
         h += `<g><line x1="0" x2="${r.w - GUT}" y1="0" y2="0" stroke="#b3202a" stroke-width="1"/><text x="4" y="-3" font-size="8.5" font-family="monospace" fill="#b3202a" ${halo}>施工面</text></g>`;
-        svg.innerHTML = h; s.cur = svg.querySelector('g'); s.curT = s.cur.querySelector('text'); s.py = py; s.key = ''; s.lastCurY = null;
+        svg.innerHTML = h; const gs = [...svg.querySelectorAll('g')]; s.cur = gs[gs.length - 1]; s.curT = s.cur.querySelector('text'); s.py = py; s.key = ''; s.lastCurY = null; s.finShown = null;
+        s.hm = [...svg.querySelectorAll('g.hm')].map((el, k) => ({ el, t: marks[k].t, ty: marks[k].ty, on: false }));
         // 缓存纹理
         const tw = Math.max(1, Math.round(r.w * PR)), th = Math.max(1, Math.round(r.h * PR));
         if (!s.rt) s.rt = new THREE.WebGLRenderTarget(tw, th, { samples: 4, depthBuffer: true }); else s.rt.setSize(tw, th);
@@ -193,7 +206,7 @@
     window.addEventListener('scroll', () => { for (const s of sheets) s.r = rectOf(s.el.querySelector('.draw')); dirty = true; }, { passive: true });
 
     const logEl = $('logl'); let lastLogKey = '', lastUi = 0, lastStepI = -1, lastStage = '';
-    const verb = s => plan.stages[s.stage].verb, qty = s => { const t = s.tally, k = Object.keys(t)[0]; const u = { stone: '块', tile: '枚', col: '根', beam: '根', win: '窓', gold: '件' }; if (s.kind === 'remove') return fmt(s.vol) + ' m³'; if (s.kind === 'fill') return fmt(s.vol) + ' m³ 水'; return (k ? fmt(t[k]) + ' ' + u[k] + ' · ' : '') + fmt(s.mass, s.mass < 10 ? 1 : 0) + ' t'; };
+    const verb = s => plan.stages[s.stage].verb, qty = s => { const t = s.tally, k = Object.keys(t)[0]; const u = { stone: '块', tile: '枚', col: '根', beam: '根', win: '窓', gold: '件', pole: '根', hafu: '面破風' }; if (s.kind === 'remove') return fmt(s.vol) + ' m³'; if (s.kind === 'fill') return fmt(s.vol) + ' m³ 水'; return (k ? fmt(t[k]) + ' ' + u[k] + ' · ' : '') + fmt(s.mass, s.mass < 10 ? 1 : 0) + ' t'; };
     const elev = s => sgn(s.bb.min[1]) + '→' + sgn(s.bb.max[1]);
     function ui(r) {
       const s = r.cur || plan.steps.filter(x => x.end <= r.t).pop() || plan.steps[0], sn = plan.stages[s.stage];
@@ -219,12 +232,14 @@
       $('el-g').textContent = narrow ? sn.name : String(stageKeys.indexOf(s.stage) + 1).padStart(2, '0') + ' · ' + sn.name; $('el-c').textContent = qty(s).split(' · ')[0];
       $('el-t').textContent = s.trade; $('el-m').textContent = fmt(s.mass, s.mass < 10 ? 1 : 0) + ' t'; $('el-d').textContent = fmt(s.dur, 1) + ' 日';
       $('el-sp').textContent = s.spec || '—';
-      const why = { sup: '支承', dig: '先挖', after: '之后' }; const ds = [...s.deps]; $('el-dp').textContent = ds.length ? ds.slice(0, 4).map(d => `${why[s.why[d.key]]} ${d.name}`).join(' · ') + (ds.length > 4 ? ` 等 ${ds.length} 项` : '') : '无（地基 / 原状）';
+      const why = { sup: '支承', dig: '先挖', after: '之后', temp: '足場', erect: '搭设', served: '待完' }; const ds = [...s.deps]; $('el-dp').textContent = ds.length ? ds.slice().sort((a, b) => (s.why[a.key] === 'temp' ? -1 : 0) - (s.why[b.key] === 'temp' ? -1 : 0)).slice(0, 4).map(d => `${why[s.why[d.key]]} ${d.name}`).join(' · ') + (ds.length > 4 ? ` 等 ${ds.length} 项` : '') : '无（地基 / 原状）';
       $('el-y').textContent = elev(s) + ' m'; $('el-a').textContent = s.anchor.map(v => (Math.abs(v) < 0.05 ? 0 : v).toFixed(1)).join(' · '); $('el-p').textContent = Math.round(p * 100) + ' %';
       // 统计
       $('s-pc').textContent = (r.pct * 100).toFixed(1) + ' % · ' + r.done + '/' + plan.steps.length + ' 步';
       $('s-st').textContent = fmt(r.tally.stone || 0) + ' 块'; $('s-tl').textContent = fmt(r.tally.tile || 0) + ' 枚'; $('s-ms').textContent = fmt(r.mass) + ' t';
       $('s-dg').textContent = fmt(r.removed) + ' m³'; $('s-el').textContent = r.elev == null ? '—' : sgn(r.elev) + ' m'; $('s-cw').textContent = fmt(r.tally.col || 0) + ' / ' + fmt(r.tally.win || 0);
+      $('s-pl').textContent = fmt(r.tally.pole || 0) + ' 根'; $('s-pl').title = '累计搭设 ' + fmt(r.tempUp.pole || 0) + ' 根'; $('s-hf').textContent = fmt(r.tally.hafu || 0) + ' 面';
+      const rp = C.rig.pose; $('s-rg').textContent = rp ? (rp.legs ? '人字架 ' : '滑车 ') + sgn(rp.y + rp.h).replace('+', '') : '—';
       for (const sh of sheets) { sh.el.querySelector('.stg').textContent = sn.name; sh.el.querySelector('.dt').textContent = plan.date(r.t); }
       // 日志
       const evs = plan.events.filter(e => e.t <= r.t + 1e-6), key = evs.length + ':' + logRows;
@@ -287,7 +302,11 @@
         const q = s.r; if (!q || q.w < 10) continue;
         renderer.setViewport(q.x, H - q.y - q.h, q.w, q.h); renderer.setScissor(q.x, H - q.y - q.h, q.w, q.h);
         if (CACHE) { blitMat.uniforms.map.value = s.rt.texture; renderer.render(blitScene, blitCam); } else drawSheet(s, r);
-        if (s.cur) { const ce = r.elev == null ? -18 : r.elev; let y = s.py(ce); y = Math.max(14, Math.min(q.h - 2, y)); if (y !== s.lastCurY) { s.lastCurY = y; s.cur.setAttribute('transform', `translate(0 ${y.toFixed(1)})`); s.curT.setAttribute('y', y < 34 ? 10 : -3); } }
+        let cy = s.lastCurY;
+        if (s.cur) { const ce = r.elev == null ? -18 : r.elev; let y = s.py(ce); y = Math.max(14, Math.min(q.h - 2, y)); cy = y; if (y !== s.lastCurY) { s.lastCurY = y; s.cur.setAttribute('transform', `translate(0 ${y.toFixed(1)})`); s.curT.setAttribute('y', y < 34 ? 10 : -3); } }
+        // 竣工后不再有施工面；破风标注：构件开工后显示，与“施工面”字样同高时让开
+        const fin = st.t >= total - 1e-6; if (s.cur && s.finShown !== fin) { s.finShown = fin; s.cur.style.display = fin ? 'none' : ''; s.curT.style.display = fin ? 'none' : ''; }
+        if (s.hm) { const ly = cy == null || fin ? -99 : (cy < 34 ? cy + 10 : cy - 3); for (const m of s.hm) { const on = st.t >= m.t && Math.abs(m.ty - ly) > 12; if (on !== m.on) { m.on = on; for (const e of [m.el, ...m.el.children]) e.style.display = on ? '' : 'none'; } } }
       }
       // fps（rAF 实测）
       fpsN++; if (now - fpsT > 500) { fps = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; $('h-fps').textContent = fps.toFixed(0); const sorted = frameMs.slice().sort((a, b) => a - b); $('h-ms').textContent = (sorted[Math.floor(sorted.length / 2)] || 0).toFixed(1) + ' ms'; }
