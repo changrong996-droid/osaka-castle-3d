@@ -99,14 +99,17 @@ HZ.MATK = Object.keys(MAT);
 class GB extends SEQ.Geo {
   constructor(mat) { super(MAT[mat].c); this.mat = mat; this.boxes = []; }
   _mark(f) { const n0 = this.P.length; f(); const b = { min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] }; for (let i = n0; i < this.P.length; i += 3) for (let k = 0; k < 3; k++) { const v = this.P[i + k]; if (v < b.min[k]) b.min[k] = v; if (v > b.max[k]) b.max[k] = v; } if (this.P.length > n0) this.boxes.push(b); return b; }
-  B(x0, y0, z0, x1, y1, z1, col) { return this._mark(() => this.box(x0, y0, z0, x1, y1, z1, col, false)); }
-  cyl(x, z, y0, y1, r, n, col) { return this._mark(() => this.prism([x, y0, z], [x, y1, z], r, n || 10, col, false)); }
+  // 墨线（r2）：每个原始盒子 12 条棱、柱体上下圈 + 4 条母线、杆件中心线 → 线框图与实体同源
+  B(x0, y0, z0, x1, y1, z1, col) { if (this.ink !== false) { const c = [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]]; for (let i = 0; i < 4; i++) { this.line(c[i], c[(i + 1) % 4]); this.line(c[4 + i], c[4 + (i + 1) % 4]); this.line(c[i], c[4 + i]); } } return this._mark(() => this.box(x0, y0, z0, x1, y1, z1, col, false)); }
+  ring(x, z, y, r, n) { let p = null; for (let i = 0; i <= n; i++) { const t = (i + 0.5) / n * Math.PI * 2, q = [x + Math.cos(t) * r, y, z + Math.sin(t) * r]; if (p) this.line(p, q); p = q; } }
+  cyl(x, z, y0, y1, r, n, col) { n = n || 10; this.ring(x, z, y0, r, n); this.ring(x, z, y1, r, n); for (let i = 0; i < 4; i++) { const t = i * Math.PI / 2, dx = Math.cos(t) * r, dz = Math.sin(t) * r; this.line([x + dx, y0, z + dz], [x + dx, y1, z + dz]); } return this._mark(() => this.prism([x, y0, z], [x, y1, z], r, n, col, false)); }
   // 梭形柱：r(h) 两头细中间粗（D1700~1800~1300）
   spindle(x, z, y0, y1, rb, rm, rt, n) { return this._mark(() => { n = n || 12; const S = 8, ring = (y, r) => { const a = []; for (let i = 0; i < n; i++) { const t = (i + 0.5) / n * Math.PI * 2; a.push([x + Math.cos(t) * r, y, z + Math.sin(t) * r]); } return a; };
-    let prev = ring(y0, rb); for (let s = 1; s <= S; s++) { const f = s / S, r = f < 0.42 ? rb + (rm - rb) * Math.sin(f / 0.42 * Math.PI / 2) : rm + (rt - rm) * (1 - Math.cos((f - 0.42) / 0.58 * Math.PI / 2)), cur = ring(y0 + (y1 - y0) * f, r);
-      for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.quad(prev[i], prev[j], cur[j], cur[i]); } prev = cur; } }); }
+    let prev = ring(y0, rb), pr = rb; this.ring(x, z, y0, rb, n); for (let s = 1; s <= S; s++) { const f = s / S, r = f < 0.42 ? rb + (rm - rb) * Math.sin(f / 0.42 * Math.PI / 2) : rm + (rt - rm) * (1 - Math.cos((f - 0.42) / 0.58 * Math.PI / 2)), yy = y0 + (y1 - y0) * f, cur = ring(yy, r);
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.quad(prev[i], prev[j], cur[j], cur[i]); }
+      for (const t of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) this.line([x + Math.cos(t) * pr, y0 + (y1 - y0) * (s - 1) / S, z + Math.sin(t) * pr], [x + Math.cos(t) * r, yy, z + Math.sin(t) * r]); if (s === S || s === 3) this.ring(x, z, yy, r, n); prev = cur; pr = r; } }); }
   // 细杆（三棱柱，无端盖：网架杆件 / 吊具）
-  rod(a, b, r) { const ax = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...ax) || 1, u = ax.map(v => v / L), h = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  rod(a, b, r) { if (this.ink !== false) this.line(a, b); const ax = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...ax) || 1, u = ax.map(v => v / L), h = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
     let e1 = [u[1] * h[2] - u[2] * h[1], u[2] * h[0] - u[0] * h[2], u[0] * h[1] - u[1] * h[0]]; const l1 = Math.hypot(...e1); e1 = e1.map(v => v / l1); const e2 = [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2], u[0] * e1[1] - u[1] * e1[0]];
     const R3 = [0, 1, 2].map(i => { const t = i / 3 * Math.PI * 2, c = Math.cos(t) * r, s = Math.sin(t) * r; return [e1[0] * c + e2[0] * s, e1[1] * c + e2[1] * s, e1[2] * c + e2[2] * s]; });
     for (let i = 0; i < 3; i++) { const j = (i + 1) % 3, p0 = [a[0] + R3[i][0], a[1] + R3[i][1], a[2] + R3[i][2]], p1 = [a[0] + R3[j][0], a[1] + R3[j][1], a[2] + R3[j][2]], q0 = [b[0] + R3[i][0], b[1] + R3[i][1], b[2] + R3[i][2]], q1 = [b[0] + R3[j][0], b[1] + R3[j][1], b[2] + R3[j][2]];
@@ -137,7 +140,7 @@ function build() {
     A({ key: 'frame' + yk, name: '线下框架柱 · ' + (yk === 'S' ? '湖杭场' : '杭临绩场'), stage: 'frame', yard: yk, dur: 40, parts, res: { frame: 1 }, cap: '线下框架（承轨层下）' });
     // 6 m 夹层（柱间板，留 1.2 m 柱缝）
     const mz = []; for (let i = 0; i < colX.length - 1; i++) { const g = new GB('conc'); g.B(colX[i] + 1.2, 5.4, Y.z0 + 1, colX[i + 1] - 1.2, 6.0, Y.z1 - 1); mz.push(part(g, { sweep: colX[i], side: true })); }
-    A({ key: 'mezz' + yk, name: '6 m 快速进出站夹层 · ' + (yk === 'S' ? '南' : '北'), stage: 'mezz', yard: yk, dur: 30, parts: mz, res: { mezz: 1 }, cap: '6 m 夹层' });
+    A({ key: 'mezz' + yk, name: '6 m 快速进出站夹层 · ' + (yk === 'S' ? '南' : '北'), stage: 'mezz', yard: yk, dur: 30, parts: mz, res: { mezz: 1 }, cap: '6 m 快速进出站夹层' });
     // 引桥墩（地面起）
     const pp = []; for (const s of [-1, 1]) for (let x = 240; x <= P.apX; x += 35) { const g = new GB('conc'); const xx = s * x; g.B(xx - 2, -1, Y.z0 + 4, xx + 2, 0, Y.z1 - 4); g.B(xx - 1.4, 0, Y.z0 + 6, xx + 1.4, P.deckBot, Y.z1 - 6); pp.push(part(g, { sweep: x })); }
     A({ key: 'pier' + yk, name: '引桥墩 · ' + (yk === 'S' ? '南' : '北'), stage: 'pier', yard: yk, dur: 70, release: 380, parts: pp, res: { bridge: 1 }, cap: '线下框架与引桥' });
@@ -147,8 +150,8 @@ function build() {
     for (let i = 0; i < colX.length - 1; i++) { const x0 = i === 0 ? -P.stX : colX[i], x1 = i === colX.length - 2 ? P.stX : colX[i + 1]; const g = new GB('conc'); g.B(x0, P.deckBot, Y.z0, x1, P.deckTop, Y.z1); parts.push(part(g, { sweep: x0 })); }
     for (const s of [-1, 1]) { let x = P.stX; const piers = []; for (let q = 240; q <= P.apX; q += 35) piers.push(q); piers.push(P.apX + 20);
       for (const q of piers) { const g = new GB('conc'); const a = Math.min(s * x, s * q), b = Math.max(s * x, s * q); g.B(a, P.deckBot, Y.z0 + 2, b, P.deckTop, Y.z1 - 2); ap.push(part(g, { sweep: x })); x = q; } }
-    A({ key: 'deck' + yk, name: '承轨层 · ' + (yk === 'S' ? '湖杭场' : '杭临绩场'), stage: 'deck', yard: yk, dur: 45, parts, res: { frame: 1 }, cap: '承轨层：两场拉开 28 m，留出云谷' });
-    A({ key: 'deckap' + yk, name: '引桥梁 · ' + (yk === 'S' ? '南' : '北'), stage: 'deck', yard: yk, dur: 60, parts: ap, res: { bridge: 1 }, cap: '承轨层：两场拉开 28 m，留出云谷' });
+    A({ key: 'deck' + yk, name: '承轨层 · ' + (yk === 'S' ? '湖杭场' : '杭临绩场'), stage: 'deck', yard: yk, dur: 45, parts, res: { frame: 1 }, cap: '承轨层（轨道所在层）：两个车场之间留出 28 m 宽的「云谷」' });
+    A({ key: 'deckap' + yk, name: '引桥梁 · ' + (yk === 'S' ? '南' : '北'), stage: 'deck', yard: yk, dur: 60, parts: ap, res: { bridge: 1 }, cap: '承轨层（轨道所在层）：两个车场之间留出 28 m 宽的「云谷」' });
   }
   // ===== 4. 站台 + 轨道 =====
   for (const yk of ['S', 'N']) { const Y = HZ.YARDS[yk], parts = [];
@@ -254,8 +257,8 @@ function build() {
   for (const z of [1, 2, 3]) A({ key: 'asm' + z, name: '屋盖网架楼面拼装 · ' + zoneName[z], stage: 'asm', zone: z, dur: z === 2 ? 24 : 32, parts: zoneParts[z], res: crew, scope: 'z' + z, need: 'jig', cap: '屋盖楼面拼装（南 / 中 / 北三区）' });
   A({ key: 'rig', name: '提升架 / 提升塔 + 液压提升器', stage: 'rig', kind: 'temp', dur: 15, parts: [...rigFor[1], ...rigFor[2], ...rigFor[3]], res: { steel: 1 }, temp: { serves: ['lift', 'merge', 'wlift', 'head'], removeStage: 'unrig', removeName: '提升架 / 提升塔拆除', removeDur: 12 }, scope: 'rig', strands, cap: '提升架就位' });
   const lift = (z, d, nm) => A({ key: 'lift' + z, name: nm, stage: 'lift', zone: z, dur: d, parts: [], res: { lifters: 1 }, scope: 'z' + z, cap: nm, liftZone: z });
-  lift(1, 5, '南区旋转提升：脱胎 0.6 m，绕轴转 4°'); lift(2, 3, '中区提升：脱胎 0.6 m'); lift(3, 5, '北区旋转提升：脱胎 0.6 m，绕轴转 4°');
-  A({ key: 'merge', name: '嵌补合龙（两条分区缝）', stage: 'merge', dur: 10, parts: zoneParts[4], res: crew, scope: 'rig', cap: '嵌补合龙' });
+  lift(1, 5, '南区旋转提升：先顶起 0.6 m 离开胎架，再绕外缘转 4°'); lift(2, 3, '中区提升：脱胎 0.6 m'); lift(3, 5, '北区旋转提升：先顶起 0.6 m 离开胎架，再绕外缘转 4°');
+  A({ key: 'merge', name: '嵌补合龙（两条分区缝）', stage: 'merge', dur: 10, parts: zoneParts[4], res: crew, scope: 'rig', cap: '嵌补合龙：补上分区之间的缝，屋盖连成一整块' });
   A({ key: 'wlift', name: '整体提升 ' + D.toFixed(1) + ' m 到位', stage: 'wlift', dur: 4, parts: [], res: { lifters: 1 }, scope: 'rig', cap: '整体提升到位（' + D.toFixed(1) + ' m）' });
   A({ key: 'head', name: '柱头连接 + 补孔，卸载', stage: 'head', dur: 8, parts: zoneParts[0].filter(p => p.headOf), res: crew, scope: 'rig', cap: '柱头连接、卸载' });
   A({ key: 'holes', name: '提升孔嵌补', stage: 'holes', dur: 10, parts: zoneParts[0].filter(p => !p.headOf), res: crew, cap: '拆除提升架，补孔' });
@@ -272,6 +275,9 @@ function build() {
         const area = SEQ.quadArea(...top);
         const tg = sky ? g1 : pv ? g4 : g2; tg.quad(top[0], top[3], top[2], top[1]); if (sky) skyA += area; if (pv) { pvA += area; g2.quad([top[0][0], top[0][1] - 0.15, top[0][2]], [top[3][0], top[3][1] - 0.15, top[3][2]], [top[2][0], top[2][1] - 0.15, top[2][2]], [top[1][0], top[1][1] - 0.15, top[1][2]]); }
         if (!sky) g3.quad(bot[0], bot[1], bot[2], bot[3]);
+        // 墨线：采光顶逐块分格；金属屋面每 4 块一条分格线
+        if (sky) { tg.line(top[0], top[1]); tg.line(top[0], top[3]); } else { if (j % 4 === 0) g2.line(top[0], top[1]); if (i % 4 === 0) g2.line(top[0], top[3]); }
+        for (let k = 0; k < 4; k++) { const k2 = (k + 1) % 4; if (rho(q[k][0], q[k][1]) > 0.995 && rho(q[k2][0], q[k2][1]) > 0.995) { g2.line(top[k], top[k2]); g2.line(bot[k], bot[k2]); } }
         // 外缘封边（云的厚边）：格子有顶点被裁到轮廓上时，沿轮廓画竖向封边
         for (let k = 0; k < 4; k++) { const k2 = (k + 1) % 4; if (rho(q[k][0], q[k][1]) > 0.995 && rho(q[k2][0], q[k2][1]) > 0.995) g2.quad(top[k], top[k2], bot[k2], bot[k]); }
       }
@@ -305,12 +311,13 @@ function build() {
     A({ key: 'ym', name: '云门主体（80 m）', stage: 'ym', scope: 'ym', dur: 125, parts: fr, res: { ym: 1 }, cap: '云门主体结构' });
     A({ key: 'ymc', name: '云门幕墙', stage: 'ymc', scope: 'ym', dur: 150, parts: fc, res: { ym: 1 }, cap: '云门幕墙' }); }
   // ===== 12. 塔吊（临时）=====
-  { const mk = (x, z, jy, yaw) => { const g = new GB('yellow'); g.B(x - 1, -1, z - 1, x + 1, jy, z + 1); const c = Math.cos(yaw), s = Math.sin(yaw), L = 56, Lc = 16; const xa = x - c * Lc, za = z - s * Lc, xb = x + c * L, zb = z + s * L;
-      g._mark(() => { g.rod([xa, jy + 0.6, za], [xb, jy + 0.6, zb], 0.55); g.rod([x, jy + 7, z], [xb * 0.6 + x * 0.4, jy + 1, zb * 0.6 + z * 0.4], 0.12); g.rod([x, jy + 7, z], [xa, jy + 1, za], 0.12); });
-      g.B(x - 1, jy, z - 1, x + 1, jy + 7, z + 1); g.B(xa - 2, jy - 1.5, za - 2, xa + 2, jy + 1.5, za + 2, MAT.conc.c); return g; };
-    const cr1 = [mk(-170, -150, 68, Math.PI / 2 * 0.85), mk(170, -150, 68, Math.PI / 2 * 1.15), mk(-170, 160, 68, -Math.PI / 2 * 0.9), mk(170, 160, 68, -Math.PI / 2 * 1.1), mk(-260, 0, 40, 0.1), mk(260, 0, 40, Math.PI - 0.1)];
+  // r2：塔身 + 司机室进合并网格（参与审计）；起重臂 / 平衡臂 / 小车 / 吊钩单独绘制、会回转（HZ.cranes），回转扫掠由 R9 审计
+  { HZ.cranes = [];
+    const mk = (x, z, jy, yaw, key) => { const g = new GB('yellow'); g.B(x - 1, -1, z - 1, x + 1, jy, z + 1); g.B(x - 1.3, jy, z - 1.3, x + 1.3, jy + 3, z + 1.3);
+      HZ.cranes.push({ x, z, jy, L: 56, Lc: 16, yaw0: yaw, key, top: jy + 7 }); return g; };
+    const cr1 = [mk(-170, -150, 68, Math.PI / 2 * 0.85, 'crane'), mk(170, -150, 68, Math.PI / 2 * 1.15, 'crane'), mk(-170, 160, 68, -Math.PI / 2 * 0.9, 'crane'), mk(170, 160, 68, -Math.PI / 2 * 1.1, 'crane'), mk(-260, 0, 40, 0.1, 'crane'), mk(260, 0, 40, Math.PI - 0.1, 'crane')];
     A({ key: 'crane', name: '塔吊', stage: 'crane', kind: 'temp', dur: 10, release: 300, parts: cr1.map(g => part(g)), res: {}, temp: { serves: ['frame', 'mezz', 'deck', 'plat', 'col24', 'floor', 'canopy', 'mast', 'tod'], removeStage: 'uncrane', removeName: '塔吊拆除', removeDur: 10 }, cap: '塔吊进场' });
-    const cr2 = [mk(-60, 262, 96, -Math.PI / 2), mk(60, 262, 96, -Math.PI / 2 * 1.2)];
+    const cr2 = [mk(-60, 262, 96, -Math.PI / 2, 'ycrane'), mk(60, 262, 96, -Math.PI / 2 * 1.2, 'ycrane')];
     A({ key: 'ycrane', name: '云门塔吊', stage: 'crane', kind: 'temp', dur: 10, release: 705, parts: cr2.map(g => part(g)), res: {}, temp: { serves: ['ym', 'ymc'], removeStage: 'uncrane', removeName: '云门塔吊拆除', removeDur: 10 }, scope: 'ym', cap: '云门塔吊' }); }
   // ===== 13. 开通 =====
   A({ key: 'open', name: '开通运营 · 首趟列车', stage: 'open', kind: 'milestone', dur: 0, release: P.OPEN, parts: [], cap: '2022-09-22 开通，首趟列车进站' });
@@ -410,17 +417,42 @@ HZ.make = function () {
   const sch = SEQ.schedule(acts, { caps, write: true });
   const K = {}; for (const a of acts) K[a.key] = a; HZ.K = K; HZ.acts = acts; HZ.counts = counts; HZ.caps = caps;
   HZ.total = Math.max(...acts.map(a => a.end));
+  HZ.times(); HZ.assignCranes();
   HZ.genMs = Date.now() - T0;
   return { acts, sch, counts };
 };
+
+// ---------------- 构件级时刻（渲染、图纸、审计共用）：活动内按 sweep 排序依次升起 ----------------
+HZ.times = function () { for (const a of HZ.acts) { if (a.kind === 'untemp' || !a.parts.length) continue;
+  const ord = a.parts.map((p, i) => [p.sweep || 0, i]).sort((x, y) => x[0] - y[0] || x[1] - y[1]), n = a.parts.length, wf = Math.min(1, Math.max(0.12, 2.5 / n));
+  ord.forEach(([, i], rk) => { const p = a.parts[i], f = n > 1 ? rk / (n - 1) : 0; p.act = a; p.st = a.start + a.dur * f * (1 - wf); p.du = Math.max(0.6, a.dur * wf);
+    p.rm = a.rm ? [a.rm.start + a.rm.dur * f * (1 - wf), Math.max(0.5, a.rm.dur * wf)] : [-1, 0];
+    let c = [0, 0, 0], m = 0; for (const b of p.geo.boxes) { for (let k = 0; k < 3; k++) c[k] += (b.min[k] + b.max[k]) / 2; m++; } p.c = m ? c.map(v => v / m) : [(p.geo.min[0] + p.geo.max[0]) / 2, p.geo.max[1], (p.geo.min[2] + p.geo.max[2]) / 2]; p.top = p.geo.max[1]; }); } };
+// R10 吊装分派：构件开工时，若中心在某台在场塔吊的回转半径内 → 塔吊吊装；否则派履带吊（站在已建的支承面上）。统计吊次。
+HZ.assignCranes = function () { const K = HZ.K, out = { tower: 0, crawler: 0, none: 0, byCrane: HZ.cranes.map(() => 0) };
+  const serves = new Set(['frame', 'mezz', 'deck', 'plat', 'col24', 'floor', 'canopy', 'mast', 'tod', 'ring', 'ym', 'ymc', 'pier', 'ymf', 'rig']);
+  for (const a of HZ.acts) { if (!serves.has(a.stage)) continue; for (const p of a.parts) { let best = -1, bd = 1e9;
+      HZ.cranes.forEach((c, k) => { const ca = K[c.key]; if (!(ca.end <= p.st && ca.rm.start >= p.st + p.du)) return; const d = Math.hypot(p.c[0] - c.x, p.c[2] - c.z); if (d <= c.L && d > 4 && d < bd) { bd = d; best = k; } });
+      p.crane = best; if (best >= 0) { out.tower++; out.byCrane[best]++; } else { out.crawler++; } } }
+  // 履带吊站位：地面上、上空无遮挡（整列到 200 m 不与在场构件相交）、离构件最近的格点；找不到 = 违例（R10）
+  const ALL = []; for (const a of HZ.acts) if (a.kind !== 'untemp') for (const p of a.parts) if (!p.grp) for (const b of p.geo.boxes) ALL.push({ a, p, b });
+  const cs = 40, grid = new Map(); ALL.forEach((e, i) => { for (let x = Math.floor(e.b.min[0] / cs); x <= Math.floor(e.b.max[0] / cs); x++) for (let z = Math.floor(e.b.min[2] / cs); z <= Math.floor(e.b.max[2] / cs); z++) { const k = x * 1e5 + z; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); } });
+  const clashAt = (x, z, t0, t1) => { if (Math.abs(x) < 204 && Math.abs(z) < 17) return true; /* 云谷下是地铁层开口 */ const bx = { min: [x - 3.6, 0.02, z - 2.8], max: [x + 3.6, 200, z + 2.8] }, seen = new Set();
+    for (let i = Math.floor(bx.min[0] / cs); i <= Math.floor(bx.max[0] / cs); i++) for (let j = Math.floor(bx.min[2] / cs); j <= Math.floor(bx.max[2] / cs); j++) for (const k of grid.get(i * 1e5 + j) || []) { if (seen.has(k)) continue; seen.add(k); const e = ALL[k];       const a0 = e.p.st != null ? e.p.st : e.a.start, a1 = e.a.kind === 'temp' && e.a.rm ? e.a.rm.end : 1e9; if (a0 >= t1 || a1 <= t0) continue; if (SEQ.BB.hit(bx, e.b, -0.02)) return true; } return false; };
+  HZ.crawlClash = clashAt; let bad = 0;
+  for (const a of HZ.acts) for (const p of a.parts) { if (p.crane !== -1) continue; let best = null, bd = 1e9; const t0 = p.st - 0.5, t1 = p.st + p.du + 0.5;
+    for (let dz = -150; dz <= 150; dz += 6) for (let dx = -60; dx <= 60; dx += 10) { const x = p.c[0] + dx, z = p.c[2] + dz, d = Math.hypot(dx, dz); if (d >= bd || d < 6) continue; if (!clashAt(x, z, t0, t1)) { bd = d; best = [x, z]; } }
+    if (best) { p.crawl = best; p.crawlY = 0; } else bad++; }
+  HZ.crawlHits = bad; out.crawlBad = bad;
+  HZ.lift = out; return out; };
 
 // ---------------- 审计（与规则推导独立：按排出的时间表 + 几何重算）----------------
 HZ.audit = function () {
   const T0 = Date.now(), acts = HZ.acts, K = HZ.K, out = {};
   out.net = SEQ.auditNet(acts, { caps: HZ.caps });
   // A1 无支承：每个静止构件开工时，至少一个支承者已完成且未拆除（或落地 / 本身成套）
-  let unsup = 0; const ex = [];
-  for (const a of acts) for (const p of a.parts) { if (p.grp || !p.sup) continue; if (!p.sup.size) { unsup++; if (ex.length < 6) ex.push('无支承 ' + a.name); continue; }
+  let unsup = 0; const ex = []; const ev = { sup: new Map(), clip: new Map() }, bump = (m, t, n) => { const d = Math.floor(t); m.set(d, (m.get(d) || 0) + (n || 1)); };
+  for (const a of acts) for (const p of a.parts) { if (p.grp || !p.sup) continue; bump(ev.sup, a.start, p.geo.boxes.length); if (!p.sup.size) { unsup++; if (ex.length < 6) ex.push('无支承 ' + a.name); continue; }
     let ok = p.sup.has('ground') || p.sup.has('self'); for (const k of p.sup) { const s = K[k]; if (s && s.end <= a.start && (!s.rm || s.rm.start >= a.end)) ok = true; } if (!ok) { unsup++; if (ex.length < 6) ex.push('支承未就位 ' + a.name); } }
   // 屋盖分区：拼装期间须有胎架；提升期间提升点多边形须包住重心（静力稳定）
   const hull = pts => { pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); const lo = [], up = []; for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); } for (const p of pts.slice().reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); } return lo.slice(0, -1).concat(up.slice(0, -1)); };
@@ -440,7 +472,7 @@ HZ.audit = function () {
   let clip = 0; const cex = [], seen = new Set();
   for (const L of grid.values()) for (let x = 0; x < L.length; x++) for (let y = x + 1; y < L.length; y++) { const e = B[L[x]], f = B[L[y]]; if (e.p === f.p || e.p.host === f.p || f.p.host === e.p || (e.p.headOf && e.p.headOf === f.p) || (f.p.headOf && f.p.headOf === e.p) || (e.p.hole >= 0 && e.p.hole === f.p.hole && (e.p.headOf || f.p.headOf)) || (e.p.cells && f.p.cells)) continue;
     const k = L[x] < L[y] ? L[x] * 1e6 + L[y] : L[y] * 1e6 + L[x]; if (seen.has(k)) continue; seen.add(k);
-    if (!SEQ.BB.hit(e.b, f.b, -0.06)) continue;
+    bump(ev.clip, Math.max(e.a.start, f.a.start)); if (!SEQ.BB.hit(e.b, f.b, -0.06)) continue;
     // 时间上是否共存
     const s = Math.max(e.a.start, f.a.start), t1 = Math.min(e.a.kind === 'temp' ? e.a.rm.end : 1e9, f.a.kind === 'temp' ? f.a.rm.end : 1e9); if (s >= t1) continue;
     clip++; if (cex.length < 8) cex.push(e.a.name + ' × ' + f.a.name); }
@@ -448,19 +480,27 @@ HZ.audit = function () {
   // A3 提升净空：提升各阶段按 32 个时刻采样，移动格（按格包围盒、随姿态变换）× 当时在场的静止盒子
   let lc = 0, samples = 0, minFloor = 1e9; const lex = [];
   const stagesL = ['lift1', 'lift2', 'lift3', 'merge', 'wlift'].map(k => K[k]);
-  for (const S of stagesL) for (let q = 0; q <= 24; q++) { const t = S.start + S.dur * q / 24, ps = HZ.pose(t); samples++;
+  const LS = []; for (const S of stagesL) for (let q = 0; q <= 24; q++) { const t = S.start + S.dur * q / 24, ps = HZ.pose(t); samples++; const rec = { t: +t.toFixed(3), k: S.key, rods: 0, tests: 0, hits: 0, gap: 1e9 }; LS.push(rec);
     for (const c of HZ.cells) { if (!c.grp || (c.grp === 4 && t < K.merge.start)) continue;
       for (const [a0, b0, r] of c.rods) { const a = HZ.xf(ps, c.grp, a0), b = HZ.xf(ps, c.grp, b0), lo = [0, 1, 2].map(k => Math.min(a[k], b[k]) - r), hi = [0, 1, 2].map(k => Math.max(a[k], b[k]) + r);
-        if (Math.abs(c.xc) <= P.floorX && Math.abs(c.zc) <= P.floorZ && Math.abs(c.zc) >= P.gap) minFloor = Math.min(minFloor, lo[1] - P.floorTop);
+        rec.rods++; if (Math.abs(c.xc) <= P.floorX && Math.abs(c.zc) <= P.floorZ && Math.abs(c.zc) >= P.gap) { minFloor = Math.min(minFloor, lo[1] - P.floorTop); rec.gap = Math.min(rec.gap, lo[1] - P.floorTop); }
         const seen = new Set();
         for (let i = Math.floor(lo[0] / cs); i <= Math.floor(hi[0] / cs); i++) for (let j = Math.floor(lo[2] / cs); j <= Math.floor(hi[2] / cs); j++) for (const idx of grid.get(i * 100000 + j) || []) { if (seen.has(idx)) continue; seen.add(idx); const e = B[idx]; if (!live(e.a, t)) continue;
           if (e.a.stage === 'jig' && e.a.zone === c.grp && ps[c.grp].dy + HZ.D < 0.4) continue;   // 脱胎（提离 0.4 m）前允许与本区胎架贴合；之后（含 0.6 m 脱胎完成）严格不碰
-          if (segBox(a, b, e.b, r - 0.05)) { lc++; if (lex.length < 6) lex.push(S.name + ' × ' + e.a.name + ' @' + t.toFixed(1)); } } } } }
+          rec.tests++; if (segBox(a, b, e.b, r - 0.05)) { lc++; rec.hits++; if (lex.length < 6) lex.push(S.name + ' × ' + e.a.name + ' @' + t.toFixed(1)); } } } } }
   // 分区之间（旋转时内边不得碰中区）
+  for (const r of LS) r.gap = +r.gap.toFixed(2);
+  // A5（R9）塔吊回转净空：塔吊在场期间，回转半径（起重臂 L + 1 m）内不得有顶面高于臂底 − 1.5 m 的构件（含未来在场的）；每台按 72 个方位采样
+  let r9 = 0, r9t = 0; const r9ex = [];
+  HZ.cranes.forEach((c, k) => { const ca = K[c.key], t0 = ca.start, t1 = ca.rm.end; for (const e of B) { if (e.a === ca) continue; const a0 = e.a.start, a1 = e.a.kind === 'temp' && e.a.rm ? e.a.rm.end : 1e9; if (a1 <= t0 || a0 >= t1) continue;
+      for (let q = 0; q < 72; q++) { const th = q / 72 * Math.PI * 2, ax = Math.cos(th), az = Math.sin(th); r9t++;
+        if (segBox([c.x - ax * c.Lc, c.jy + 0.6, c.z - az * c.Lc], [c.x + ax * c.L, c.jy + 0.6, c.z + az * c.L], e.b, 1.5)) { r9++; if (r9ex.length < 4) r9ex.push('塔吊' + (k + 1) + ' × ' + e.a.name); break; } } } });
+  out.r9 = { hits: r9, tests: r9t, ex: r9ex, cranes: HZ.cranes.length };
+  out.lift = HZ.lift; out.ev = { sup: [...ev.sup].sort((a, b) => a[0] - b[0]), clip: [...ev.clip].sort((a, b) => a[0] - b[0]), lift: LS };
   out.liftClash = lc; out.liftEx = lex; out.liftSamples = samples; out.minFloorGap = +minFloor.toFixed(2);
   // A4 临时构件：全部拆除、拆除不早于服务对象完成
   out.temp = out.net.r4;
-  out.r8bad = HZ.r8bad.slice(); out.zero = out.net.zero && !HZ.r8bad.length && !unsup && !clip && !lc && out.temp.violations === 0 && out.temp.leftover === 0;
+  out.r8bad = HZ.r8bad.slice(); out.zero = out.net.zero && !HZ.r8bad.length && !unsup && !clip && !lc && !r9 && !HZ.crawlHits && out.temp.violations === 0 && out.temp.leftover === 0;
   out.ms = Date.now() - T0;
   return out;
 };
