@@ -38,6 +38,23 @@ class Geo {
     }
     if (edges !== false) for (let i = 0; i < 4; i++) { this.line(c[i], c[(i + 1) % 4]); this.line(c[4 + i], c[4 + (i + 1) % 4]); this.line(c[i], c[4 + i]); }
   }
+  // 柱体：底环 ring（凸多边形，任意朝向）沿向量 d 拉伸；每面按“法线朝外”自动定向。lines: 'all' 全部棱 | 'axis' 两条母线（圆木的墨线） | false
+  extrude(ring, d, col, lines) {
+    const n = ring.length, top = ring.map(p => [p[0] + d[0], p[1] + d[1], p[2] + d[2]]), ctr = avg([...ring, ...top]);
+    const face = pts => { const c = avg(pts); for (let i = 1; i < pts.length - 1; i++) { const a = pts[0], b = pts[i], e = pts[i + 1], nn = cross(sub3(b, a), sub3(e, a)); if (dot(nn, sub3(c, ctr)) < 0) this.tri(a, e, b, col); else this.tri(a, b, e, col); } };
+    face(ring); face(top);
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n, q = [ring[i], ring[j], top[j], top[i]], c = avg(q), nn = cross(sub3(q[1], q[0]), sub3(q[2], q[0]));
+      if (dot(nn, sub3(c, ctr)) < 0) this.quad(q[0], q[3], q[2], q[1], col); else this.quad(q[0], q[1], q[2], q[3], col); }
+    if (lines === 'all') for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.line(ring[i], ring[j]); this.line(top[i], top[j]); this.line(ring[i], top[i]); }
+    else if (lines === 'axis') { const k = Math.floor(n / 2); this.line(ring[0], top[0]); this.line(ring[k], top[k]); }
+  }
+  // 圆木：a→b，半径 r，n 边
+  prism(a, b, r, n, col, lines) {
+    const ax = sub3(b, a), L = len(ax) || 1, u = [ax[0] / L, ax[1] / L, ax[2] / L], h = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let e1 = cross(u, h); const l1 = len(e1); e1 = e1.map(v => v / l1); const e2 = cross(u, e1), ring = [];
+    for (let i = 0; i < n; i++) { const t = (i + 0.5) / n * Math.PI * 2, c = Math.cos(t) * r, s = Math.sin(t) * r; ring.push([a[0] + e1[0] * c + e2[0] * s, a[1] + e1[1] * c + e2[1] * s, a[2] + e1[2] * c + e2[2] * s]); }
+    this.extrude(ring, ax, col, lines == null ? 'axis' : lines);
+  }
   box(x0, y0, z0, x1, y1, z1, col, edges) { this.hexa([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], col, edges); }
   // 绕竖轴旋转的盒子（中心 cx,cz，底 y0，尺寸 sx×sy×sz，角 a）
   rbox(cx, y0, cz, sx, sy, sz, a, col, edges) {
@@ -47,11 +64,65 @@ class Geo {
 }
 SEQ.Geo = Geo;
 
+// ---------- 三角形网格索引：射线 / 线段 求交（净空检查、落脚点、吊绳长度）----------
+class TriGrid {
+  constructor(cell) { this.c = cell || 2; this.T = []; this.tag = []; this.cells = new Map(); this.stamp = null; this.sid = 0; }
+  add(geo, tag) {
+    const P = geo.P, ic = 1 / this.c, T = this.T, cells = this.cells;
+    for (let i = 0; i < P.length; i += 9) {
+      const id = this.tag.length; this.tag.push(tag); for (let k = 0; k < 9; k++) T.push(P[i + k]);
+      const x0 = Math.floor(Math.min(P[i], P[i + 3], P[i + 6]) * ic), x1 = Math.floor(Math.max(P[i], P[i + 3], P[i + 6]) * ic);
+      const y0 = Math.floor(Math.min(P[i + 1], P[i + 4], P[i + 7]) * ic), y1 = Math.floor(Math.max(P[i + 1], P[i + 4], P[i + 7]) * ic);
+      const z0 = Math.floor(Math.min(P[i + 2], P[i + 5], P[i + 8]) * ic), z1 = Math.floor(Math.max(P[i + 2], P[i + 5], P[i + 8]) * ic);
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) { const kk = ((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512); let L = cells.get(kk); if (!L) { L = []; cells.set(kk, L); } L.push(id); }
+    }
+    return this;
+  }
+  // 线段 a→b 与三角形求交（Möller–Trumbore），返回 [t, tag]（nearest 时取最近）或 null；filter(tag) 为 false 的三角形跳过
+  seg(a, b, filter, nearest) {
+    const ic = 1 / this.c, T = this.T, ax = a[0], ay = a[1], az = a[2], dx = b[0] - ax, dy = b[1] - ay, dz = b[2] - az;
+    if (!this.stamp || this.stamp.length < this.tag.length) this.stamp = new Uint32Array(this.tag.length + 1024);
+    const sid = ++this.sid, stamp = this.stamp; let bt = 2, btag = -1;
+    const x0 = Math.floor((Math.min(ax, b[0]) - 1e-6) * ic), x1 = Math.floor((Math.max(ax, b[0]) + 1e-6) * ic), y0 = Math.floor((Math.min(ay, b[1]) - 1e-6) * ic), y1 = Math.floor((Math.max(ay, b[1]) + 1e-6) * ic), z0 = Math.floor((Math.min(az, b[2]) - 1e-6) * ic), z1 = Math.floor((Math.max(az, b[2]) + 1e-6) * ic);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+      const L = this.cells.get(((x + 512) * 1024 + (y + 512)) * 1024 + (z + 512)); if (!L) continue;
+      for (let li = 0; li < L.length; li++) {
+        const id = L[li]; if (stamp[id] === sid) continue; stamp[id] = sid;
+        if (filter && !filter(this.tag[id])) continue;
+        const o = id * 9, px0 = T[o], py0 = T[o + 1], pz0 = T[o + 2];
+        const e1x = T[o + 3] - px0, e1y = T[o + 4] - py0, e1z = T[o + 5] - pz0, e2x = T[o + 6] - px0, e2y = T[o + 7] - py0, e2z = T[o + 8] - pz0;
+        const qx = dy * e2z - dz * e2y, qy = dz * e2x - dx * e2z, qz = dx * e2y - dy * e2x, det = e1x * qx + e1y * qy + e1z * qz;
+        if (det > -1e-12 && det < 1e-12) continue;
+        const inv = 1 / det, sx = ax - px0, sy = ay - py0, sz = az - pz0, u = (sx * qx + sy * qy + sz * qz) * inv; if (u < 0 || u > 1) continue;
+        const rx = sy * e1z - sz * e1y, ry = sz * e1x - sx * e1z, rz = sx * e1y - sy * e1x, v = (dx * rx + dy * ry + dz * rz) * inv; if (v < 0 || u + v > 1) continue;
+        const t = (e2x * rx + e2y * ry + e2z * rz) * inv; if (t < 0 || t > 1) continue;
+        if (!nearest) return [t, this.tag[id]];
+        if (t < bt) { bt = t; btag = this.tag[id]; }
+      }
+    }
+    return btag >= 0 || bt < 2 ? [bt, btag] : null;
+  }
+  // 竖直射线：从 o 向上(+1)/向下(-1) 最多 maxD 米，返回命中距离或 null
+  rayY(o, dir, maxD, filter) { const h = this.seg(o, [o[0], o[1] + dir * maxD, o[2]], filter, true); return h ? h[0] * maxD : null; }
+  // 粗圆柱探针：轴线 + 4 条偏移 r 的母线；返回命中的 tag 或 -1
+  probe(a, b, r, filter) {
+    const ax = sub3(b, a), L = len(ax) || 1, u = ax.map(v => v / L), h = Math.abs(u[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    let e1 = cross(u, h); const l1 = len(e1); e1 = e1.map(v => v / l1); const e2 = cross(u, e1);
+    for (const [p, q] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) { const o = [e1[0] * p + e2[0] * q, e1[1] * p + e2[1] * q, e1[2] * p + e2[2] * q];
+      const hit = this.seg([a[0] + o[0], a[1] + o[1], a[2] + o[2]], [b[0] + o[0], b[1] + o[1], b[2] + o[2]], filter, false); if (hit) return hit[1]; }
+    return -1;
+  }
+}
+SEQ.TriGrid = TriGrid;
+
 // ---------- 规则 → 依赖 → 顺序 → 工期 ----------
 function bbOverlapXZ(a, b) { const dx = Math.min(a.max[0], b.max[0]) - Math.max(a.min[0], b.min[0]), dz = Math.min(a.max[2], b.max[2]) - Math.max(a.min[2], b.min[2]); return dx > 0 && dz > 0 ? dx * dz : 0; }
 function bbIntersect(a, b, e) { for (let k = 0; k < 3; k++) if (a.max[k] < b.min[k] - e || b.max[k] < a.min[k] - e) return false; return true; }
 
-// parts: [{id, name, stage, group?, trade?, mat, geo, kind?('build'|'remove'|'fill'), count?, tally?, unit?, spec?, vol?, noMass?}]
+// parts: [{id, name, stage, group?, trade?, mat, geo, kind?('build'|'remove'|'fill'), count?, tally?, unit?, spec?, vol?, noMass?, scope?,
+//          temp?: {serves:[stage], scope, removeStage, removeName}, probes?: [[a,b,r]...], rig?: pose}]
+// 临时构件（temp，如足場/支保工）：搭设 = 一个步骤（kind 'temp'），系统自动配一个拆除步骤（kind 'untemp'，阶段 temp.removeStage）。
+//   R4：temp 服务的步骤 D（阶段 ∈ serves 且 scope 相同）—— 搭设先于 D 开工，拆除晚于 D 完成；拆除阶段可标 asap（一旦允许就拆）。
 // rules: {stages:[{key,name,verb,trade,order:'z'|'-z',after:[keys],near}], mats:{key:{name,rho}}, rates:{trade:t/day}, digRate, fillRate(m3/day), minDays, tol, minOverlap, t0(Date)}
 SEQ.plan = function (parts, rules) {
   const T0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -60,7 +131,7 @@ SEQ.plan = function (parts, rules) {
   for (const p of parts) {
     const m = rules.mats[p.mat]; if (!m) throw new Error('no material ' + p.mat);
     if (!SR[p.stage]) throw new Error('no stage ' + p.stage);
-    p.kind = p.kind || 'build';
+    p.kind = p.temp ? 'temp' : (p.kind || 'build');
     p.vol = p.vol != null ? p.vol : Math.abs(p.geo.vol);       // 体积默认取闭合网格散度积分
     p.mass = p.noMass ? 0 : p.vol * m.rho;                     // 质量 = 体积 × 密度（t/m³）
     p.bb = { min: p.geo.min.slice(), max: p.geo.max.slice() };
@@ -74,32 +145,48 @@ SEQ.plan = function (parts, rules) {
     s.parts.push(p); s.mass += p.mass; s.vol += p.vol; if (p.spec && !s.spec) s.spec = p.spec;
     for (let k = 0; k < 3; k++) { s.bb.min[k] = Math.min(s.bb.min[k], p.bb.min[k]); s.bb.max[k] = Math.max(s.bb.max[k], p.bb.max[k]); }
   }
-  steps.forEach((s, i) => { s.idx0 = i; s.rank = SR[s.stage].rank; s.anchor = s.parts[0].anchor; const t = {}; for (const p of s.parts) if (p.tally) { t[p.tally] = (t[p.tally] || 0) + (p.count || 0); } s.tally = t; });
+  steps.forEach(s => { const t = {}; for (const p of s.parts) if (p.tally) { t[p.tally] = (t[p.tally] || 0) + (p.count || 0); } s.tally = t; s.anchor = s.parts[0].anchor; const rp = s.parts.find(p => p.rig); s.rig = rp ? rp.rig : null; });
+  // 临时构件：每个搭设步骤配一个拆除步骤
+  for (const E of steps.filter(x => x.kind === 'temp')) {
+    const T = E.parts[0].temp; if (!SR[T.removeStage]) throw new Error('no stage ' + T.removeStage);
+    const R = { key: E.key + '~rm', parts: E.parts, stage: T.removeStage, kind: 'untemp', name: T.removeName || E.name + ' 拆除', trade: SR[T.removeStage].trade || E.trade, spec: E.spec, bb: E.bb, mass: E.mass, vol: E.vol, deps: new Set(), why: {}, tally: E.tally, anchor: E.anchor, of: E, rig: null };
+    E.rm = R; E.serves = []; E.temp = T; steps.push(R);
+  }
+  steps.forEach((s, i) => { s.idx0 = i; s.rank = SR[s.stage].rank; });
   // 规则 R1 支承：B 的底面落在 A 的高度范围内且平面投影重叠 → A 先于 B（A 的阶段不晚于 B）
   // 规则 R2 先挖后建：移除类（掘削）先于与其包围盒相交的一切建造
   // 规则 R3 阶段 after：stage.after 里列出的阶段、在 near 米内的步骤都要先完成（如注水在石垣之后）
-  let nSup = 0, nDig = 0, nAfter = 0;
+  let nSup = 0, nDig = 0, nAfter = 0, nTemp = 0;
   for (const B of steps) for (const A of steps) {
-    if (A === B) continue;
+    if (A === B || A.kind === 'untemp' || B.kind === 'untemp') continue;
     if (A.kind === 'remove') { if (B.kind !== 'remove' && bbIntersect(A.bb, B.bb, 0.01) && A.rank <= B.rank) { B.deps.add(A); B.why[A.key] = 'dig'; nDig++; } continue; }
     if (B.kind === 'remove') continue;
     const af = SR[B.stage].after;
     if (af && af.includes(A.stage) && bbIntersect(A.bb, B.bb, SR[B.stage].near || 10)) { B.deps.add(A); B.why[A.key] = 'after'; nAfter++; continue; }
-    if (A.kind === 'fill' || B.rank === 0) continue;
+    if (A.kind === 'fill' || A.kind === 'temp' || B.rank === 0) continue;   // 临时构件不支承永久构件
     const on = SR[B.stage].on;                      // 阶段可声明“落在哪些阶段上”（如 上层柱 落在 下层梁 上，梁的阶段序更晚也成立）
     if (on) { if (!on.includes(A.stage) && A.stage !== B.stage) continue; }
     else if (A.rank > B.rank) continue;
     if (A.stage === B.stage || !on) { if (A.rank === B.rank && !(A.bb.min[1] < B.bb.min[1] - 1e-4)) continue; }
     if (bbOverlapXZ(A.bb, B.bb) > minOv && A.bb.min[1] <= B.bb.min[1] + tol && A.bb.max[1] >= B.bb.min[1] - tol) { B.deps.add(A); B.why[A.key] = 'sup'; nSup++; }
   }
+  // 规则 R4 临时支承：temp 服务的步骤开工前已搭好、全部完成后才拆
+  for (const E of steps) if (E.kind === 'temp') {
+    const T = E.temp; E.rm.deps.add(E); E.rm.why[E.key] = 'erect';
+    for (const D of steps) {
+      if (D.kind === 'temp' || D.kind === 'untemp' || D.kind === 'remove' || !T.serves.includes(D.stage) || !D.parts.some(p => p.scope === T.scope)) continue;
+      D.deps.add(E); D.why[E.key] = 'temp'; E.rm.deps.add(D); E.rm.why[D.key] = 'served'; E.serves.push(D); nTemp++;
+    }
+  }
   // 审计：每个非地基步骤至少有一个支承（或挖方/after）前驱；依赖不成环
-  const unsupported = steps.filter(s => s.rank > 0 && s.kind !== 'remove' && ![...s.deps].some(d => s.why[d.key] === 'sup' || s.why[d.key] === 'after'));
+  const unsupported = steps.filter(s => s.rank > 0 && s.kind !== 'remove' && s.kind !== 'untemp' && ![...s.deps].some(d => s.why[d.key] === 'sup' || s.why[d.key] === 'after'));
   // 带优先级的 Kahn 拓扑排序：可开工的步骤里取（阶段序, 阶段内顺序, 原序）最小者
   const ordV = s => { const o = SR[s.stage].order; return o === '-z' ? -s.bb.max[1] : s.bb.min[1]; };
   const indeg = new Map(steps.map(s => [s, s.deps.size])), out = new Map(steps.map(s => [s, []]));
   for (const s of steps) for (const d of s.deps) out.get(d).push(s);
   const ready = steps.filter(s => indeg.get(s) === 0), seq = [];
-  const better = (a, b) => a.rank !== b.rank ? a.rank < b.rank : Math.abs(ordV(a) - ordV(b)) > 1e-6 ? ordV(a) < ordV(b) : a.idx0 < b.idx0;
+  const asap = s => SR[s.stage].asap ? 0 : 1;
+  const better = (a, b) => asap(a) !== asap(b) ? asap(a) < asap(b) : a.rank !== b.rank ? a.rank < b.rank : Math.abs(ordV(a) - ordV(b)) > 1e-6 ? ordV(a) < ordV(b) : a.idx0 < b.idx0;
   while (ready.length) {
     let bi = 0; for (let i = 1; i < ready.length; i++) if (better(ready[i], ready[bi])) bi = i;
     const s = ready.splice(bi, 1)[0]; seq.push(s);
@@ -113,7 +200,7 @@ SEQ.plan = function (parts, rules) {
     if (fixed) d = fixed.days;
     else if (s.kind === 'remove') d = s.vol / (rules.digRate || 1000);
     else if (s.kind === 'fill') d = s.vol / (rules.fillRate || 5000);
-    else d = s.mass / ((rules.rates && rules.rates[s.trade]) || 10);
+    else d = s.mass / (SR[s.stage].rate || (rules.rates && rules.rates[s.trade]) || 10);
     s.dur = Math.max(rules.minDays || 1, d); s.start = t; s.end = t + s.dur; t = s.end + (rules.gap || 0);
   });
   const total = seq.length ? seq[seq.length - 1].end : 0;
@@ -123,16 +210,28 @@ SEQ.plan = function (parts, rules) {
   const events = [];
   for (const s of seq) { events.push({ t: s.start, ev: 'start', s }); events.push({ t: s.end, ev: 'end', s }); }
   events.sort((a, b) => a.t - b.t || (a.ev === 'end' ? -1 : 1));
-  const plan = { parts, steps: seq, stages: SR, bands, events, total, rules, audit: { unsupported, cyclic, deps: nSup + nDig + nAfter, nSup, nDig, nAfter }, ms: 0 };
+  // R4 自检（按排出的时间表核对）：搭设.end ≤ D.start、拆除.start ≥ D.end；竣工时不得有残留临时构件
+  const temps = seq.filter(s => s.kind === 'temp'); let r4v = 0; const r4ex = [];
+  for (const E of temps) for (const D of E.serves) {
+    if (E.end > D.start + 1e-6) { r4v++; r4ex.push(E.name + ' 晚于 ' + D.name); }
+    if (E.rm.start < D.end - 1e-6) { r4v++; r4ex.push(E.rm.name + ' 早于 ' + D.name + ' 完成'); }
+  }
+  const leftover = temps.filter(E => !(E.rm.end <= total + 1e-6)).length;
+  const plan = { parts, steps: seq, stages: SR, bands, events, total, rules, audit: { unsupported, cyclic, deps: nSup + nDig + nAfter + nTemp, nSup, nDig, nAfter, nTemp, r4: { temps: temps.length, pairs: temps.reduce((a, E) => a + E.serves.length, 0), violations: r4v, ex: r4ex.slice(0, 5), leftover } }, ms: 0 };
   // 时间游标 → 状态与统计（与着色器同一公式：p = clamp((t-start)/dur)）
   plan.at = function (tt) {
-    const r = { t: tt, cur: null, p: 0, mass: 0, removed: 0, tally: {}, elev: null, done: 0, stage: null };
+    const r = { t: tt, cur: null, p: 0, mass: 0, removed: 0, tally: {}, tempUp: {}, tempMass: 0, elev: null, done: 0, stage: null };
     for (const s of seq) {
       const p = Math.max(0, Math.min(1, (tt - s.start) / s.dur));
       if (tt >= s.start && tt < s.end) { r.cur = s; r.p = p; }
       if (p >= 1) r.done++;
       if (p <= 0) continue;
       if (s.kind === 'remove') { r.removed += s.vol * p; continue; }
+      if (s.kind === 'temp' || s.kind === 'untemp') {           // 临时构件：在位 = 已搭 − 已拆；tally 记“现存”，tempUp 记累计搭设
+        const sg = s.kind === 'temp' ? 1 : -1; r.tempMass += sg * s.mass * p;
+        for (const k in s.tally) { const n = Math.floor(s.tally[k] * p + 1e-9); r.tally[k] = (r.tally[k] || 0) + sg * n; if (sg > 0) r.tempUp[k] = (r.tempUp[k] || 0) + n; }
+        continue;
+      }
       r.mass += s.mass * p;
       for (const k in s.tally) r.tally[k] = (r.tally[k] || 0) + Math.floor(s.tally[k] * p + 1e-9);   // 计数取整：未完成的一块不算
       if (s.kind === 'build') { const e = s.bb.min[1] + (s.bb.max[1] - s.bb.min[1]) * p; if (r.elev === null || e > r.elev) r.elev = e; }
@@ -142,41 +241,85 @@ SEQ.plan = function (parts, rules) {
     return r;
   };
   plan.date = d => { const D = new Date((rules.t0 || new Date(2000, 0, 1)).getTime() + Math.round(d) * 864e5); return D.getFullYear() + '-' + String(D.getMonth() + 1).padStart(2, '0') + '-' + String(D.getDate()).padStart(2, '0'); };
+  if (rules.clearance !== false && (temps.length || seq.some(s => s.rig))) plan.audit.clear = SEQ.clearance(plan);
   plan.ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - T0;
   return plan;
 };
 
+// ---------- 净空检查（R4c）：临时构件 / 吊具 不得穿过与其同时在场的永久构件 ----------
+// 临时构件 T：与“开工早于 T 拆除完成”的永久构件比；吊具（步骤 s 的 rig 位姿）：与“开工早于 s 完成”的永久构件比。
+// 每根杆件按粗圆柱探针（轴线 + 4 条偏移 r 的母线）做线段–三角形求交。
+SEQ.clearance = function (plan) {
+  const T0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const grid = new TriGrid(2), own = [];
+  for (const s of plan.steps) if (s.kind === 'build') for (const p of s.parts) { own.push(s); grid.add(p.geo, own.length - 1); }
+  const out = { members: 0, hits: 0, rigPoses: 0, rigHits: 0, ex: [], ms: 0 };
+  for (const E of plan.steps) if (E.kind === 'temp') {
+    const until = E.rm.end, f = tag => own[tag].start < until - 1e-6;
+    for (const p of E.parts) for (const [a, b, r] of (p.probes || [])) { out.members++; const h = grid.probe(a, b, r, f); if (h >= 0) { out.hits++; if (out.ex.length < 6) out.ex.push(p.name + ' × ' + own[h].name); } }
+  }
+  for (const s of plan.steps) if (s.rig && s.rig.probes) {
+    out.rigPoses++; const f = tag => own[tag].start < s.end - 1e-6; let bad = 0;
+    for (const [a, b, r] of s.rig.probes) { const h = grid.probe(a, b, r, f); if (h >= 0) { bad = 1; if (out.ex.length < 6) out.ex.push('吊具@' + s.name + ' × ' + own[h].name); break; } }
+    out.rigHits += bad;
+  }
+  out.ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - T0);
+  return out;
+};
+
 // ---------- 渲染：合并几何 + 时间游标着色器 ----------
-const VS = `
-attribute vec3 aCol; attribute vec3 aK; attribute vec2 aB;
-uniform float uT; uniform vec2 uCur; uniform float uRise;
-varying vec3 vN; varying vec3 vC; varying vec3 vW; varying float vS; varying float vCur; varying float vKind; varying float vP; varying vec2 vB;
-void main(){
-  float p = clamp((uT - aK.x) / max(aK.y, 1e-4), 0., 1.);
-  vec3 pos = position; float st;
+// 顶点状态 vS：-1 未建（幽灵）· [0,1) 施工中 · 2 已建 · -3 不画。aK.z 类型：0 建 1 挖 2 充填 3 临时（aR = 拆除起点/时长）4 吊具（uRig 位姿）
+const STATE = `
+float rigOn(float ty){ return (uRig2.w > .5 && ((ty < .5 || ty > 2.5 && ty < 3.5) ? uRig2.w > 1.5 : (ty > 3.5 ? uRig2.w < 1.5 : true))) ? 1. : 0.; }
+vec3 rigPos(vec3 q, float ty){
+  if (ty < .5) q = vec3(q.x, q.y * uRig2.x, q.z + q.y * uRig2.y);
+  else if (ty < 1.5 || ty > 3.5) q = vec3(q.x, q.y + uRig2.x, q.z + uRig2.y);
+  else if (ty < 2.5) q = vec3(q.x, q.y + uRig2.x - uRig2.z, q.z + uRig2.y);
+  float c = cos(uRig.w), s = sin(uRig.w);
+  return uRig.xyz + vec3(q.x * c + q.z * s, q.y, -q.x * s + q.z * c);
+}
+void stateOf(inout vec3 pos, out float st, out float p, out float rm, out float cur){
+  p = clamp((uT - aK.x) / max(aK.y, 1e-4), 0., 1.); rm = -1.;
+  cur = (aK.x >= uCur.x - 1e-3 && aK.x < uCur.y) ? 1. : 0.;
   if (aK.z < .5) { st = uT < aK.x ? -1. : (p < 1. ? p : 2.); if (st >= 0. && st < 1.) pos.y -= (1. - st) * (1. - st) * uRise; }
   else if (aK.z < 1.5) { st = uT < aK.x ? 2. : (p < 1. ? p : -3.); }   // 移除：开工前是“原状”，完成后消失
-  else { st = uT < aK.x ? -1. : (p < 1. ? p : 2.); }                   // 充填：自下而上
-  vS = st; vP = p; vKind = aK.z; vB = aB;
-  vCur = (aK.x >= uCur.x - 1e-3 && aK.x < uCur.y) ? 1. : 0.;
-  vec4 w = modelMatrix * vec4(pos, 1.); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); vC = aCol;
+  else if (aK.z < 2.5) { st = uT < aK.x ? -1. : (p < 1. ? p : 2.); }   // 充填：自下而上
+  else if (aK.z < 3.5) {                                                // 临时：搭设（上升）→ 在场 → 拆除（自上而下消失）→ 不画
+    if (uT < aK.x) st = -1.;
+    else if (p < 1.) { st = p; pos.y -= (1. - st) * (1. - st) * uRise; }
+    else if (uT < aR.x) st = 2.;
+    else { float q = clamp((uT - aR.x) / max(aR.y, 1e-4), 0., 1.); if (q < 1.) { st = .5; rm = q; } else st = -3.; }
+    if (aR.x >= uCur.x - 1e-3 && aR.x < uCur.y) cur = 1.;
+  } else { st = rigOn(aB.x) > .5 ? 2.5 : -3.; pos = rigPos(pos, aB.x); cur = 0.; }
+}`;
+const VS = `
+attribute vec3 aCol; attribute vec3 aK; attribute vec2 aB; attribute vec2 aR;
+uniform float uT; uniform vec2 uCur; uniform float uRise; uniform vec4 uRig; uniform vec4 uRig2;
+varying vec3 vN; varying vec3 vC; varying vec3 vW; varying float vS; varying float vCur; varying float vKind; varying float vP; varying vec2 vB; varying float vRm;
+${STATE}
+void main(){
+  vec3 pos = position; float st, p, rm, cur; stateOf(pos, st, p, rm, cur);
+  vS = st; vP = p; vKind = aK.z; vB = aB; vRm = rm; vCur = cur;
+  vec3 nn = normal; if (aK.z > 3.5) { float c = cos(uRig.w), s = sin(uRig.w); nn = vec3(nn.x * c + nn.z * s, nn.y, -nn.x * s + nn.z * c); }
+  vec4 w = modelMatrix * vec4(pos, 1.); vW = w.xyz; vN = normalize(mat3(modelMatrix) * nn); vC = aCol;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const FS = `
 uniform float uMode; uniform float uGhost; uniform float uPass; uniform vec4 uCut; uniform float uCutOn;
 uniform vec3 uSun; uniform vec3 uPaper; uniform vec3 uRed; uniform vec3 uInk;
-varying vec3 vN; varying vec3 vC; varying vec3 vW; varying float vS; varying float vCur; varying float vKind; varying float vP; varying vec2 vB;
+varying vec3 vN; varying vec3 vC; varying vec3 vW; varying float vS; varying float vCur; varying float vKind; varying float vP; varying vec2 vB; varying float vRm;
 void main(){
   if (uCutOn > .5 && dot(vW, uCut.xyz) > uCut.w) discard;
   bool future = vS < -0.5 && vS > -1.5;
-  if (uPass > .5) {                                   // 幽灵趟：只画未建
+  if (uPass > .5) {                                   // 幽灵趟：只画未建（临时构件更淡）
     if (!future || uGhost < .5) discard;
-    gl_FragColor = vec4(uRed, vCur > .5 ? 0.15 : 0.03); return;
+    gl_FragColor = vec4(uRed, (vCur > .5 ? 0.15 : 0.03) * (vKind > 2.5 ? 0.5 : 1.)); return;
   }
   if (vS < 0.) discard;
   bool cur = vS < 1.;
   if (cur && vKind > .5 && vKind < 1.5 && vW.y > mix(vB.y, vB.x, vP)) discard;  // 掘削：从上往下挖
-  if (cur && vKind > 1.5 && vW.y > mix(vB.x, vB.y, vP)) discard;                // 充填：从下往上
+  if (cur && vKind > 1.5 && vKind < 2.5 && vW.y > mix(vB.x, vB.y, vP)) discard; // 充填：从下往上
+  if (vRm >= 0. && vW.y > mix(vB.y, vB.x, vRm)) discard;                        // 临时构件拆除：从上往下
   vec3 col;
   if (!gl_FrontFacing) {                               // 背面 = 剖切面 / 挖方断面：红色剖面线
     float h = step(0.72, fract((gl_FragCoord.x + gl_FragCoord.y) / 6.));
@@ -185,7 +328,7 @@ void main(){
   }
   vec3 n = normalize(vN); float l = max(dot(n, uSun), 0.); float hemi = 0.5 + 0.5 * n.y;
   if (uMode > .5) {                                    // 墨线 + 淡彩
-    vec3 base = mix(uPaper, vC, 0.42);
+    vec3 base = mix(uPaper, vC, vKind > 2.5 ? 0.62 : 0.42);
     float f = l > 0.55 ? 1.0 : (l > 0.18 ? 0.9 : 0.8);
     if (n.y > 0.75) f = 1.04;
     col = base * f;
@@ -198,64 +341,69 @@ void main(){
   gl_FragColor = vec4(col, 1.);
 }`;
 const LVS = `
-attribute vec3 aK; attribute vec2 aB;
-uniform float uT; uniform vec2 uCur; uniform float uRise;
-varying float vS; varying float vCur; varying vec3 vW; varying float vKind; varying float vP; varying vec2 vB;
+attribute vec3 aK; attribute vec2 aB; attribute vec2 aR;
+uniform float uT; uniform vec2 uCur; uniform float uRise; uniform vec4 uRig; uniform vec4 uRig2;
+varying float vS; varying float vCur; varying vec3 vW; varying float vKind; varying float vP; varying vec2 vB; varying float vRm;
+${STATE}
 void main(){
-  float p = clamp((uT - aK.x) / max(aK.y, 1e-4), 0., 1.);
-  vec3 pos = position; float st;
-  if (aK.z < .5) { st = uT < aK.x ? -1. : (p < 1. ? p : 2.); if (st >= 0. && st < 1.) pos.y -= (1. - st) * (1. - st) * uRise; }
-  else if (aK.z < 1.5) { st = uT < aK.x ? 2. : (p < 1. ? p : -3.); }
-  else { st = uT < aK.x ? -1. : (p < 1. ? p : 2.); }
-  vS = st; vP = p; vKind = aK.z; vB = aB; vCur = (aK.x >= uCur.x - 1e-3 && aK.x < uCur.y) ? 1. : 0.;
+  vec3 pos = position; float st, p, rm, cur; stateOf(pos, st, p, rm, cur);
+  vS = st; vP = p; vKind = aK.z; vB = aB; vRm = rm; vCur = cur;
   vec4 w = modelMatrix * vec4(pos, 1.); vW = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const LFS = `
 uniform float uMode; uniform float uGhost; uniform vec4 uCut; uniform float uCutOn; uniform vec3 uRed; uniform vec3 uInk; uniform float uLA;
-varying float vS; varying float vCur; varying vec3 vW; varying float vKind; varying float vP; varying vec2 vB;
+varying float vS; varying float vCur; varying vec3 vW; varying float vKind; varying float vP; varying vec2 vB; varying float vRm;
 void main(){
   if (uCutOn > .5 && dot(vW, uCut.xyz) > uCut.w) discard;
   if (vS < -1.5) discard;
-  if (vS < 0.) { if (uGhost < .5) discard; gl_FragColor = vec4(uRed, (vCur > .5 ? 0.7 : 0.085) * uLA); return; }
+  if (vS < 0.) { if (uGhost < .5) discard; gl_FragColor = vec4(uRed, (vCur > .5 ? 0.7 : (vKind > 2.5 ? 0.04 : 0.085)) * uLA); return; }
+  if (vRm >= 0. && vW.y > mix(vB.y, vB.x, vRm)) discard;
   if (vS < 1.) {
     if (vKind > .5 && vKind < 1.5 && vW.y > mix(vB.y, vB.x, vP)) discard;
-    if (vKind > 1.5 && vW.y > mix(vB.x, vB.y, vP)) discard;
+    if (vKind > 1.5 && vKind < 2.5 && vW.y > mix(vB.x, vB.y, vP)) discard;
     gl_FragColor = vec4(uRed, 1.); return;
   }
-  gl_FragColor = uMode > .5 ? vec4(uInk, 0.8 * uLA) : vec4(uInk, 0.2 * uLA);
+  gl_FragColor = uMode > .5 ? vec4(uInk, (vKind > 2.5 ? 0.65 : 0.8) * uLA) : vec4(uInk, (vKind > 2.5 ? 0.35 : 0.2) * uLA);
 }`;
 
-// 把 plan 的全部构件并成：solid（不透明，1 次）+ ghost（同一几何，透明，1 次）+ lines（1 次）
+// 把 plan 的全部构件（+ 可选吊具 opt.rig: Geo，局部坐标，sub = 顶点类型）并成：solid（1 次）+ ghost（同一几何，透明，1 次）+ lines（1 次）
 SEQ.compile = function (THREE, plan, opt) {
   opt = opt || {};
+  const items = [];
+  for (const s of plan.steps) if (s.kind !== 'untemp') for (const p of s.parts) items.push([s, p]);
+  if (opt.rig) items.push([null, { geo: opt.rig, kind: 'rig', bb: { min: [0, 0, 0], max: [0, 0, 0] } }]);
   let nv = 0, nl = 0;
-  for (const s of plan.steps) for (const p of s.parts) { nv += p.geo.P.length / 3; nl += p.geo.L.length / 3; }
-  const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), C = new Float32Array(nv * 3), K = new Float32Array(nv * 3), B = new Float32Array(nv * 2);
-  const LP = new Float32Array(nl * 3), LK = new Float32Array(nl * 3), LB = new Float32Array(nl * 2);
+  for (const [, p] of items) { nv += p.geo.P.length / 3; nl += p.geo.L.length / 3; }
+  const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), C = new Float32Array(nv * 3), K = new Float32Array(nv * 3), B = new Float32Array(nv * 2), RM = new Float32Array(nv * 2);
+  const LP = new Float32Array(nl * 3), LK = new Float32Array(nl * 3), LB = new Float32Array(nl * 2), LR = new Float32Array(nl * 2);
   let iv = 0, il = 0;
-  const KIND = { build: 0, remove: 1, fill: 2 };
-  for (const s of plan.steps) for (const p of s.parts) {
-    const g = p.geo, sm = g.subMax, wf = sm > 0 ? (opt.subWindow || 0.22) : 1, kd = KIND[p.kind];
-    const key = sub => { const a = s.start + (sm > 0 ? sub / sm : 0) * s.dur * (1 - wf); return [a, s.dur * wf]; };
+  const KIND = { build: 0, remove: 1, fill: 2, temp: 3, rig: 4 };
+  for (const [s, p] of items) {
+    const g = p.geo, sm = g.subMax, kd = KIND[p.kind], rig = kd === 4, wf = sm > 0 && !rig ? (opt.subWindow || 0.22) : 1;
+    const key = sub => rig ? [0, 0] : [s.start + (sm > 0 ? sub / sm : 0) * s.dur * (1 - wf), s.dur * wf];
+    const rm = s && s.rm ? [s.rm.start, s.rm.dur] : [-1, 0];
     for (let i = 0; i < g.P.length / 3; i++, iv++) {
-      P.set(g.P.slice(i * 3, i * 3 + 3), iv * 3); N.set(g.N.slice(i * 3, i * 3 + 3), iv * 3); C.set(g.C.slice(i * 3, i * 3 + 3), iv * 3);
-      const k = key(g.S[i]); K[iv * 3] = k[0]; K[iv * 3 + 1] = k[1]; K[iv * 3 + 2] = kd; B[iv * 2] = p.bb.min[1]; B[iv * 2 + 1] = p.bb.max[1];
+      for (let k = 0; k < 3; k++) { P[iv * 3 + k] = g.P[i * 3 + k]; N[iv * 3 + k] = g.N[i * 3 + k]; C[iv * 3 + k] = g.C[i * 3 + k]; }
+      const k = key(g.S[i]); K[iv * 3] = k[0]; K[iv * 3 + 1] = k[1]; K[iv * 3 + 2] = kd;
+      B[iv * 2] = rig ? g.S[i] : p.bb.min[1]; B[iv * 2 + 1] = p.bb.max[1]; RM[iv * 2] = rm[0]; RM[iv * 2 + 1] = rm[1];
     }
     for (let i = 0; i < g.L.length / 3; i++, il++) {
       LP[il * 3] = g.L[i * 3]; LP[il * 3 + 1] = g.L[i * 3 + 1]; LP[il * 3 + 2] = g.L[i * 3 + 2];
-      const k = key(g.LS[i]); LK[il * 3] = k[0]; LK[il * 3 + 1] = k[1]; LK[il * 3 + 2] = kd; LB[il * 2] = p.bb.min[1]; LB[il * 2 + 1] = p.bb.max[1];
+      const k = key(g.LS[i]); LK[il * 3] = k[0]; LK[il * 3 + 1] = k[1]; LK[il * 3 + 2] = kd;
+      LB[il * 2] = rig ? g.LS[i] : p.bb.min[1]; LB[il * 2 + 1] = p.bb.max[1]; LR[il * 2] = rm[0]; LR[il * 2 + 1] = rm[1];
     }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3));
-  geo.setAttribute('aCol', new THREE.BufferAttribute(C, 3)); geo.setAttribute('aK', new THREE.BufferAttribute(K, 3)); geo.setAttribute('aB', new THREE.BufferAttribute(B, 2));
+  geo.setAttribute('aCol', new THREE.BufferAttribute(C, 3)); geo.setAttribute('aK', new THREE.BufferAttribute(K, 3)); geo.setAttribute('aB', new THREE.BufferAttribute(B, 2)); geo.setAttribute('aR', new THREE.BufferAttribute(RM, 2));
   geo.computeBoundingSphere();
   const lgeo = new THREE.BufferGeometry();
-  lgeo.setAttribute('position', new THREE.BufferAttribute(LP, 3)); lgeo.setAttribute('aK', new THREE.BufferAttribute(LK, 3)); lgeo.setAttribute('aB', new THREE.BufferAttribute(LB, 2));
+  lgeo.setAttribute('position', new THREE.BufferAttribute(LP, 3)); lgeo.setAttribute('aK', new THREE.BufferAttribute(LK, 3)); lgeo.setAttribute('aB', new THREE.BufferAttribute(LB, 2)); lgeo.setAttribute('aR', new THREE.BufferAttribute(LR, 2));
   lgeo.computeBoundingSphere();
   const U = {
     uT: { value: 0 }, uCur: { value: new THREE.Vector2(-1, -1) }, uRise: { value: opt.rise == null ? 1.6 : opt.rise },
+    uRig: { value: new THREE.Vector4(0, -999, 0, 0) }, uRig2: { value: new THREE.Vector4(0, 0, 0, 0) },
     uMode: { value: 1 }, uLA: { value: 1 }, uGhost: { value: 1 }, uCut: { value: new THREE.Vector4(0, 0, 1, 1e9) }, uCutOn: { value: 0 },
     uSun: { value: new THREE.Vector3(-0.45, 0.78, 0.43).normalize() }, uPaper: { value: new THREE.Color(opt.paper || 0xefe9dd) }, uRed: { value: new THREE.Color(opt.red || 0xb3202a) }, uInk: { value: new THREE.Color(opt.ink || 0x1d1a17) },
   };
@@ -266,8 +414,16 @@ SEQ.compile = function (THREE, plan, opt) {
   solid.renderOrder = 0; lines.renderOrder = 1; ghost.renderOrder = 2;
   solid.frustumCulled = ghost.frustumCulled = lines.frustumCulled = false;
   const group = new THREE.Group(); group.add(solid, lines, ghost);
-  return { group, solid, ghost, lines, U, tris: nv / 3, segs: nl / 2,
-    set(t) { U.uT.value = t; const r = plan.at(t); if (r.cur) U.uCur.value.set(r.cur.start, r.cur.end); else U.uCur.value.set(-1, -1); return r; } };
+  const rigState = { on: 0 };
+  return { group, solid, ghost, lines, U, tris: nv / 3, segs: nl / 2, rig: rigState,
+    set(t) {
+      U.uT.value = t; const r = plan.at(t); if (r.cur) U.uCur.value.set(r.cur.start, r.cur.end); else U.uCur.value.set(-1, -1);
+      // 吊具：跟着当前步骤；吊物按进度往复提升（lifts 次）
+      const q = r.cur && r.cur.rig;
+      if (q) { const ph = (r.p * (q.lifts || 3)) % 1, drop = q.dropMax - (q.dropMax - q.dropMin) * ph;
+        U.uRig.value.set(q.x, q.y, q.z, q.yaw); U.uRig2.value.set(q.h, q.lean, drop, q.legs ? 2 : 1); rigState.on = q.legs ? 2 : 1; rigState.pose = q; rigState.drop = drop; }
+      else { U.uRig2.value.set(0, 0, 0, 0); rigState.on = 0; rigState.pose = null; }
+      return r; } };
 };
 
 G.SEQ = SEQ;
