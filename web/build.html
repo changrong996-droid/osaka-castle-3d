@@ -3,105 +3,143 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>大阪城 天守 · 筑城图（小样 proto-build1）</title>
+<link rel="icon" href="data:,">
+<title>大阪城 天守 · 筑城图（小样 proto-build2）</title>
 <style>
 :root{--paper:#efe9dd;--paper2:#f6f2ea;--ink:#1d1a17;--ink2:#5d564c;--ink3:#948b7d;--red:#b3202a;--red2:#e6bab4;--red3:#f3dcd8;--line:#d4cbbb;--line2:#e3dccf;
 --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono","Noto Sans Mono CJK SC","WenQuanYi Micro Hei Mono",monospace;
---serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC","STSong",serif;--sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei","WenQuanYi Micro Hei",sans-serif}
+--serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC","STSong",serif;--sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei","WenQuanYi Micro Hei",sans-serif;
+--hdH:62px;--btH:238px;--rpW:372px;--vpMin:300px;--appMin:0px}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);font-family:var(--sans);font-size:12px;
+html,body{margin:0;height:100%;color:var(--ink);font-family:var(--sans);font-size:12px;overflow:hidden;
 background-color:var(--paper);background-image:linear-gradient(rgba(120,100,80,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(120,100,80,.07) 1px,transparent 1px);background-size:24px 24px}
-#gl{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block}
-#app{position:fixed;inset:0;z-index:1;display:grid;grid-template-columns:1fr 372px;grid-template-rows:62px 1fr 238px;gap:10px;padding:10px 12px 12px;pointer-events:none}
-#app>*{pointer-events:auto}
+body.scroll{overflow-y:auto}
+#gl{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;pointer-events:none}
+#app{position:relative;z-index:1;height:100%;min-height:var(--appMin);display:grid;grid-template-columns:minmax(0,1fr) var(--rpW);grid-template-rows:var(--hdH) minmax(var(--vpMin),1fr) var(--btH);gap:10px;padding:10px 12px 12px;pointer-events:none}
+#app>*{pointer-events:auto;min-width:0;min-height:0}
 .mono{font-family:var(--mono)}
 .card{background:var(--paper2);border:1px solid var(--line);border-radius:10px}
+svg.i{width:12px;height:12px;display:block;fill:currentColor}
 /* 页眉 */
-#hd{grid-column:1/2;display:flex;align-items:center;gap:16px;padding:0 6px}
-#hd .logo{width:44px;height:52px}
-#hd h1{margin:0;font-family:var(--serif);font-size:27px;letter-spacing:3px;font-weight:900;line-height:1}
+#hd{grid-column:1/2;display:flex;align-items:center;gap:16px;padding:0 6px;overflow:hidden}
+#hd .logo{width:44px;height:52px;flex:none}
+#hd h1{margin:0;font-family:var(--serif);font-size:27px;letter-spacing:3px;font-weight:900;line-height:1;white-space:nowrap}
 #hd h1 b{color:var(--red)}
-#hd .sub{font-family:var(--mono);font-size:10.5px;letter-spacing:2.5px;color:var(--ink2);margin-top:5px}
-#hd .glyphs{display:flex;gap:14px;align-items:center;margin-left:auto;color:var(--ink2)}
-#hd table.tb{border-collapse:collapse;font-family:var(--mono);font-size:9px;color:var(--ink2)}#hd table.tb td{border:1px solid var(--ink3);padding:0 4px;height:12px}
-#status{grid-column:2/3;display:flex;align-items:center;gap:10px;padding:8px 12px}
-#status .ic{width:34px;height:34px;border:1px solid var(--line);border-radius:7px;display:grid;place-items:center;position:relative}
+#hd .sub{font-family:var(--mono);font-size:10.5px;letter-spacing:2.5px;color:var(--ink2);margin-top:5px;white-space:nowrap}
+#hd .glyphs{display:flex;gap:14px;align-items:center;margin-left:auto;color:var(--ink2);flex:none}
+#hd table.tb{border-collapse:collapse;font-family:var(--mono);font-size:9px;color:var(--ink2)}#hd table.tb td{border:1px solid var(--ink3);padding:0 4px;height:12px;white-space:nowrap}
+body.short #hd .logo{width:34px;height:40px}body.short #hd h1{font-size:22px}body.short #hd .sub{font-size:9.5px;margin-top:3px}body.short #hd .glyphs svg{height:34px}
+body.nw1 #hd .g-el{display:none}body.nw2 #hd .glyphs{display:none}body.nw2 #hd .sub{letter-spacing:1px}body.nw3 #hd .sub{display:none}
+#status{grid-column:2/3;display:flex;align-items:center;gap:10px;padding:6px 12px;overflow:hidden}
+#status .ic{width:34px;height:34px;border:1px solid var(--line);border-radius:7px;display:grid;place-items:center;position:relative;flex:none}
 #status .ic:after{content:"";position:absolute;right:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--red)}
-#st-stage{font-weight:700;font-size:14px;letter-spacing:1px}
-#st-step{font-family:var(--mono);font-size:10px;color:var(--ink2);margin-top:2px}
-#st-bar{height:3px;background:var(--line2);border-radius:2px;margin-top:4px;width:150px;overflow:hidden}#st-bar i{display:block;height:100%;background:var(--red);width:0}
-#st-r{margin-left:auto;text-align:right}
+#status .mid{min-width:0}
+#st-stage{font-weight:700;font-size:14px;letter-spacing:1px;white-space:nowrap}
+#st-step{font-family:var(--mono);font-size:10px;color:var(--ink2);margin-top:2px;white-space:nowrap}
+#st-bar{height:3px;background:var(--line2);border-radius:2px;margin-top:4px;width:150px;max-width:100%;overflow:hidden}#st-bar i{display:block;height:100%;background:var(--red);width:0}
+#st-r{margin-left:auto;text-align:right;flex:none}
 #st-date{font-family:var(--mono);font-size:17px;font-weight:700;letter-spacing:1px}
-#st-day{font-family:var(--mono);font-size:9.5px;color:var(--ink2)}#st-day b{color:var(--red);font-weight:600}
-/* 视口 */
-#vp{grid-column:1/2;grid-row:2/3;position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:transparent;cursor:grab}
-#vp:active{cursor:grabbing}
-#tools{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap}
-.btn{font-family:var(--sans);font-size:11.5px;background:var(--paper2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;color:var(--ink);cursor:pointer;display:inline-flex;gap:6px;align-items:center;line-height:1.2;user-select:none}
+#st-day{font-family:var(--mono);font-size:9.5px;color:var(--ink2);white-space:nowrap}#st-day b{color:var(--red);font-weight:600}
+body.short #status .ic{display:none}body.short #st-date{font-size:15px}
+/* 视口：上 = 3D 区（叠层），下 = 控制条（不压在模型上） */
+#vp{grid-column:1/2;grid-row:2/3;position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;background:transparent}
+#view3d{position:relative;flex:1;min-height:0;cursor:grab;touch-action:none}
+#view3d:active{cursor:grabbing}
+#lcol{position:absolute;left:10px;top:10px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;max-width:calc(100% - 20px)}
+#tools{display:flex;gap:6px;flex-wrap:wrap}
+.btn{font-family:var(--sans);font-size:11.5px;background:var(--paper2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;color:var(--ink);cursor:pointer;display:inline-flex;gap:6px;align-items:center;line-height:1.2;user-select:none;white-space:nowrap}
 .btn:hover{border-color:var(--ink3)}.btn.on{border-color:var(--red);color:var(--red);background:#fbf3f1}.btn.red{background:var(--red);border-color:var(--red);color:#fff}
 .btn kbd{font-family:var(--mono);font-size:9px;color:var(--ink3);border:none;padding:0}.btn.on kbd{color:var(--red)}.btn.red kbd{color:#f3c9c9}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--red);display:inline-block}
-#ttl{position:absolute;left:10px;top:50px;padding:10px 14px 10px 14px;border-left:3px solid var(--red);background:rgba(246,242,234,.86);max-width:430px;pointer-events:none}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ink3);display:inline-block}.btn.on .dot{background:var(--red)}
+#ttl{padding:9px 14px;border-left:3px solid var(--red);background:rgba(246,242,234,.9);max-width:430px;pointer-events:none}
 #ttl h2{margin:0;font-family:var(--serif);font-size:19px;font-weight:700}
 #ttl .d{color:var(--ink2);font-size:11.5px;margin-top:3px;font-family:var(--serif)}
 #ttl .k{font-family:var(--mono);color:var(--red);font-size:11px;margin-top:8px;letter-spacing:.5px}
 #ttl .e{font-weight:700;font-size:13px;margin-top:6px}
 #ttl .e2{color:var(--red);font-size:11px;margin-top:2px;font-family:var(--serif)}
-#dbox{position:absolute;right:10px;top:10px;border:1.5px solid var(--red);background:rgba(246,242,234,.9);width:226px;font-family:var(--mono);font-size:10px;pointer-events:none}
-#dbox .r{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--red2)}#dbox .r>div{padding:4px 7px}#dbox .r>div+div{border-left:1px solid var(--red2)}
-#dbox .l{color:var(--red);font-size:8.5px;letter-spacing:1px}#dbox .v{font-size:11px;margin-top:1px}#dbox .t{padding:5px 7px;font-family:var(--serif);font-size:13px;font-weight:700}
-#lead{position:absolute;inset:0;pointer-events:none}
-#play{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;display:flex;gap:6px;align-items:center;background:rgba(246,242,234,.94);border:1px solid var(--line);border-radius:11px;padding:6px 8px;box-shadow:0 2px 10px rgba(60,40,20,.08)}
-#play .btn{padding:6px 10px;font-size:11px;flex-direction:column;gap:1px}
-#tlab{font-family:var(--mono);font-size:11.5px;min-width:168px;text-align:center}
-#track{position:absolute;left:16px;right:168px;bottom:70px;height:36px;pointer-events:auto;cursor:pointer}
-#track .bands{position:absolute;left:0;right:0;top:12px;height:5px}
+#ttl h2:first-child+.d+.k{margin-top:8px}
+#view3d.c1 #ttl .d{display:none}
+#view3d.c3 #ttl h2,#view3d.c3 #ttl .e2{display:none}#view3d.c3 #ttl .k{margin-top:0}#view3d.c3 .btn kbd{display:none}#view3d.c3 .btn{padding:4px 8px}
+#view3d.c5 #ttl{display:none}
+#dbox{position:absolute;right:10px;top:10px;border:1.5px solid var(--red);background:rgba(246,242,234,.92);width:226px;font-family:var(--mono);font-size:10px;pointer-events:none}
+#dbox .r{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--red2)}#dbox .r>div{padding:4px 7px;min-width:0}#dbox .r>div+div{border-left:1px solid var(--red2)}
+#dbox .l{color:var(--red);font-size:8.5px;letter-spacing:1px}#dbox .v{font-size:11px;margin-top:1px;white-space:nowrap}#dbox .t{padding:5px 7px;font-family:var(--serif);font-size:13px;font-weight:700;white-space:nowrap}
+#view3d.c2 #dbox .r.x{display:none}
+#view3d.c4 #dbox{display:none}
+#lead{position:absolute;inset:0;pointer-events:none;overflow:visible}
+#hudp{position:absolute;right:10px;bottom:10px;font-family:var(--mono);font-size:9.5px;color:var(--ink2);background:rgba(246,242,234,.92);border:1px solid var(--line);border-radius:8px;padding:6px 8px;line-height:1.55;width:150px}
+#hudp .fps{font-size:22px;font-weight:700;color:var(--ink);line-height:1;white-space:nowrap}#hudp .fps small{font-size:9px;color:var(--ink2);margin-left:3px}#hudp .lv{color:var(--red);float:right;font-size:8.5px;letter-spacing:1px}
+#hudp table{border-collapse:collapse;width:100%;margin-top:3px}#hudp td{padding:0;white-space:nowrap}#hudp td+td{text-align:right;color:var(--ink)}
+#view3d.c2 #hudp tr.x{display:none}
+#view3d.c4 #hudp table{display:none}#view3d.c4 #hudp{width:auto}
+/* 控制条 */
+#ctrl{flex:none;user-select:none;-webkit-user-select:none;display:flex;align-items:center;gap:6px;padding:6px 8px;border-top:1px solid var(--line);background:rgba(246,242,234,.96)}
+#ctrl .btn{padding:4px 9px;font-size:11px;flex-direction:column;gap:1px;min-width:34px}
+#ctrl .btn kbd{font-size:8.5px}
+#tlab{font-family:var(--mono);font-size:11px;text-align:right;white-space:nowrap;flex:none;color:var(--ink)}
+#tlab small{color:var(--ink2);font-size:10px}
+#track{position:relative;flex:1;min-width:120px;height:34px;cursor:pointer;margin:0 8px;touch-action:none}
+#track .bands{position:absolute;left:0;right:0;top:8px;height:5px;background:var(--line2)}
 #track .bands i{position:absolute;top:0;height:5px;background:var(--red2)}#track .bands i.o{background:#d9cfc0}
-#track .fill{position:absolute;left:0;top:12px;height:5px;background:var(--red)}
-#track .knob{position:absolute;top:7px;width:15px;height:15px;margin-left:-7.5px;border-radius:50%;background:#fff;border:2px solid var(--red)}
-#track .lab{position:absolute;top:21px;font-family:var(--mono);font-size:9px;color:var(--ink2);white-space:nowrap;transform:translateX(-2px)}
-#track .tick{position:absolute;top:8px;width:1px;height:13px;background:var(--ink3)}
-#hudp{position:absolute;right:10px;bottom:10px;font-family:var(--mono);font-size:9.5px;color:var(--ink2);background:rgba(246,242,234,.9);border:1px solid var(--line);border-radius:8px;padding:6px 8px;line-height:1.55;min-width:128px}
-#hudp .fps{font-size:22px;font-weight:700;color:var(--ink);line-height:1}#hudp .fps small{font-size:9px;color:var(--ink2);margin-left:3px}#hudp .lv{color:var(--red);float:right;font-size:8.5px;letter-spacing:1px}
-#hudp table{border-collapse:collapse;width:100%;margin-top:3px}#hudp td{padding:0}#hudp td+td{text-align:right;color:var(--ink)}
+#track .fill{position:absolute;left:0;top:8px;height:5px;background:var(--red);pointer-events:none}
+#track .knob{position:absolute;top:3px;width:15px;height:15px;margin-left:-7.5px;border-radius:50%;background:#fff;border:2px solid var(--red);pointer-events:none}
+#track .lab{position:absolute;top:20px;font-family:var(--mono);font-size:9px;color:var(--ink2);white-space:nowrap;pointer-events:none}
+#track .tick{position:absolute;top:5px;width:1px;height:11px;background:var(--ink3);pointer-events:none}
+body.nwv #tlab small{display:none}
 /* 右栏 */
-#rp{grid-column:2/3;grid-row:2/4;display:flex;flex-direction:column;overflow:hidden}
-.ph{display:flex;align-items:center;gap:8px;padding:10px 14px 6px}.ph h3{margin:0;font-size:13px;letter-spacing:2px;font-weight:800}
-.ph .tabs{display:flex;gap:2px;margin-left:6px}.ph .tabs span{font-size:10.5px;padding:2px 8px;border-radius:5px;color:var(--ink2)}.ph .tabs span.on{background:var(--red3);color:var(--red)}
+#rp{grid-column:2/3;grid-row:2/4;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+.ph{display:flex;align-items:center;gap:8px;padding:10px 14px 6px}.ph h3{margin:0;font-size:13px;letter-spacing:2px;font-weight:800;white-space:nowrap}
+.ph .tabs{display:flex;gap:2px;margin-left:6px}.ph .tabs span{font-size:10.5px;padding:2px 8px;border-radius:5px;color:var(--ink2);cursor:pointer;user-select:none}.ph .tabs span:hover{background:var(--line2)}.ph .tabs span.on{background:var(--red3);color:var(--red)}
 .crumb{font-family:var(--mono);font-size:9.5px;color:var(--ink2);padding:0 14px 6px;border-bottom:1px solid var(--line2)}.crumb b{color:var(--red);font-weight:500}
 .sec{padding:7px 14px;border-bottom:1px solid var(--line2)}
-.sh{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:1.5px;font-weight:800;margin-bottom:5px}.sh span{font-family:var(--mono);font-weight:400;letter-spacing:0;color:var(--ink2);font-size:9.5px}
+.sh{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:1.5px;font-weight:800;margin-bottom:5px;white-space:nowrap}.sh span{font-family:var(--mono);font-weight:400;letter-spacing:0;color:var(--ink2);font-size:9.5px}
 #gantt{position:relative}
-#gantt .row{display:grid;grid-template-columns:76px 1fr 34px;align-items:center;height:15px;font-family:var(--mono);font-size:9.5px;color:var(--ink3)}
+#gantt .row{display:grid;grid-template-columns:76px 1fr 34px;align-items:center;height:15px;font-family:var(--mono);font-size:9.5px;color:var(--ink3);white-space:nowrap}
+body.short #gantt .row{height:13px}
 #gantt .row.cur{color:var(--red);font-weight:600}#gantt .row.done{color:var(--ink)}
 #gantt .tr{position:relative;height:7px}#gantt .tr i{position:absolute;top:0;height:7px;background:repeating-linear-gradient(90deg,var(--red2) 0 2px,transparent 2px 3px)}#gantt .tr b{position:absolute;top:0;height:7px;background:var(--red)}
 #gantt .pc{text-align:right}
-#gantt .cl{position:absolute;top:0;bottom:0;width:1.5px;background:var(--red);pointer-events:none}
-.grid2{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#fbf9f5}
-.grid2>div{padding:4px 7px;border-right:1px solid var(--line2);border-bottom:1px solid var(--line2)}.grid2>div:nth-child(3n){border-right:none}
-.grid2 .l{font-family:var(--mono);font-size:8.5px;color:var(--ink3);letter-spacing:1px}.grid2 .v{font-family:var(--mono);font-size:11.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.grid2 .v.r{color:var(--red)}
-.grid2 .w{grid-column:1/4;border-right:none}
+#gantt .cl{position:absolute;top:0;bottom:0;width:1.5px;margin-left:-.75px;background:var(--red);pointer-events:none}
+.grid2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#fbf9f5}
+.grid2>div{padding:4px 7px;border-right:1px solid var(--line2);border-bottom:1px solid var(--line2);min-width:0}.grid2>div:nth-child(3n){border-right:none}
+.grid2 .l{font-family:var(--mono);font-size:8.5px;color:var(--ink3);letter-spacing:1px;white-space:nowrap}.grid2 .v{font-family:var(--mono);font-size:11.5px;margin-top:1px;white-space:nowrap}.grid2 .v.r{color:var(--red)}
+.grid2 .w{grid-column:1/4;border-right:none}.grid2 .w2{grid-column:1/3}.grid2>div.e3{border-right:none}.grid2>div.w2{border-right:1px solid var(--line2)}.grid2 .w .v{white-space:normal;line-height:1.35}
 #el .nm{font-weight:800;font-size:13.5px;padding:5px 7px;border:1px solid var(--line);border-radius:7px 7px 0 0;border-bottom:none;background:#fbf9f5}
 #el .nm small{display:block;font-family:var(--mono);font-size:8.5px;color:var(--ink3);font-weight:400;letter-spacing:1px}
 #el .grid2{border-radius:0 0 7px 7px}
 #stats .grid2 .v{font-size:13px}
-#chk{font-family:var(--mono);font-size:9.5px;color:var(--ink2);line-height:1.6}#chk b{color:#2f7a3a;font-weight:600}#chk b.ng{color:var(--red)}
+#chk,#rules{font-family:var(--mono);font-size:9.5px;color:var(--ink2);line-height:1.6}#chk b{color:#2f7a3a;font-weight:600}#chk b.ng{color:var(--red)}
+#rules h4{margin:4px 0 3px;font-family:var(--sans);font-size:10.5px;letter-spacing:1.5px;color:var(--ink)}
+#rules p{margin:0 0 6px}#rules p b{color:var(--red);font-weight:600}
+#rules table{border-collapse:collapse;width:100%;margin-bottom:6px}#rules td,#rules th{border-bottom:1px solid var(--line2);padding:1px 3px;text-align:left;font-weight:400;white-space:nowrap}#rules th{color:var(--ink3);font-size:8.5px}#rules td.n{text-align:right}#rules td:nth-child(5),#rules th:nth-child(5){padding-left:9px}
+#rp .pane{display:none}#rp.t-order .pane.order,#rp.t-rules .pane.rules{display:block}
 /* 底栏：图纸 + 日志 */
-#bt{grid-column:1/2;grid-row:3/4;display:grid;grid-template-columns:0.92fr 0.92fr 1.3fr;gap:10px}
-.sheet{position:relative;padding:0;overflow:hidden;background:transparent;border:1px solid var(--line)}
+#bt{grid-column:1/2;grid-row:3/4;display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,.92fr) minmax(0,1.3fr);gap:10px}
+#bt.nosheets{grid-template-columns:minmax(0,1fr)}#bt.nosheets .sheet{display:none}
+.sheet{position:relative;padding:0;overflow:hidden;background:transparent;border:1px solid var(--line);container-type:inline-size}
 .sheet.live{border:1.5px solid var(--red)}
 .sheet .draw{position:absolute;left:8px;top:8px;right:118px;bottom:8px;border:1px solid var(--ink)}
-.sheet .tbk{position:absolute;right:8px;top:8px;bottom:8px;width:104px;border:1px solid var(--ink);background:var(--paper2);font-family:var(--mono);font-size:8.5px;display:flex;flex-direction:column}
-.sheet .tbk>div{border-bottom:1px solid var(--ink3);padding:3px 5px}.sheet .tbk .l{color:var(--ink3);font-size:7.5px;letter-spacing:1px}.sheet .tbk .v{font-size:10px;color:var(--ink)}
+.sheet .tbk{position:absolute;right:8px;top:8px;bottom:8px;width:104px;border:1px solid var(--ink);background:var(--paper2);font-family:var(--mono);font-size:8.5px;display:flex;flex-direction:column;overflow:hidden}
+.sheet .tbk>div{border-bottom:1px solid var(--ink3);padding:3px 5px;min-width:0}.sheet .tbk .l{color:var(--ink3);font-size:7.5px;letter-spacing:1px;white-space:nowrap}.sheet .tbk .v{font-size:10px;color:var(--ink);white-space:nowrap}
 .sheet .tbk .big{font-family:var(--serif);font-weight:800;font-size:12px;line-height:1.2}.sheet .tbk .no{margin-top:auto;border-bottom:none;font-size:15px;font-weight:700}
-.sheet .tag{position:absolute;left:14px;top:13px;font-family:var(--mono);font-size:8.5px;background:var(--red);color:#fff;padding:1px 5px;border-radius:3px;letter-spacing:1px}
-.sheet svg{position:absolute;left:8px;top:8px;pointer-events:none;overflow:visible}
-.sheet .bg{position:absolute;left:8px;top:8px;right:118px;bottom:8px;background:transparent}
-#log{display:flex;flex-direction:column;overflow:hidden}
-#log .ph{padding:8px 12px 4px}.badge{font-family:var(--mono);font-size:9px;background:var(--red);color:#fff;padding:1px 6px;border-radius:3px;letter-spacing:1px}
-#logl{font-family:var(--mono);font-size:9.5px;line-height:1.62;padding:2px 12px 8px;overflow:hidden;flex:1;display:flex;flex-direction:column;justify-content:flex-end}
-#logl div{display:grid;grid-template-columns:62px 26px 1fr 74px 84px;gap:5px;color:var(--ink2)}#logl div>*{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#logl div b{color:var(--red);font-weight:600}#logl div.new{color:var(--ink)}#logl div.end b{color:var(--ink)}
+.sheet .tbk .sm{font-size:8px;color:var(--ink3)}
+.sheet .tag{font-family:var(--mono);font-size:7.5px;background:var(--red);color:#fff;padding:0 4px;border-radius:3px;letter-spacing:1px;float:right;line-height:12px}
+.sheet svg{position:absolute;left:8px;top:8px;pointer-events:none;overflow:hidden}
+@container (max-width:330px){
+ .sheet .draw{right:8px;bottom:40px}
+ .sheet .tbk{left:8px;top:auto;height:28px;width:auto;flex-direction:row;align-items:stretch}
+ .sheet .tbk>div{border-bottom:none;border-right:1px solid var(--ink3);padding:2px 5px}
+ .sheet .tbk .x{display:none}.sheet .tbk .no{margin-top:0;margin-left:auto;border-right:none;font-size:13px;line-height:22px}
+ .sheet .tbk .big{font-size:11px}
+}
+#log{display:flex;flex-direction:column;overflow:hidden;container-type:inline-size}
+#log .ph{padding:8px 12px 4px}.badge{font-family:var(--mono);font-size:9px;background:var(--red);color:#fff;padding:1px 6px;border-radius:3px;letter-spacing:1px;white-space:nowrap}
+#logl{font-family:var(--mono);font-size:9.5px;line-height:1.62;padding:2px 12px 6px;overflow:hidden;flex:1;min-height:0}
+#logl div{display:grid;grid-template-columns:64px 32px minmax(0,1fr) 66px 86px;gap:6px;color:var(--ink2)}#logl div>*{white-space:nowrap;overflow:hidden}#logl div b{color:var(--red);font-weight:600}#logl div.new{color:var(--ink);background:#fbf3f1}#logl div.end b{color:var(--ink)}
 #logl .hd{color:var(--ink3);border-bottom:1px solid var(--line2);margin-bottom:2px}
+@container (max-width:400px){#logl div{grid-template-columns:64px 32px minmax(0,1fr) 62px}#logl div>:nth-child(5){display:none}}
+@container (max-width:300px){#logl div{grid-template-columns:64px 32px minmax(0,1fr)}#logl div>:nth-child(4){display:none}}
+body.rpn #status .ic{display:none}body.rpn #st-stage{font-size:12.5px}body.rpn #st-date{font-size:14px}body.rpn .grid2 .v{font-size:10.5px}body.rpn #stats .grid2 .v{font-size:11.5px}body.rpn #dbox{width:206px}
 #load{position:fixed;inset:0;z-index:5;display:grid;place-items:center;font-family:var(--serif);font-size:16px;color:var(--ink2);background:var(--paper)}
 </style>
 </head>
@@ -111,74 +149,81 @@ background-color:var(--paper);background-image:linear-gradient(rgba(120,100,80,.
 <div id="app">
   <header id="hd">
     <svg class="logo" viewBox="0 0 44 52" fill="none" stroke="#b3202a" stroke-width="1.4"><path d="M22 3v4M17 9h10l3 3H14z M15 12v5h14v-5 M11 17h22l4 4H7z M12 21v6h20v-6 M7 27h30l5 5H2z M9 32v7h26v-7"/><path d="M4 39h36l2 10H2z" stroke="#1d1a17"/><path d="M8 43h28M6 46h32" stroke="#1d1a17" stroke-width=".8"/></svg>
-    <div><h1>大阪城 <b>筑城图</b></h1><div class="sub">丰臣期天守 · 石垣 · 施工顺序 · 联动图纸 · 小样 PROTO-BUILD1</div></div>
+    <div><h1>大阪城 <b>筑城图</b></h1><div class="sub">丰臣期天守 · 石垣 · 施工顺序 · 联动图纸 · 小样 PROTO-BUILD2</div></div>
     <div class="glyphs">
-      <svg width="120" height="44" viewBox="0 0 120 44" fill="none" stroke="#5d564c" stroke-width=".8"><path d="M6 40h108" stroke-dasharray="2 2"/><path d="M40 40l4-14h32l4 14M46 26v-5h28v5M43 21h34l-3-3H46zM50 18v-4h20v4M48 14h24l-3-3H51zM55 11V7h10v4M53 7h14l-2-2H55z"/><text x="84" y="10" font-size="6.5" fill="#b3202a" stroke="none" font-family="monospace">+59.03 大棟</text><path d="M80 8h-6" stroke="#b3202a" stroke-dasharray="1 1"/></svg>
+      <svg class="g-el" width="140" height="44" viewBox="0 0 140 44" fill="none" stroke="#5d564c" stroke-width=".8"><path d="M6 40h108" stroke-dasharray="2 2"/><path d="M40 40l4-14h32l4 14M46 26v-5h28v5M43 21h34l-3-3H46zM50 18v-4h20v4M48 14h24l-3-3H51zM55 11V7h10v4M53 7h14l-2-2H55z"/><text x="84" y="10" font-size="6.5" fill="#b3202a" stroke="none" font-family="monospace">+59.03 大棟</text><path d="M80 8h-6" stroke="#b3202a" stroke-dasharray="1 1"/></svg>
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#5d564c" stroke-width=".8"><circle cx="20" cy="20" r="14"/><path d="M20 3v34M3 20h34"/><path d="M20 6l3 14-3 2-3-2z" fill="#b3202a" stroke="none"/><text x="18" y="3" font-size="5" fill="#5d564c" stroke="none">北</text></svg>
-      <table class="tb"><tr><td>图号</td><td>OSK-T</td></tr><tr><td>版次</td><td>proto1</td></tr><tr><td>坐标</td><td>天守台心 ±0</td></tr></table>
+      <table class="tb"><tr><td>图号</td><td>OSK-T</td></tr><tr><td>版次</td><td>proto2</td></tr><tr><td>坐标</td><td>天守台心 ±0</td></tr></table>
     </div>
   </header>
   <div id="status" class="card">
     <div class="ic"><svg width="20" height="20" viewBox="0 0 44 52" fill="none" stroke="#1d1a17" stroke-width="2.4"><path d="M17 9h10l3 3H14z M11 17h22l4 4H7z M7 27h30l5 5H2z M4 39h36l2 10H2z"/></svg></div>
-    <div><div id="st-stage">—</div><div id="st-step">—</div><div id="st-bar"><i></i></div></div>
+    <div class="mid"><div id="st-stage">—</div><div id="st-step">—</div><div id="st-bar"><i></i></div></div>
     <div id="st-r"><div id="st-date">—</div><div id="st-day">—</div></div>
   </div>
   <div id="vp">
-    <svg id="lead"></svg>
-    <div id="tools">
-      <span class="btn on"><span class="dot"></span>轨道相机</span>
-      <span class="btn on" id="b-mode">墨线·淡彩 <kbd>C</kbd></span>
-      <span class="btn on" id="b-ghost">幽灵 <kbd>G</kbd></span>
-      <span class="btn" id="b-cut">剖切 B–B <kbd>X</kbd></span>
-      <span class="btn" id="b-view">复位视角 <kbd>V</kbd></span>
+    <div id="view3d">
+      <svg id="lead"></svg>
+      <div id="lcol">
+        <div id="tools">
+          <span class="btn" id="b-orbit"><span class="dot"></span>轨道相机 <kbd>O</kbd></span>
+          <span class="btn on" id="b-mode">墨线·淡彩 <kbd>C</kbd></span>
+          <span class="btn on" id="b-ghost">幽灵 <kbd>G</kbd></span>
+          <span class="btn" id="b-cut">剖切 B–B <kbd>X</kbd></span>
+          <span class="btn" id="b-view">复位视角 <kbd>V</kbd></span>
+        </div>
+        <div id="ttl"><h2>大阪城天守 — 筑城图</h2><div class="d">天正十一年起 · 由下而上按规则排序：整地 → 掘堀 → 石垣逐段 → 礎石 → 柱梁逐层 → 屋根 → 壁 → 葺瓦 → 金鯱</div>
+          <div class="k" id="ttl-k">—</div><div class="e" id="ttl-e">—</div><div class="e2" id="ttl-e2">—</div></div>
+      </div>
+      <div id="dbox"><div class="t">大阪城 天守 · 二重櫓</div>
+        <div class="r x"><div><div class="l">图号</div><div class="v">OSK-T / A-101</div></div><div><div class="l">投影</div><div class="v">透视 30°</div></div></div>
+        <div class="r"><div><div class="l">阶段</div><div class="v" id="db-st">—</div></div><div><div class="l">步骤</div><div class="v" id="db-sp">—</div></div></div>
+        <div class="r x"><div><div class="l">构件</div><div class="v" id="db-np">—</div></div><div><div class="l">总重</div><div class="v" id="db-ms">—</div></div></div>
+        <div class="r x"><div><div class="l">相机</div><div class="v" id="db-cam">—</div></div><div><div class="l">剖切</div><div class="v" id="db-cut">—</div></div></div>
+      </div>
+      <div id="hudp"><span class="lv">GPU · 实测</span><div class="fps"><span id="h-fps">—</span><small>FPS</small></div>
+        <table><tr><td>帧时 p50</td><td id="h-ms">—</td></tr><tr><td>主视图绘制</td><td id="h-dc">—</td></tr><tr><td>本帧合计</td><td id="h-dt">—</td></tr><tr class="x"><td>三角形</td><td id="h-tr">—</td></tr><tr class="x"><td>墨线段</td><td id="h-sg">—</td></tr><tr class="x"><td>像素比</td><td id="h-pr">—</td></tr><tr class="x"><td>GPU</td><td id="h-gpu">—</td></tr></table></div>
     </div>
-    <div id="ttl"><h2>大阪城天守 — 筑城图</h2><div class="d">天正十一年起 · 由下而上按规则排序：整地 → 掘堀 → 石垣逐段 → 礎石 → 柱梁逐层 → 屋根 → 壁 → 葺瓦 → 金鯱</div>
-      <div class="k" id="ttl-k">—</div><div class="e" id="ttl-e">—</div><div class="e2" id="ttl-e2">—</div></div>
-    <div id="dbox"><div class="t">大阪城 天守 · 二重櫓</div>
-      <div class="r"><div><div class="l">图号</div><div class="v">OSK-T / A-101</div></div><div><div class="l">投影</div><div class="v">透视 30°</div></div></div>
-      <div class="r"><div><div class="l">阶段</div><div class="v" id="db-st">—</div></div><div><div class="l">步骤</div><div class="v" id="db-sp">—</div></div></div>
-      <div class="r"><div><div class="l">构件</div><div class="v" id="db-np">—</div></div><div><div class="l">总重</div><div class="v" id="db-ms">—</div></div></div>
-      <div class="r"><div><div class="l">相机</div><div class="v" id="db-cam">—</div></div><div><div class="l">剖切</div><div class="v" id="db-cut">—</div></div></div>
-    </div>
-    <div id="track"><div class="bands"></div><div class="fill"></div><div class="knob"></div></div>
-    <div id="play">
-      <span class="btn" id="p-b">⏮<kbd>首</kbd></span><span class="btn red" id="p-p">❚❚<kbd>空格</kbd></span><span class="btn" id="p-f">⏭<kbd>步</kbd></span>
+    <div id="ctrl">
+      <span class="btn" id="p-b" title="回到开工（Home）"><svg class="i" viewBox="0 0 12 12"><path d="M1.5 1.5h1.6v9H1.5zM10.5 1.5v9L4 6z"/></svg><kbd>首</kbd></span>
+      <span class="btn red" id="p-p" title="播放 / 暂停（空格）"><svg class="i" viewBox="0 0 12 12"><path class="ip" d="M2.5 1.5h2.4v9H2.5zM7.1 1.5h2.4v9H7.1z"/></svg><kbd>空格</kbd></span>
+      <span class="btn" id="p-f" title="下一步（→）"><svg class="i" viewBox="0 0 12 12"><path d="M1.5 1.5v9L8 6zM8.9 1.5h1.6v9H8.9z"/></svg><kbd>步</kbd></span>
+      <div id="track"><div class="bands"></div><div class="fill"></div><div class="knob"></div></div>
       <span id="tlab">—</span>
-      <span class="btn" id="p-s">×1<kbd>倍速</kbd></span><span class="btn" id="p-sh">图纸<kbd>S</kbd></span>
+      <span class="btn" id="p-s" title="倍速"><span class="sv">×1</span><kbd>倍速</kbd></span><span class="btn" id="p-sh" title="图纸（S）"><span>图纸</span><kbd>S</kbd></span>
     </div>
-    <div id="hudp"><span class="lv">GPU · 实测</span><div class="fps"><span id="h-fps">—</span><small>FPS</small></div>
-      <table><tr><td>主视图绘制</td><td id="h-dc">—</td></tr><tr><td>本帧合计</td><td id="h-dt">—</td></tr><tr><td>三角形</td><td id="h-tr">—</td></tr><tr><td>墨线段</td><td id="h-sg">—</td></tr><tr><td>像素比</td><td id="h-pr">—</td></tr></table></div>
   </div>
-  <aside id="rp" class="card">
-    <div class="ph"><h3>施工计划</h3><div class="tabs"><span class="on">顺序</span><span>规则</span></div></div>
+  <aside id="rp" class="card t-order">
+    <div class="ph"><h3>施工计划</h3><div class="tabs"><span class="on" id="tab-order">顺序</span><span id="tab-rules">规则</span></div></div>
     <div class="crumb" id="crumb">—</div>
-    <div class="sec"><div class="sh">阶段时间轴<span id="g-t">—</span></div><div id="gantt"></div></div>
+    <div class="pane order"><div class="sec"><div class="sh">阶段时间轴<span id="g-t">—</span></div><div id="gantt"></div></div>
     <div class="sec" id="el"><div class="sh">当前步骤<span id="el-s">—</span></div>
-      <div class="nm"><small>构件</small><span id="el-n">—</span></div>
+      <div class="nm"><small>构件 · 锚点 X·Y·Z <span id="el-a">—</span></small><span id="el-n">—</span></div>
       <div class="grid2">
         <div><div class="l">步骤</div><div class="v r" id="el-i">—</div></div><div><div class="l">阶段</div><div class="v" id="el-g">—</div></div><div><div class="l">数量</div><div class="v" id="el-c">—</div></div>
         <div><div class="l">工种</div><div class="v r" id="el-t">—</div></div><div><div class="l">估重</div><div class="v" id="el-m">—</div></div><div><div class="l">工期</div><div class="v" id="el-d">—</div></div>
         <div class="w"><div class="l">规格</div><div class="v" id="el-sp" style="white-space:normal">—</div></div>
         <div class="w"><div class="l">支承 / 前驱（规则推出）</div><div class="v" id="el-dp" style="white-space:normal">—</div></div>
-        <div><div class="l">标高</div><div class="v" id="el-y">—</div></div><div><div class="l">锚点 X·Y·Z</div><div class="v" id="el-a">—</div></div><div><div class="l">进度</div><div class="v r" id="el-p">—</div></div>
+        <div class="w2"><div class="l">标高</div><div class="v" id="el-y">—</div></div><div class="e3"><div class="l">进度</div><div class="v r" id="el-p">—</div></div>
       </div></div>
     <div class="sec" id="stats"><div class="sh">累计<span id="s-pc">—</span></div>
       <div class="grid2">
         <div><div class="l">石数</div><div class="v" id="s-st">—</div></div><div><div class="l">瓦数</div><div class="v" id="s-tl">—</div></div><div><div class="l">吨位</div><div class="v" id="s-ms">—</div></div>
         <div><div class="l">土方（掘出）</div><div class="v" id="s-dg">—</div></div><div><div class="l">当前标高</div><div class="v r" id="s-el">—</div></div><div><div class="l">柱 / 窓</div><div class="v" id="s-cw">—</div></div>
       </div></div>
+    </div><div class="pane rules"><div class="sec" style="border-bottom:none"><div class="sh">排序规则<span>seq.js · 通用</span></div><div id="rules">—</div></div></div>
     <div class="sec" style="border-bottom:none"><div class="sh">规则自检<span>seq.js</span></div><div id="chk">—</div></div>
   </aside>
   <section id="bt">
-    <div class="sheet card live" id="sh1"><div class="bg"></div><div class="draw"></div><svg></svg><span class="tag">● 实时</span>
-      <div class="tbk"><div><div class="l">图名</div><div class="v big">南立面</div><div class="v" style="font-size:8px;color:#948b7d">地盘剖切于 z=+39</div></div><div><div class="l">比例</div><div class="v sc">—</div></div><div><div class="l">阶段</div><div class="v stg">—</div></div><div><div class="l">日期</div><div class="v dt">—</div></div><div class="no">A-201</div></div></div>
-    <div class="sheet card" id="sh2"><div class="bg"></div><div class="draw"></div><svg></svg><span class="tag">● 实时</span>
-      <div class="tbk"><div><div class="l">图名</div><div class="v big">剖面 A–A</div><div class="v" style="font-size:8px;color:#948b7d">剖切于 z=0 · 看北</div></div><div><div class="l">比例</div><div class="v sc">—</div></div><div><div class="l">阶段</div><div class="v stg">—</div></div><div><div class="l">日期</div><div class="v dt">—</div></div><div class="no">A-301</div></div></div>
+    <div class="sheet card live" id="sh1"><div class="draw"></div><svg></svg>
+      <div class="tbk"><div><div class="l">图名 <span class="tag">● 实时</span></div><div class="v big">南立面</div><div class="v sm x">地盘剖切于 z=+39</div></div><div><div class="l">比例</div><div class="v sc">—</div></div><div class="x"><div class="l">阶段</div><div class="v stg">—</div></div><div class="x"><div class="l">日期</div><div class="v dt">—</div></div><div class="no">A-201</div></div></div>
+    <div class="sheet card" id="sh2"><div class="draw"></div><svg></svg>
+      <div class="tbk"><div><div class="l">图名 <span class="tag">● 实时</span></div><div class="v big">剖面 A–A</div><div class="v sm x">剖切于 z=0 · 看北</div></div><div><div class="l">比例</div><div class="v sc">—</div></div><div class="x"><div class="l">阶段</div><div class="v stg">—</div></div><div class="x"><div class="l">日期</div><div class="v dt">—</div></div><div class="no">A-301</div></div></div>
     <div id="log" class="card"><div class="ph"><h3>施工日志</h3><span class="badge" id="lg-b">—</span><span class="mono" style="font-size:9.5px;color:#5d564c" id="lg-n">—</span></div><div id="logl"></div></div>
   </section>
 </div>
-<script src="seq.js?v=1"></script>
-<script src="seqosaka.js?v=1"></script>
-<script src="buildview.js?v=1"></script>
+<script src="seq.js?v=2"></script>
+<script src="seqosaka.js?v=2"></script>
+<script src="buildview.js?v=2"></script>
 </body>
 </html>
