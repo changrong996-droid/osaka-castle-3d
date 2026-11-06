@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<title>大阪城 天守 · 筑城图（小样 proto-build2）</title>
+<title>大阪城 天守 · 筑城图（小样 proto-build3）</title>
 <style>
 :root{--paper:#efe9dd;--paper2:#f6f2ea;--ink:#1d1a17;--ink2:#5d564c;--ink3:#948b7d;--red:#b3202a;--red2:#e6bab4;--red3:#f3dcd8;--line:#d4cbbb;--line2:#e3dccf;
 --mono:"SF Mono","JetBrains Mono",Menlo,Consolas,"DejaVu Sans Mono","Noto Sans Mono CJK SC","WenQuanYi Micro Hei Mono",monospace;
@@ -149,11 +149,11 @@ body.rpn #status .ic{display:none}body.rpn #st-stage{font-size:12.5px}body.rpn #
 <div id="app">
   <header id="hd">
     <svg class="logo" viewBox="0 0 44 52" fill="none" stroke="#b3202a" stroke-width="1.4"><path d="M22 3v4M17 9h10l3 3H14z M15 12v5h14v-5 M11 17h22l4 4H7z M12 21v6h20v-6 M7 27h30l5 5H2z M9 32v7h26v-7"/><path d="M4 39h36l2 10H2z" stroke="#1d1a17"/><path d="M8 43h28M6 46h32" stroke="#1d1a17" stroke-width=".8"/></svg>
-    <div><h1>大阪城 <b>筑城图</b></h1><div class="sub">丰臣期天守 · 石垣 · 施工顺序 · 联动图纸 · 小样 PROTO-BUILD2</div></div>
+    <div><h1>大阪城 <b>筑城图</b></h1><div class="sub">丰臣期天守 · 石垣 · 施工顺序 · 联动图纸 · 小样 PROTO-BUILD3</div></div>
     <div class="glyphs">
-      <svg class="g-el" width="140" height="44" viewBox="0 0 140 44" fill="none" stroke="#5d564c" stroke-width=".8"><path d="M6 40h108" stroke-dasharray="2 2"/><path d="M40 40l4-14h32l4 14M46 26v-5h28v5M43 21h34l-3-3H46zM50 18v-4h20v4M48 14h24l-3-3H51zM55 11V7h10v4M53 7h14l-2-2H55z"/><text x="84" y="10" font-size="6.5" fill="#b3202a" stroke="none" font-family="monospace">+59.03 大棟</text><path d="M80 8h-6" stroke="#b3202a" stroke-dasharray="1 1"/></svg>
+      <svg class="g-el" width="140" height="44" viewBox="0 0 140 44" fill="none" stroke="#5d564c" stroke-width=".8"><path d="M6 40h108" stroke-dasharray="2 2"/><path d="M40 40l4-14h32l4 14M46 26v-5h28v5M43 21h34l-3-3H46zM50 18v-4h20v4M48 14h24l-3-3H51zM55 11V7h10v4M53 7h14l-2-2H55z"/><text id="eg-ridge" x="84" y="10" font-size="6.5" fill="#b3202a" stroke="none" font-family="monospace">+59.59 大棟</text><path d="M80 8h-6" stroke="#b3202a" stroke-dasharray="1 1"/></svg>
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#5d564c" stroke-width=".8"><circle cx="20" cy="20" r="14"/><path d="M20 3v34M3 20h34"/><path d="M20 6l3 14-3 2-3-2z" fill="#b3202a" stroke="none"/><text x="18" y="3" font-size="5" fill="#5d564c" stroke="none">北</text></svg>
-      <table class="tb"><tr><td>图号</td><td>OSK-T</td></tr><tr><td>版次</td><td>proto2</td></tr><tr><td>坐标</td><td>天守台心 ±0</td></tr></table>
+      <table class="tb"><tr><td>图号</td><td>OSK-T</td></tr><tr><td>版次</td><td>proto3</td></tr><tr><td>坐标</td><td>天守台心 ±0</td></tr></table>
     </div>
   </header>
   <div id="status" class="card">
@@ -172,7 +172,7 @@ body.rpn #status .ic{display:none}body.rpn #st-stage{font-size:12.5px}body.rpn #
           <span class="btn" id="b-cut">剖切 B–B <kbd>X</kbd></span>
           <span class="btn" id="b-view">复位视角 <kbd>V</kbd></span>
         </div>
-        <div id="ttl"><h2>大阪城天守 — 筑城图</h2><div class="d">天正十一年起 · 由下而上按规则排序：整地 → 掘堀 → 石垣逐段 → 礎石 → 柱梁逐层 → 屋根 → 壁 → 葺瓦 → 金鯱</div>
+        <div id="ttl"><h2>大阪城天守 — 筑城图</h2><div class="d">天正十一年起 · 由下而上按规则排序：整地 → 掘堀 → 石垣逐段 → 礎石 → 每重 足場→柱→梁→屋根·破風 → 壁 → 自上而下 葺瓦·解体足場 → 金鯱</div>
           <div class="k" id="ttl-k">—</div><div class="e" id="ttl-e">—</div><div class="e2" id="ttl-e2">—</div></div>
       </div>
       <div id="dbox"><div class="t">大阪城 天守 · 二重櫓</div>
@@ -210,6 +210,7 @@ body.rpn #status .ic{display:none}body.rpn #st-stage{font-size:12.5px}body.rpn #
       <div class="grid2">
         <div><div class="l">石数</div><div class="v" id="s-st">—</div></div><div><div class="l">瓦数</div><div class="v" id="s-tl">—</div></div><div><div class="l">吨位</div><div class="v" id="s-ms">—</div></div>
         <div><div class="l">土方（掘出）</div><div class="v" id="s-dg">—</div></div><div><div class="l">当前标高</div><div class="v r" id="s-el">—</div></div><div><div class="l">柱 / 窓</div><div class="v" id="s-cw">—</div></div>
+        <div><div class="l">足場丸太（现存）</div><div class="v" id="s-pl">—</div></div><div><div class="l">破風</div><div class="v" id="s-hf">—</div></div><div><div class="l">吊具</div><div class="v r" id="s-rg">—</div></div>
       </div></div>
     </div><div class="pane rules"><div class="sec" style="border-bottom:none"><div class="sh">排序规则<span>seq.js · 通用</span></div><div id="rules">—</div></div></div>
     <div class="sec" style="border-bottom:none"><div class="sh">规则自检<span>seq.js</span></div><div id="chk">—</div></div>
@@ -222,8 +223,8 @@ body.rpn #status .ic{display:none}body.rpn #st-stage{font-size:12.5px}body.rpn #
     <div id="log" class="card"><div class="ph"><h3>施工日志</h3><span class="badge" id="lg-b">—</span><span class="mono" style="font-size:9.5px;color:#5d564c" id="lg-n">—</span></div><div id="logl"></div></div>
   </section>
 </div>
-<script src="seq.js?v=2"></script>
-<script src="seqosaka.js?v=2"></script>
-<script src="buildview.js?v=2"></script>
+<script src="seq.js?v=3"></script>
+<script src="seqosaka.js?v=3"></script>
+<script src="buildview.js?v=3"></script>
 </body>
 </html>
