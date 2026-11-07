@@ -114,7 +114,7 @@
 
     const st = document.createElement('style');
     st.id = 'hzatlas-css';
-    st.textContent = '#col{grid-template-rows:auto minmax(0,1fr)!important;position:relative}#hz-subtabs{display:flex;gap:4px;font-family:var(--mono);font-size:12px}#hz-subtabs .st{padding:3px 8px;border:1px solid var(--line);border-radius:3px;cursor:pointer;background:#fbf9f5}#hz-subtabs .st.on{background:var(--ink);color:#fff}#col canvas.sheet.hz-off{visibility:hidden;position:absolute;inset:0;pointer-events:none}';
+    st.textContent = '#col{grid-template-rows:auto minmax(0,1fr)!important;position:relative}#hz-subtabs{display:flex;gap:4px;font-family:var(--mono);font-size:12px}#hz-subtabs .st{padding:3px 8px;border:1px solid var(--line);border-radius:3px;cursor:pointer;background:#fbf9f5}#hz-subtabs .st.on{background:var(--ink);color:#fff}#hz-subtabs .st small{opacity:.55;font-size:10px;font-weight:400;margin-right:5px}#col canvas.sheet.hz-off{visibility:hidden;position:absolute;inset:0;pointer-events:none}';
     document.head.appendChild(st);
 
     const list = HZA.sheetsOf('S-301');
@@ -124,7 +124,7 @@
       const sp = document.createElement('span');
       sp.className = 'st';
       sp.setAttribute('data-id', item.id);
-      sp.textContent = item.no;
+      sp.innerHTML = '<small>' + item.no + '</small>' + item.title.split('·')[0].trim();
       sp.onclick = () => HZA.setSub(i + 1);
       bar.appendChild(sp);
       return sp;
