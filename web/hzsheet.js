@@ -119,8 +119,12 @@
         if (st < 0) { g.strokeStyle = 'rgba(179,32,42,.22)'; g.lineWidth = 0.4; g.strokeRect(x + 0.3, y + 0.3, sz, sz); continue; }
         const moving = c.grp && ps[c.grp] && ps[c.grp].moving || (c.grp && ps.w > 0 && ps.w < 1);
         const atFloor = c.grp >= 1 && c.grp <= 4 && t < K.wlift.end - 0.01;
-        if (st < 2) { g.fillStyle = C.red; cur++; inst += c.rods.length * st; } else { inst += c.rods.length; g.fillStyle = moving ? C.red2 : atFloor ? '#b9b0a2' : '#3b3631'; }
-        g.fillRect(x + 0.3, y + 0.3, sz, sz); }
+        let fc; if (st < 2) { fc = C.red; cur++; inst += c.rods.length * st; } else { inst += c.rods.length; fc = moving ? C.red2 : atFloor ? '#b9b0a2' : ''; }
+        if (fc) { g.fillStyle = fc; g.fillRect(x + 0.3, y + 0.3, sz, sz); continue; }
+        // r3：已到位 = 细墨线 + 浅底（竣工不再是一整块黑）；十字采光带浅蓝灰、加斜线
+        const sky = HZ.inSky(c.xc, c.zc); g.fillStyle = sky ? '#cfd6d8' : '#e6dfd2'; g.fillRect(x + 0.3, y + 0.3, sz, sz);
+        g.strokeStyle = sky ? 'rgba(29,26,23,.55)' : 'rgba(29,26,23,.42)'; g.lineWidth = 0.5; g.strokeRect(x + 0.55, y + 0.55, sz - 0.5, sz - 0.5);
+        if (sky && sz > 3) { g.beginPath(); g.moveTo(x + 0.6, y + sz); g.lineTo(x + sz, y + 0.6); g.stroke(); } }
       // 分区线 + 名称
       g.strokeStyle = C.red; g.lineWidth = 0.7; g.setLineDash([5, 2, 1, 2]); for (const zz of [-P.midZ - 7, -P.midZ, P.midZ, P.midZ + 7]) { g.beginPath(); g.moveTo(X(zz), Y(126)); g.lineTo(X(zz), Y(-126)); g.stroke(); } g.setLineDash([]);
       // 柱、提升点
