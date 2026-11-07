@@ -183,7 +183,59 @@
         label(g, '重心∈凸包 ' + (Z.ok ? '✓' : '✕'), sx0 + 3, box.y1 - 6, Z.ok ? '#2f7a3a' : C.red, { x0: sx0, y0: sy0, x1: box.x1, y1: box.y1 }, { fs: 8.5, sans: true, b: true }); }
       return {};
     }
-    return { section, plan, lift, stOf, rodsTot, X0 };
+    // ================= S-301-1 千斤顶平面布置 + 剖面净空（set1：随时刻同步；字号放大）=================
+    const devCol = (d, lim) => { const k = Math.min(1, Math.abs(d) / lim); return k < 0.35 ? '#2f7a3a' : k < 0.7 ? '#c48a12' : C.red; };
+    const Hb = (x, z) => HZ.Ht(x, z) - (HZ.inSky(x, z) ? P.depthSky : P.depth);
+    const zoneOfZ = z => Math.abs(z) <= P.midZ ? 2 : Math.abs(z) < P.midZ + 7 ? 4 : z > 0 ? 1 : 3;
+    function jack(g, w, h, t, ctx) {
+      labels.length = 0; const J = HZ.jackRead(t), ps = J.pose, box = frame(g, w, h, ctx.tb(w, h, 'HZW-S-301-1', ['千斤顶平面布置 · 剖面净空 · ' + HZ.lifters.length + ' 吊点', '千斤顶平面 · 剖面净空'], t));
+      const bw = box.x1 - box.x0, bh = box.y1 - box.y0, wide = bw / bh > 1.25, FS = Math.max(12, Math.min(14, Math.round(Math.min(bw, bh) / 26)));
+      const pa = wide ? { x0: box.x0 + 2, y0: box.y0 + 2, x1: box.x0 + bw * 0.52, y1: box.y1 } : { x0: box.x0 + 2, y0: box.y0 + 2, x1: box.x1, y1: box.y0 + bh * 0.56 };
+      const sa = wide ? { x0: pa.x1 + 8, y0: box.y0 + 2, x1: box.x1, y1: box.y1 } : { x0: box.x0 + 2, y0: pa.y1 + 6, x1: box.x1, y1: box.y1 };
+      // ---- 平面：北左、东上 ----
+      { const top = pa.y0 + FS + 8, bot = pa.y1 - FS - 8, z0 = -170, z1 = 170, x0 = -128, x1 = 128, s = Math.min((pa.x1 - pa.x0 - 8) / (z1 - z0), (bot - top) / (x1 - x0));
+        const ox = pa.x0 + 4 + (pa.x1 - pa.x0 - 8 - (z1 - z0) * s) / 2, oy = top + (bot - top - (x1 - x0) * s) / 2, X = z => ox + (z - z0) * s, Y = x => oy + (x1 - x) * s;
+        g.beginPath(); for (let a = 0; a <= 96; a++) { const th = a / 96 * Math.PI * 2, r = HZ.R(th), xx = Math.cos(th) * r, zz = Math.sin(th) * r; a ? g.lineTo(X(zz), Y(xx)) : g.moveTo(X(zz), Y(xx)); } g.closePath(); g.fillStyle = '#ebe4d6'; g.fill(); g.strokeStyle = C.ink; g.lineWidth = 1; g.stroke();
+        // 正在动的分区淡红
+        const mv = J.act ? (J.act.key === 'wlift' ? [1, 2, 3, 4] : [J.act.liftZone]) : [];
+        for (const c of HZ.cells) if (mv.includes(c.grp)) { g.fillStyle = 'rgba(179,32,42,.16)'; g.fillRect(X(c.za), Y(c.xb), 7 * s + 0.4, 7 * s + 0.4); }
+        g.strokeStyle = C.red; g.lineWidth = 0.8; g.setLineDash([6, 3]); for (const zz of [-P.midZ - 7, -P.midZ, P.midZ, P.midZ + 7]) { g.beginPath(); g.moveTo(X(zz), Y(118)); g.lineTo(X(zz), Y(-118)); g.stroke(); } g.setLineDash([]);
+        // 旋转轴（南 / 北外缘）
+        for (const zz of [P.roofB, -P.roofB]) { g.strokeStyle = C.ink2; g.lineWidth = 1; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(X(zz), Y(60)); g.lineTo(X(zz), Y(-60)); g.stroke(); g.setLineDash([]); }
+        // 吊点：圈 = 提升器；填色 = 同步偏差（绿 ≤ 35 % 上限 / 黄 / 红）；不在本段 = 空心
+        const r0 = Math.max(4, Math.min(7, 4.2 * s * 1.6));
+        for (const r of J.rows) { const x = X(r.z), y = Y(r.x); g.beginPath(); g.arc(x, y, r0, 0, Math.PI * 2); if (r.on) { g.fillStyle = J.m && J.m.state === 'ext' ? devCol(r.dev, J.limit) : C.ink; g.fill(); } else { g.fillStyle = C.paper; g.fill(); g.strokeStyle = C.ink3; g.lineWidth = 1; g.stroke(); } }
+        // 读数：行程最大 / 最小的吊点
+        const on = J.rows.filter(r => r.on); if (on.length) { const hi = on.reduce((a, b) => b.disp > a.disp ? b : a), lo = on.reduce((a, b) => b.disp < a.disp ? b : a);
+          for (const r of hi === lo || Math.abs(hi.disp - lo.disp) < 0.05 ? [hi] : [hi, lo]) label(g, fmt(r.disp * 1000) + ' mm', X(r.z) + (r.z > 0 ? -r0 - 3 : r0 + 3), Y(r.x) - r0 - FS * 0.6, C.ink, pa, { fs: FS - 1, b: true, al: r.z > 0 ? 'r' : 'l' }); }
+        label(g, '千斤顶平面', pa.x0 + 4, pa.y0 + FS * 0.6 + 2, C.ink, pa, { fs: FS, b: true, sans: true });
+        label(g, '同步差 ' + J.sync.toFixed(1) + ' / ' + J.limit + ' mm', pa.x1 - 4, pa.y0 + FS * 0.6 + 2, J.sync <= J.limit ? '#2f7a3a' : C.red, pa, { fs: FS, b: true, al: 'r', sans: true });
+        for (const [n, zz] of [['北区', -105], ['中区', 0], ['南区', 105]]) label(g, n, X(zz), pa.y1 - FS * 0.6 - 2, C.ink2, pa, { al: 'c', fs: FS - 1, sans: true }); }
+      // ---- 剖面：沿 z（南北）切 x = 39 m，向东看；竖向 ×4 ----
+      { const XS = 39, VE = 4, top = sa.y0 + FS + 10, bot = sa.y1 - FS - 6, z0 = -168, z1 = 168, sx = (sa.x1 - sa.x0 - 12) / (z1 - z0), y0w = P.floorTop - 3, y1w = 62, sy = Math.min(sx * VE, (bot - top) / (y1w - y0w));
+        const yOff = Math.max(0, (bot - top - (y1w - y0w) * sy) / 2), X = z => sa.x0 + 6 + (z - z0) * sx, Y = y => bot - yOff - (y - y0w) * sy;
+        // 楼面（候车层，±14 m 云谷开口）
+        g.fillStyle = 'rgba(29,26,23,.18)'; for (const [a, b] of [[-P.floorZ, -P.gap], [P.gap, P.floorZ]]) g.fillRect(X(a), Y(P.floorTop), X(b) - X(a), Math.max(2, (P.floorTop - P.floorBot) * sy));
+        g.strokeStyle = C.ink; g.lineWidth = 1; g.beginPath(); for (const [a, b] of [[-P.floorZ, -P.gap], [P.gap, P.floorZ]]) { g.moveTo(X(a), Y(P.floorTop)); g.lineTo(X(b), Y(P.floorTop)); } g.stroke();
+        // 设计位下弦（幽灵）与当前下弦
+        const curve = (fn, col, lw, dash) => { g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash || []); g.beginPath(); let st = false; for (let z = -160; z <= 160; z += 2) { const y = fn(z); if (y == null) { st = false; continue; } st ? g.lineTo(X(z), Y(y)) : g.moveTo(X(z), Y(y)); st = true; } g.stroke(); g.setLineDash([]); };
+        curve(z => Hb(XS, z), C.ghost, 1, [4, 3]);
+        const cur = z => { const gz = zoneOfZ(z); if (gz === 4 && t < K.merge.start) return null; return HZ.xf(ps, gz, [XS, Hb(XS, z), z])[1]; };
+        curve(cur, C.ink, 1.8);
+        // 提升塔 / 柱（竖线）
+        g.strokeStyle = C.red; g.lineWidth = 1.4; for (const zz of P.towerZ) { g.beginPath(); g.moveTo(X(zz), Y(P.floorTop)); g.lineTo(X(zz), Y(HZ.Ht(XS, zz) + 4)); g.stroke(); }
+        g.strokeStyle = C.ink2; for (const zz of P.mastZ) { g.beginPath(); g.moveTo(X(zz), Y(P.floorTop)); g.lineTo(X(zz), Y(Hb(XS, zz) - 1.5)); g.stroke(); }
+        // 净空尺寸线：本剖面上楼面上方最低处
+        let best = null; for (let z = -P.floorZ + 2; z <= P.floorZ - 2; z += 1) { if (Math.abs(z) < P.gap + 1) continue; const y = cur(z); if (y == null) continue; if (!best || y < best.y) best = { z, y }; }
+        if (best) { const xx = X(best.z), ya = Y(P.floorTop), yb = Y(best.y), sd = best.z > 0 ? -1 : 1; g.strokeStyle = C.red; g.fillStyle = C.red; g.lineWidth = 1.2; g.beginPath(); g.moveTo(xx, ya); g.lineTo(xx, yb); for (const yy of [ya, yb]) { g.moveTo(xx - 5, yy); g.lineTo(xx + 5, yy); } g.stroke();
+          label(g, '净空 ' + f2(best.y - P.floorTop) + ' m', xx + sd * 8, (ya + yb) / 2, C.red, sa, { fs: FS, b: true, al: sd < 0 ? 'r' : 'l' }); }
+        label(g, '剖面 x = 39 m · 竖向 ×' + VE, sa.x0 + 4, sa.y0 + FS * 0.6 + 2, C.ink, sa, { fs: FS, b: true, sans: true });
+        const gp = HZ.gap(ps, t); label(g, '全屋盖最小净空 ' + f2(gp.v) + ' m', sa.x1 - 4, sa.y1 - FS * 0.6 - 2, gp.v >= P.jigMin ? '#2f7a3a' : C.red, sa, { fs: FS - 1, b: true, al: 'r', sans: true });
+        label(g, '北', X(-160), Y(P.floorTop) + FS, C.ink2, sa, { fs: FS - 1, sans: true }); label(g, '南', X(160), Y(P.floorTop) + FS, C.ink2, sa, { fs: FS - 1, sans: true, al: 'r' }); }
+      g.strokeStyle = C.line; g.lineWidth = 0.8; g.beginPath(); if (wide) { g.moveTo(pa.x1 + 4, box.y0 + 6); g.lineTo(pa.x1 + 4, box.y1 - 4); } else { g.moveTo(box.x0 + 6, pa.y1 + 3); g.lineTo(box.x1 - 6, pa.y1 + 3); } g.stroke();
+      return { sync: J.sync };
+    }
+    return { section, plan, lift, jack, stOf, rodsTot, X0 };
   };
   G.HZS = HZS;
 })(window);
