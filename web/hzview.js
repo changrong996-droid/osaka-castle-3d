@@ -58,7 +58,7 @@
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(28, 1, 4, 40000);
     const view = $('view');
-    const ctl = new OrbitControls(cam, view); ctl.enableDamping = true; ctl.dampingFactor = 0.08; ctl.maxPolarAngle = Math.PI * 0.49; ctl.minDistance = 90; ctl.maxDistance = 4200; ctl.screenSpacePanning = false; ctl.zoomSpeed = 0.8;
+    const ctl = new OrbitControls(cam, view); ctl.enableDamping = true; ctl.dampingFactor = 0.08; ctl.maxPolarAngle = Math.PI * 0.75; ctl.minDistance = 9; ctl.maxDistance = 4200; ctl.screenSpacePanning = true;   // set2d：平移含上下（右键 / Shift+左键），可仰视；防穿模改为碰撞约束（camCollide） ctl.zoomSpeed = 0.8;
 
     // ---------------- 实景层（preview1 的观感：黄金时刻 + HDR 后处理）----------------
     const T = Object.assign({}, FX.TOD.g), LOOK = window.CASTLE_LOOK.make(THREE);
@@ -157,6 +157,29 @@
       const lines = new THREE.LineSegments(lg, lineMat); lines.frustumCulled = false; lines.renderOrder = 2;
       S.tris = nv / 3; S.segs = nl / 2; return { mesh, lines }; }
     const { mesh: MESH, lines: LINES } = compile(); scene.add(MESH, LINES);
+
+    // ---------------- set2d：剖切封面（x = 39 m 截面多边形；与构件同一套 aK/aR/aY 生长、未建不显示；uCut 关 = 顶点塌缩，切换不重新编译）----------------
+    const CAP = (() => { const SX = HZ.SEC_X, XC = SX + 0.04, Pp = [], Kk = [], Rr = [], Yy = [], Ff = [], Ee = [];
+      const quad = (it, y0p, z0, z1, ya, yb, za0, za1, zb0, zb1, E) => { const v = [[ya, za0], [ya, za1], [yb, zb1], [ya, za0], [yb, zb1], [yb, zb0]]; for (const [y, z] of v) { Pp.push(XC, y, z); Kk.push(it.st, it.du, 0, 0); Rr.push(it.rm[0], it.rm[1]); Yy.push(y0p, 0); Ff.push(it.temp); Ee.push(...E); } };
+      for (const a of HZ.acts) { if (a.kind === 'untemp' || !a.parts.length) continue; for (const p of a.parts) { if (p.cells || p.grp || !p.geo || !p.geo.boxes) continue; const it = { st: p.st, du: p.du, rm: p.rm || [-1, 0], temp: a.kind === 'temp' ? 1 : 0 }, y0p = p.geo.min[1];
+        for (const b of p.geo.boxes) { if (!(b.min[0] < SX - 0.02 && b.max[0] > SX + 0.02) || b.max[1] - b.min[1] < 0.05) continue;
+          if (b.spin) { const [cx, cz, pr] = b.spin, dx = SX - cx; for (let i = 0; i + 1 < pr.length; i++) { const ha = Math.sqrt(Math.max(0, pr[i][1] ** 2 - dx * dx)), hb = Math.sqrt(Math.max(0, pr[i + 1][1] ** 2 - dx * dx)); if (ha + hb < 0.02) continue; quad(it, y0p, 0, 0, pr[i][0], pr[i + 1][0], cz - ha, cz + ha, cz - hb, cz + hb, [-1e9, 1e9, pr[0][0], pr[pr.length - 1][0]]); } continue; }
+          let z0 = b.min[2], z1 = b.max[2]; if (b.cyl) { const [cx, cz, r] = b.cyl, h = Math.sqrt(Math.max(0, r * r - (SX - cx) ** 2)); if (h < 0.01) continue; z0 = cz - h; z1 = cz + h; }
+          quad(it, y0p, z0, z1, b.min[1], b.max[1], z0, z1, z0, z1, [z0, z1, b.min[1], b.max[1]]); } } }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(Pp, 3)); g.setAttribute('aK', new THREE.Float32BufferAttribute(Kk, 4)); g.setAttribute('aR', new THREE.Float32BufferAttribute(Rr, 2)); g.setAttribute('aY', new THREE.Float32BufferAttribute(Yy, 2)); g.setAttribute('aF', new THREE.Float32BufferAttribute(Ff, 1)); g.setAttribute('aE', new THREE.Float32BufferAttribute(Ee, 4));
+      const CU = { uT: U.uT, uCut: U.uCut, uPaper: U.uPaper, uRed: U.uRed, uInk: U.uInk, uTemp: U.uTemp, uLitCap: { value: 0 }, uDpr: { value: 1 } };
+      const m = new THREE.ShaderMaterial({ uniforms: CU, side: THREE.DoubleSide,
+        vertexShader: `attribute vec4 aK; attribute vec2 aR; attribute vec2 aY; attribute float aF; attribute vec4 aE; uniform float uT, uCut; varying vec2 vP; varying vec4 vE; varying float vF;
+          void main() { float s = aK.x, d = max(aK.y, 1e-3), p = clamp((uT - s) / d, 0.0, 1.0), r = 1.0; if (aR.x >= 0.0) r = 1.0 - clamp((uT - aR.x) / max(aR.y, 1e-3), 0.0, 1.0);
+            float k = p * r; k = k * k * (3.0 - 2.0 * k); vec3 q = position; q.y = aY.x + (q.y - aY.x) * k; vE = vec4(aE.xy, aY.x + (aE.zw - aY.x) * k); vP = q.zy; vF = aF;
+            if (uT < s || k < 1e-4 || uCut < -1e8) q = vec3(0.0, -1e5, 0.0); gl_Position = projectionMatrix * viewMatrix * vec4(q, 1.0); }`,
+        fragmentShader: `uniform vec3 uPaper, uRed, uInk, uTemp; uniform float uLitCap, uDpr; varying vec2 vP; varying vec4 vE; varying float vF;
+          void main() { vec2 fw = max(fwidth(vP), vec2(1e-5)); float ez = min(vP.x - vE.x, vE.y - vP.x) / fw.x, ey = min(vP.y - vE.z, vE.w - vP.y) / fw.y, edge = 1.0 - smoothstep(0.6 * uDpr, 1.6 * uDpr, min(ez, ey));
+            if (uLitCap > 0.5) { vec3 c = vec3(0.50) * (1.0 - 0.35 * edge); gl_FragColor = vec4(c, 1.0); return; }
+            vec3 base = vF > 0.5 ? mix(uPaper, uTemp, 0.30) : mix(uPaper, uRed, 0.16); float sp = 7.0 * uDpr, h = abs(fract((gl_FragCoord.x + gl_FragCoord.y) / sp) - 0.5) * sp, ln = 1.0 - smoothstep(0.45 * uDpr, 1.15 * uDpr, h);
+            vec3 c = mix(base, mix(uRed, uInk, 0.35), 0.62 * ln); c = mix(c, uInk, edge); gl_FragColor = vec4(c, 1.0); }` });
+      const o = new THREE.Mesh(g, m); o.frustumCulled = false; o.renderOrder = 1; S.capTris = Pp.length / 9; return { o, CU }; })();
+    scene.add(CAP.o); S.CAP = CAP.o;
 
     // ---- 钢绞线 ----
     const STR = (() => { const L = HZ.K.rig.strands, Pq = new Float32Array(L.length * 6), G = new Float32Array(L.length * 2); L.forEach((s, i) => { Pq.set(s.a, i * 6); Pq.set(s.b, i * 6 + 3); G[i * 2] = 0; G[i * 2 + 1] = s.gb; });
@@ -380,14 +403,14 @@
     function flyStep(now) { if (!FLY) return; const u = Math.min(1, (now - FLY.s) / FLY.ms), e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
       ctl.target.copy(FLY.t0).lerp(FLY.t1, e); flyS.set(FLY.sp0.radius * Math.pow(FLY.sp1.radius / FLY.sp0.radius, e), FLY.sp0.phi + (FLY.sp1.phi - FLY.sp0.phi) * e, FLY.sp0.theta + FLY.dth * e); cam.position.copy(ctl.target).add(flyV.setFromSpherical(flyS)); cam.lookAt(ctl.target); dirty = true;
       if (u >= 1) { FLY = null; S.flying = false; S.flyDone = (S.flyDone || 0) + 1; } }
-    function focusLifter(i) { if (SHEET !== 'S-301' || !(i >= 0 && i < HZ.lifters.length)) return; cutOff(); SV.sel = i; S.selZone = 0; zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; const k = shotFor(i, S.st.t); S.focusShot = k; flyTo(k.tgt, k.pos, 1000); hashSync(); }
+    function focusLifter(i) { if (SHEET !== 'S-301' || !(i >= 0 && i < HZ.lifters.length)) return; cutOff(); SV.chartOpen = false; SV.sel = i; S.selZone = 0; zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; const k = shotFor(i, S.st.t); S.focusShot = k; flyTo(k.tgt, k.pos, 1000); hashSync(); }
     function clearFocus() { FLY = null; S.flying = false; clearSel(); }
     // ---------------- set2b：3D → 图纸（点提升器 / 点屋盖分区）、选中后镜头跟随吊点高度、URL #focus= ----------------
     const ZCODE = { 1: 'ZS', 2: 'ZM', 3: 'ZN' }, ZOF = { ZS: 1, ZM: 2, ZN: 3 }; S.selZone = 0;
     function zoneTint(t, ps) { t = t == null ? S.st.t : t; ps = ps || S.pose || HZ.pose(t); const wl = t > K.wlift.start && t < K.wlift.end; for (const g of [1, 2, 3, 4]) U.uMv.value[g] = SHEET !== 'S-301' ? 0 : S.selZone === g ? 2 : (wl ? 1 : g < 4 && ps[g].moving) ? 1 : 0; dirty = true; }
     function hashSync() { const q = new URLSearchParams(location.hash.slice(1)), f = SV.sel >= 0 ? 'J' + String(SV.sel + 1).padStart(2, '0') : S.selZone ? ZCODE[S.selZone] : SV.cut === 1 ? 'cut' : SV.cut === 2 ? 'gap' : '';
       if (f) q.set('focus', f); else q.delete('focus'); const h = q.toString().replace(/%2C/g, ','), cur = location.hash.slice(1); if (h !== cur) history.replaceState(null, '', h ? '#' + h : location.pathname + location.search); S.focusHash = f; }
-    function clearSel() { const had = SV.sel >= 0 || S.selZone || SV.cut; cutOff(); SV.sel = -1; S.selZone = 0; FOL = null; if (had) { zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; } hashSync(); }
+    function clearSel() { SV.chartOpen = false; const had = SV.sel >= 0 || S.selZone || SV.cut; cutOff(); SV.sel = -1; S.selZone = 0; FOL = null; if (had) { zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; } hashSync(); }
     // 图纸动画：0.5 s，k 按指数、中心点按线性插值（中心点 = 屏幕中心对应的 k=1 底图坐标），目标点最终落在平面图中央
     let SVA = null, SVP = null;
     function svAnimTo(k1, wz, wx, ms) { const s0 = SHEETS[0], pm = s0.pm; if (!pm) { SVP = [k1, wz, wx, ms]; return; } SVP = null; k1 = Math.max(1, Math.min(8, k1));
@@ -398,7 +421,7 @@
     function sheetToLifter(i) { const L = HZ.lifters[i]; svAnimTo(3, L.z, L.x); }
     function sheetToZone(z) { const s0 = SHEETS[0], pa = s0.pa, pm = s0.pm, B = (s0.zbb || {})[z]; if (!pa || !pm || !B) { SVP = null; S._zonePend = z; return; } S._zonePend = 0;
       const k = Math.min((pa.x1 - pa.x0 - 24) / ((B.z1 - B.z0) * pm.s0), (pa.y1 - pa.y0 - 60) / ((B.x1 - B.x0) * pm.s0));   /* 上下留出图名 / 同步差 / 分区名一行 */ svAnimTo(Math.max(1, Math.min(8, k)), (B.z0 + B.z1) / 2, (B.x0 + B.x1) / 2); }
-    function selectLifter3D(i) { cutOff(); SV.sel = i; S.selZone = 0; zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; FOL = null;
+    function selectLifter3D(i) { cutOff(); SV.chartOpen = false; SV.sel = i; S.selZone = 0; zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; FOL = null;
       const r = HZ.jackRead(S.st.t).rows[i], L = HZ.lifters[i], tg = new THREE.Vector3(L.x, (L.top + r.y) / 2, L.z), p1 = cam.position.clone().sub(ctl.target).multiplyScalar(0.92).add(tg);   // 轻微对准：目标挪到该提升器，机位方向不变、略拉近 8 %
       flyTo(tg, p1, 600); sheetToLifter(i); hashSync(); }
     function selectZone(z) { cutOff(); SV.sel = -1; S.selZone = z; FOL = null; zoneTint(); sheetInv(); dynKey = ''; leadKey = ''; sheetToZone(z); hashSync(); }
@@ -443,6 +466,36 @@
       if (FOL.t !== t) { const q = HZ.jackRead(t).rows[SV.sel], c = [q.hp[0], q.y, q.hp[2]]; for (let k = 0; k < 3; k++) { FOL.pend[k] += c[k] - FOL.last[k]; } FOL.last = c; FOL.t = t; }
       if (FLY) return; const p = FOL.pend; if (Math.abs(p[0]) + Math.abs(p[1]) + Math.abs(p[2]) < 1e-4) return; const a = 1 - Math.exp(-dt / 0.25), d = new THREE.Vector3(p[0] * a, p[1] * a, p[2] * a);
       ctl.target.add(d); cam.position.add(d); for (let k = 0; k < 3; k++) p[k] -= d.getComponent(k); dirty = true; }
+
+    // ---------------- set2d：镜头碰撞约束（代替俯仰角限制）----------------
+    // 实体 = 所有非网架构件的原始盒子（HZ.segBox 用的同一批，按生长 / 拆除比例缩放高度）；地面以下 = 实土，只有站房地下空间（地铁层槽：|x| < 200、|z| < 13.2、y > −9.2）可进。
+    // 镜头进了实体 → 沿视线（朝目标）把镜头挪到实体外侧（二分到 2 cm）；目标高度限制在地下最低层底 −10 m 到屋盖顶之间，修正时镜头与目标一起平移（不改视角）。
+    const CBOX = [], CG = new Map(), CCS = 16, CM = 0.6, UG = { x: 200 - CM, z: P.gap - 0.8 - CM, y0: -9.2 + CM }, TY0 = -10, TY1 = HZ.Ht(0, 0) + HZ.D + 4;
+    for (const a of HZ.acts) { if (a.kind === 'untemp') continue; for (const p of a.parts) { if (p.cells || p.grp || !p.geo || !p.geo.boxes) continue; for (const b of p.geo.boxes) { if (b.max[1] - b.min[1] < 0.05) continue; const e = { p, b, y0: p.geo.min[1] }, k = CBOX.push(e) - 1;
+      for (let i = Math.floor((b.min[0] - CM) / CCS); i <= Math.floor((b.max[0] + CM) / CCS); i++) for (let j = Math.floor((b.min[2] - CM) / CCS); j <= Math.floor((b.max[2] + CM) / CCS); j++) { const kk = i * 4096 + j; if (!CG.has(kk)) CG.set(kk, []); CG.get(kk).push(k); } } } }
+    const kOf = (p, t) => { const sp = Math.max(0, Math.min(1, (t - p.st) / Math.max(1e-3, p.du))); let r = 1; if (p.rm && p.rm[0] >= 0) r = 1 - Math.max(0, Math.min(1, (t - p.rm[0]) / Math.max(1e-3, p.rm[1]))); if (t < p.st) return 0; const k = sp * r; return k * k * (3 - 2 * k); };
+    const inUnder = (x, y, z) => Math.abs(x) < UG.x && Math.abs(z) < UG.z && y > UG.y0;
+    function solidAt(x, y, z, t, m) { m = m == null ? CM : m; if (y < m && !inUnder(x, y, z)) return 'ground';
+      if (SV.cut && x < HZ.SEC_X - m) return null;   // 剖切中 x < 39 已切掉：只剩地面约束
+      const L = CG.get(Math.floor(x / CCS) * 4096 + Math.floor(z / CCS)); if (!L) return null;
+      for (const k of L) { const e = CBOX[k], b = e.b; if (x < b.min[0] - m || x > b.max[0] + m || z < b.min[2] - m || z > b.max[2] + m) continue; const kk = kOf(e.p, t); if (kk < 1e-4) continue;
+        const y0 = e.y0 + (b.min[1] - e.y0) * kk, y1 = e.y0 + (b.max[1] - e.y0) * kk; if (y >= y0 - m && y <= y1 + m) return e; }
+      return null; }
+    S.solidAt = (x, y, z, m) => solidAt(x, y, z, S.st.t, m); S.camLim = { TY0, TY1, UG, CM };
+    const ccv = new THREE.Vector3(), ccd = new THREE.Vector3();
+    function camCollide() { const t = S.st.t, tg = ctl.target, c = cam.position; let moved = false;
+      // 目标高度 / 地下目标只在站房地下空间
+      let dy = 0; if (tg.y < TY0) dy = TY0 - tg.y; else if (tg.y > TY1) dy = TY1 - tg.y; else if (tg.y < 0 && !inUnder(tg.x, tg.y, tg.z)) dy = -tg.y;
+      if (dy) { tg.y += dy; c.y += dy; moved = true; }
+      if (!solidAt(c.x, c.y, c.z, t)) return moved;
+      ccd.copy(tg).sub(c); const L = ccd.length(); if (L < 1e-6) ccd.set(0, 1, 0); else ccd.divideScalar(L);
+      const free = s => !solidAt(c.x + ccd.x * s, c.y + ccd.y * s, c.z + ccd.z * s, t);
+      let hit = null; for (let s = 0.25; s <= L + 0.01; s += 0.25) if (free(s)) { hit = s; break; }   // 先朝目标找最近的外侧
+      if (hit == null) for (let s = -0.25; s >= -400; s -= 0.25) if (free(s)) { hit = s; break; }   // 目标本身在实体里：往后退
+      if (hit == null) { c.y = Math.max(c.y, TY1 + 10); return true; }
+      let lo = hit > 0 ? hit - 0.25 : hit + 0.25, hi = hit; for (let k = 0; k < 4; k++) { const mid = (lo + hi) / 2; if (free(mid)) hi = mid; else lo = mid; }
+      hi += Math.sign(hi) * 0.02; c.addScaledVector(ccd, hi); S.camPush = (S.camPush || 0) + 1; return true; }
+    S.camCollide = camCollide;
     function applyFocusHash() { if (SHEET !== 'S-301') return; const f = (new URLSearchParams(location.hash.slice(1)).get('focus') || '').toUpperCase(); if (!f) return; const m = /^J(\d{1,2})$/.exec(f);
       if (m) { const i = +m[1] - 1; if (i >= 0 && i < HZ.lifters.length && SV.sel !== i) { focusLifter(i); sheetToLifter(i); } } else if (ZOF[f] && S.selZone !== ZOF[f]) selectZone(ZOF[f]); else if ((f === 'CUT' || f === 'GAP') && SV.cut !== (f === 'CUT' ? 1 : 2)) focusCut(f === 'CUT' ? 1 : 2); }
     S.applyFocusHash = applyFocusHash;
@@ -614,7 +667,7 @@
         if (pinch && P0.size >= 2) { const [a, b] = [...P0.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; svZoom(pinch.k * d / pinch.d, pinch.m[0], pinch.m[1]); return; }
         if (drag) { const dx = p[0] - drag.x, dy = p[1] - drag.y; if (!drag.moved && Math.hypot(dx, dy) > 4) drag.moved = true; if (drag.moved && SV.k > 1) { SV.px = drag.px + dx; SV.py = drag.py + dy; svClamp(); sheetInv(); el.style.cursor = 'grabbing'; } } });
       const up = e => { const p = P0.get(e.pointerId); P0.delete(e.pointerId); try { el.releasePointerCapture(e.pointerId); } catch (x) { }
-        if (P0.size < 2) pinch = null; if (!P0.size) { const d = drag; drag = null; if (d && !d.moved && p && e.type === 'pointerup') { const h = hitAt(p[0], p[1]); if (h >= 0) focusLifter(h); else { const k = hitK(p[0], p[1]); if (k) focusCut(k === 'cut' ? 1 : 2); } } } };
+        if (P0.size < 2) pinch = null; if (!P0.size) { const d = drag; drag = null; if (d && !d.moved && p && e.type === 'pointerup') { const cb = SHEETS[0].chartBox; if (cb && (cb.tag || SV.chartOpen) && p[0] >= cb.x && p[0] <= cb.x + cb.w && p[1] >= cb.y && p[1] <= cb.y + cb.h) { SV.chartOpen = !SV.chartOpen; sheetInv(); return; } const h = hitAt(p[0], p[1]); if (h >= 0) focusLifter(h); else { const k = hitK(p[0], p[1]); if (k) focusCut(k === 'cut' ? 1 : 2); } } } };
       el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
       el.addEventListener('pointerleave', () => { if (!P0.size && (SV.hover >= 0 || SV.hoverK)) { SV.hover = -1; SV.hoverK = null; sheetInv(); } });
       el.addEventListener('dblclick', e => { e.preventDefault(); S.svReset(); }); }
@@ -624,7 +677,7 @@
       if (!STK || STK.i !== i || STK.TL !== TL) { const r0 = HZ.jackRead(TL.t0).rows[i], g = r0.zone, hp = r0.hp, yOf = t => HZ.xf(HZ.pose(t), g, hp)[1], y0 = yOf(TL.t0), N = 240, us = [], vs = [];
         for (let k = 0; k <= N; k++) { const u = k / N; us.push(u); vs.push((yOf(TL.u2t(u)) - y0) * 1000); } STK = { i, TL, g, hp, y0, us, vs, max: Math.max(...vs), min: Math.min(0, ...vs), name: 'J' + String(i + 1).padStart(2, '0'), d0: HZ.dayDate(TL.t0), d1: HZ.dayDate(TL.t1) }; }
       const t = Math.min(S.st.t, TL.t1); return Object.assign({}, STK, { uNow: S.st.u, vNow: (HZ.xf(S.pose || HZ.pose(t), STK.g, STK.hp)[1] - STK.y0) * 1000 }); }
-    function sheetCtx(s) { return { tb: (w, h, no, name, t) => ({ tb: h < 170 ? 17 : 20, no, name, scale: s.id === 'sh-jack' ? '示意' : (s.scale || '1:—'), rev: evAt(t), date: HZ.dayDate(Math.floor(Math.min(t, TL.OPEN))), chk: AU ? (AU.zero ? '自检 0 ✓' : '自检 ✕') : '自检中', chkOk: AU && AU.zero }), lastVe: s.ve || 1, view: SV, hover: SV.hover, sel: SV.sel, zone: S.selZone, cut: SV.cut, hoverK: SV.hoverK, stroke: strokeData(),
+    function sheetCtx(s) { return { tb: (w, h, no, name, t) => ({ tb: h < 170 ? 17 : 20, no, name, scale: s.id === 'sh-jack' ? '示意' : (s.scale || '1:—'), rev: evAt(t), date: HZ.dayDate(Math.floor(Math.min(t, TL.OPEN))), chk: AU ? (AU.zero ? '自检 0 ✓' : '自检 ✕') : '自检中', chkOk: AU && AU.zero }), lastVe: s.ve || 1, view: SV, hover: SV.hover, sel: SV.sel, zone: S.selZone, cut: SV.cut, hoverK: SV.hoverK, stroke: strokeData(), anim: !!SVA, chartOpen: !!SV.chartOpen, noChartDraw: !!S.noChartDraw,
       setScale: px => { const mmPerPx = 25.4 / 96, k = 1000 / (px * mmPerPx); s.scale = '1:' + (Math.round(k / 100) * 100).toLocaleString('en-US'); } }; }
     function drawSheet(s, now) { const c = s.el, w = c.clientWidth, h = c.clientHeight, DPR = Math.min(2, devicePixelRatio || 1); if (w < 20 || h < 20) return; if (c.width !== Math.round(w * DPR) || c.height !== Math.round(h * DPR)) { c.width = Math.round(w * DPR); c.height = Math.round(h * DPR); }
       const g = c.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, 0, 0); g.textAlign = 'left'; const t0 = performance.now(), cx = sheetCtx(s); s.fn(g, w, h, Math.min(S.st.t, TL.OPEN + 0.001), cx); s.hits = cx.hits || []; s.pa = cx.pa; s.cutHit = cx.cutHit; s.gapHit = cx.gapHit; s.gapVal = cx.gapVal; s.chartBox = cx.chartBox; s.pm = cx.pm; s.zbb = cx.zoneBB; if (cx.ve && cx.ve !== (s.ve || 1)) { s.ve = cx.ve; s.key = ''; sheetsDirty = true; }
@@ -638,9 +691,9 @@
       document.body.classList.toggle('s000', SHEET === 'S-000'); document.body.classList.toggle('s301', SHEET === 'S-301');
       const colW = Math.round(Math.max(300, Math.min(600, W * (narrow ? 0.36 : 0.32)))); root.setProperty('--colW', colW + 'px'); S.colLayout = { colW };
       calcN = H < 600 ? 3 : H < 720 ? 4 : 5; logN = H < 600 ? 1 : 2;
-      ctl.minDistance = SHEET === 'S-301' ? 20 : 90;   // set2a：S-301 允许提升器近景
+      ctl.minDistance = 9;   // set2d：全图 9 m（碰撞约束防穿模）
       const r = v3.getBoundingClientRect(); const w = Math.max(10, r.width), h = Math.max(10, r.height);
-      renderer.setPixelRatio(Math.max(1, Math.min(devicePixelRatio || 1, QS[FX.q].pr, Math.sqrt(PIX / (w * h))))); renderer.setSize(w, h, false); cam.aspect = w / h;
+      renderer.setPixelRatio(Math.max(1, Math.min(devicePixelRatio || 1, QS[FX.q].pr, Math.sqrt(PIX / (w * h))))); renderer.setSize(w, h, false); cam.aspect = w / h; CAP.CU.uDpr.value = renderer.getPixelRatio();
       aspK = Math.max(1, Math.pow((SHEET === 'S-301' ? 1.5 : 1.6) / cam.aspect, 0.75));
       const top = $('big').getBoundingClientRect().bottom - r.top, bot = 0;
       cam.setViewOffset(w, h, 0, -(top - bot) * (SHEET === 'S-301' ? 0.05 : 0.3), w, h); cam.updateProjectionMatrix();
@@ -658,15 +711,15 @@
     const postOpts = () => { const Pp = Object.assign({}, T.post); return Object.assign(Pp, { sd: sunDir, sunC: T.sun, interior: false, exp: Pp.exp * look.exp, sat: Pp.sat * look.sat, warm: Pp.warm.map(v => 1 + (v - 1) * look.warm), ao: true, vol: 0, dust: 0, fogA: 0.00012, fogH: 140, mistA: 0, god: Pp.god * 0.7, bloom: Pp.bloom * 1.1 }); };
     let lastNow = performance.now();
     const GL2 = (() => { const g = renderer.getContext(); return typeof WebGL2RenderingContext !== 'undefined' && g instanceof WebGL2RenderingContext && !hp.has('nofence') ? g : null; })(), FEN = [];
-    function renderInk(la) { for (const o of LITONLY) o.visible = false; for (const o of INKONLY) o.visible = true; MESH.material = inkMat; DYN.mesh.material = DYN.mesh.userData.ink; LINES.visible = true; DYN.lines.visible = true; WK.WU.uInk.value = 1; STR.material.uniforms.uC.value.set(0xb3202a);
+    function renderInk(la) { CAP.CU.uLitCap.value = 0; for (const o of LITONLY) o.visible = false; for (const o of INKONLY) o.visible = true; MESH.material = inkMat; DYN.mesh.material = DYN.mesh.userData.ink; LINES.visible = true; DYN.lines.visible = true; WK.WU.uInk.value = 1; STR.material.uniforms.uC.value.set(0xb3202a);
       U.uLA.value = la; renderer.setRenderTarget(null); renderer.setClearColor(0xefe9dd, 1); renderer.toneMapping = THREE.NoToneMapping; renderer.render(scene, cam); }
-    function renderLit() { for (const o of LITONLY) o.visible = true; for (const o of INKONLY) o.visible = false; MESH.material = MESH.userData.lit; DYN.mesh.material = DYN.mesh.userData.lit; LINES.visible = false; DYN.lines.visible = false; WK.WU.uInk.value = 0; STR.material.uniforms.uC.value.set(0x0f0d0d);
+    function renderLit() { CAP.CU.uLitCap.value = 1; for (const o of LITONLY) o.visible = true; for (const o of INKONLY) o.visible = false; MESH.material = MESH.userData.lit; DYN.mesh.material = DYN.mesh.userData.lit; LINES.visible = false; DYN.lines.visible = false; WK.WU.uInk.value = 0; STR.material.uniforms.uC.value.set(0x0f0d0d);
       renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.setClearColor(0x000000, 1);
       shadowAge++; if (shadowWant && (!S.st.play || shadowAge >= (S.pose && S.pose.lifting ? SPL : SP))) { renderer.shadowMap.needsUpdate = true; shadowWant = false; shadowAge = 0; lastShadowT = S.st.t; }
       if (POST.level > 0) POST.render(scene, cam, postOpts()); else { renderer.setRenderTarget(null); renderer.render(scene, cam); } }
     function frame(now) { requestAnimationFrame(frame); const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
       if (S.st.play) { const u = Math.min(1, S.st.u + dt / TL.playSec); setT(TL.u2t(u), u); if (u >= 1) { S.st.play = false; hud(); } }
-      flyStep(now); follow(dt); svaStep(now); if (S._zonePend && SHEETS[0].pm) sheetToZone(S._zonePend); if (ctl.update()) dirty = true;
+      flyStep(now); follow(dt); svaStep(now); if (S._zonePend && SHEETS[0].pm) sheetToZone(S._zonePend); if (ctl.update()) dirty = true; if (camCollide()) dirty = true;
       // 图纸：时间变了才重画；每帧最多一张（错开），播放中每张 ≤ 20 Hz
       if (sheetsDirty && SHEET === 'S-301' && !S.noSheet) { const k = S.st.t.toFixed(3) + (AU ? 'a' : ''); let any = false; const ord = SHEETS.slice().sort((a, b) => a.drawn - b.drawn); let drew = false;
         for (const s of ord) { if (s.key === k) continue; any = true; if ((!drew || !S.st.play) && (!S.st.play || now - s.drawn > 50)) { s.key = k; drawSheet(s, now); drew = true; } } if (!any) sheetsDirty = false; }
@@ -674,6 +727,7 @@
       // set1：GPU 帧节拍 —— 最多 2 帧在 GPU 队列里（WebGL2 fence）；否则本次 rAF 跳过渲染、保留 dirty。无 vsync 时 CPU 帧极便宜会把队列塞满，Chrome 回压一次卡 0.3–1.2 s（Mac 实测，PLAYBOOK #43）
       if (GL2 && FEN.length >= 2) { const st = GL2.clientWaitSync(FEN[0], 0, 0); if (st === GL2.TIMEOUT_EXPIRED) return; GL2.deleteSync(FEN.shift()); }
       dirty = false;
+      { const dd = cam.position.distanceTo(ctl.target), nr = Math.max(0.5, Math.min(4, dd * 0.12)); if (Math.abs(nr - cam.near) > cam.near * 0.05) { cam.near = nr; cam.updateProjectionMatrix(); } }   // set2d：近景时近裁剪面跟着缩，免得贴近实体时被裁穿
       const pf0 = performance.now(); rebuildDyn(S.st.t); U.uCam.value.copy(cam.position); const pf1 = performance.now();
       renderer.info.reset(); const b = S.blend; document.body.classList.toggle('lit', b > 0.5);
       if (b <= 0.001) renderInk(1);
