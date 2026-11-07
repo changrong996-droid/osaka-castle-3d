@@ -425,6 +425,13 @@ HZ.jackRead = function (t) {
 HZ.gap = function (ps, t) { let best = null; for (const g of [1, 2, 3, 4]) { if (g === 4 && t < HZ.K.merge.start) continue; const T = HZ.gapTab[g]; let e;
     if (T.length === 1) e = T[0]; else { const x = ps[g].r * 32, i = Math.min(31, Math.floor(x)), f = x - i; e = { lo: T[i].lo + (T[i + 1].lo - T[i].lo) * f, at: f < 0.5 ? T[i].at : T[i + 1].at }; }
     const v = e.lo + ps[g].dy - HZ.P.floorTop; if (!best || v < best.v) best = { v, g, at: [e.at[0], e.at[1] + ps[g].dy, e.at[2]] }; } return best; };
+// set2c：剖面 B–B（x = XS）当前姿态下弦高度与楼面上方最低净空 —— 图纸剖面（hzsheet）与 3D 剖切净空标注共用同一计算
+HZ.SEC_X = 39;
+HZ.secY = function (ps, t, z, XS) { const P = HZ.P, K = HZ.K; XS = XS == null ? HZ.SEC_X : XS; const g = Math.abs(z) <= P.midZ ? 2 : Math.abs(z) < P.midZ + 7 ? 4 : z > 0 ? 1 : 3; if (g === 4 && t < K.merge.start) return null;
+  const hb = HZ.Ht(XS, z) - (HZ.inSky(XS, z) ? P.depthSky : P.depth); return HZ.xf(ps, g, [XS, hb, z])[1]; };
+HZ.secGap = function (ps, t, XS) { const P = HZ.P; XS = XS == null ? HZ.SEC_X : XS; let best = null;
+  for (let z = -P.floorZ + 2; z <= P.floorZ - 2; z += 1) { if (Math.abs(z) < P.gap + 1) continue; const y = HZ.secY(ps, t, z, XS); if (y == null) continue; if (!best || y < best.y) best = { x: XS, z, y }; }
+  if (best) best.v = best.y - P.floorTop; return best; };
 HZ.xf = function (pose, g, p) { if (!g) return p; const s = pose[g]; const q = HZ.rotY(g, p, s.r); return [q[0], q[1] + s.dy, q[2]]; };
 // 4×4（列主序，three.js Matrix4.elements）：先绕轴旋转，再竖向平移
 HZ.mat = function (pose, g) { const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; if (!g) return I; const s = pose[g];
