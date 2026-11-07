@@ -196,7 +196,7 @@ function build() {
     cells.push({ i, j, xa, xb, za, zb, xc, zc, grp, hole }); }
   HZ.cells = cells;
   const cellAt = new Map(); for (const c of cells) cellAt.set(c.i + ',' + c.j, c);
-  const node = (x, z) => [x, Ht(x, z), z], bnode = c => [c.xc, Ht(c.xc, c.zc) - depthAt(c.xc, c.zc), c.zc];
+  const node = (x, z) => [x, Ht(x, z), z], bnode = c => [c.xc, Ht(c.xc, c.zc) - depthAt(c.xc, c.zc), c.zc]; HZ.bnode = bnode;
   // 杆件半径按观看距离放大（真实 Φ377 ≈ 0.19 m）：千米外仍能读出网格
   function cellGeo(c, g) {   // 一格：上弦（左、上边 + 缺邻居时右、下边）、4 根腹杆、下弦（到右、下邻格）
     const rT = 0.30, rD = 0.2, a = node(c.xa, c.za), b = node(c.xb, c.za), d = node(c.xa, c.zb), e = node(c.xb, c.zb), bn = bnode(c);
@@ -381,12 +381,50 @@ function sweepRule(acts) {   // R8：任何静止构件的包围盒与提升扫�
 
 // ---------------- 姿态：任一时刻各组的变换 ----------------
 // 返回 {1..4: {dy, r}}；r = 旋转进度（0 拼装 / 1 设计），dy = 竖向偏移（设计姿态为 0）
-HZ.pose = function (t) {
-  const K = HZ.K, D = HZ.D, prog = a => !a ? 0 : a.dur > 0 ? Math.max(0, Math.min(1, (t - a.start) / a.dur)) : (t >= a.start ? 1 : 0), ease = x => x * x * (3 - 2 * x);
-  const w = ease(prog(K.wlift)), out = {};
-  for (const z of [1, 2, 3]) { const p = prog(K['lift' + z]); const l = z === 2 ? ease(p) : ease(Math.min(1, p / 0.25)), r = z === 2 ? 1 : ease(Math.max(0, (p - 0.25) / 0.75)); out[z] = { dy: -D + 0.6 * l + (D - 0.6) * w, r: z === 2 ? 1 : r, moving: p > 0 && p < 1 }; }
-  out[4] = { dy: -(D - 0.6) * (1 - w), r: 1 }; out.w = w; out.lifting = out[1].moving || out[2].moving || out[3].moving || (w > 0 && w < 1);
+// ---------------- set1：液压提升的行程节拍（按小时）----------------
+// 每台提升器按“行程”走：伸缸 45 min 带载上升 0.25 m，缩缸 / 换锚 15 min 不动（推算）。作业 08:00–18:00；首日 08–10 分级加载、10–11 试提升 0.1 m、之后静置观测到次日 08:00；夜间锁定。
+HZ.STROKE = 0.25; HZ.SYNC = { amp: 3, limit: 10 };   // 行程 m；同步控制偏差幅值 / 上限 mm（推算）
+HZ.travel = function (a) { return a.key === 'wlift' ? HZ.D - 0.6 : a.key === 'lift2' ? 0.6 : 0.6 + HZ.innerDrop; };   // 控制吊点（行程最大的吊点）的总行程
+HZ.motion = function (a, t) {
+  const T = HZ.travel(a), S = HZ.STROKE, h = (t - a.start) * 24, out = { s: 0, state: 'wait', k: 0, n: 0, ext: 0, f: 0 };
+  if (!(h >= 0)) return out; out.n = 1 + Math.ceil((T - 0.1) / S - 1e-9);
+  const day = Math.floor(h / 24), hd = h - day * 24;
+  if (day === 0) { if (hd < 8) { out.state = 'night'; return out; } if (hd < 10) { out.state = 'load'; out.f = (hd - 8) / 2; return out; }
+    if (hd < 11) { const f = hd - 10; out.k = 1; out.f = f; if (f < 0.75) { out.state = 'ext'; out.ext = f / 0.75; out.s = 0.1 * out.ext; } else { out.state = 'ret'; out.ext = 1 - (f - 0.75) / 0.25; out.s = 0.1; } return out; }
+    out.s = 0.1; out.k = 1; out.state = 'hold'; return out; }
+  // 第 2 天起：每天 10 个行程窗口（08:00–18:00），直到走完
+  const R = T - 0.1, nJ = out.n - 1, at = j => 0.1 + Math.min(R, j * S);
+  if (hd < 8 || hd >= 18) { const j = Math.min(nJ, (day - 1 + (hd >= 18 ? 1 : 0)) * 10); out.s = at(j); out.k = 1 + j; out.state = j >= nJ ? 'lock' : 'night'; return out; }
+  const idx = Math.floor(hd - 8), f = hd - 8 - idx, j = (day - 1) * 10 + idx;
+  if (j >= nJ) { out.s = T; out.k = out.n; out.state = 'lock'; return out; }
+  const size = Math.min(S, R - j * S); out.k = j + 2; out.f = f;
+  if (f < 0.75) { out.state = 'ext'; out.ext = f / 0.75; out.s = at(j) + size * out.ext; } else { out.state = 'ret'; out.ext = 1 - (f - 0.75) / 0.25; out.s = at(j) + size; }
   return out; };
+HZ.motionCap = function (a) { return a.dur >= 2 && 0.1 + (a.dur - 1) * 10 * HZ.STROKE >= HZ.travel(a) - 1e-9; };
+// 姿态：任一时刻各组的变换。返回 {1..4: {dy, r}}；r = 旋转进度（0 拼装 / 1 设计），dy = 竖向偏移（设计姿态为 0）
+HZ.pose = function (t) {
+  const K = HZ.K, D = HZ.D, out = {};
+  const mv = a => { if (t < a.start) return 0; if (t >= a.end) return 1; return HZ.motion(a, t).s / HZ.travel(a); };
+  const w = mv(K.wlift);
+  for (const z of [1, 2, 3]) { const A = K['lift' + z], s = mv(A) * HZ.travel(A), l = Math.min(1, s / 0.6), r = z === 2 ? 1 : Math.max(0, Math.min(1, (s - 0.6) / HZ.innerDrop)); out[z] = { dy: -D + 0.6 * l + (D - 0.6) * w, r, moving: t > A.start && t < A.end }; }
+  out[4] = { dy: -(D - 0.6) * (1 - w), r: 1 }; out.w = w; out.lifting = out[1].moving || out[2].moving || out[3].moving || (t > K.wlift.start && t < K.wlift.end);
+  return out; };
+// 提升器读数：每台吊点的竖向位移（= 吊点随所在分区姿态的位移，与 3D / 审计同一姿态函数）+ 同步控制偏差（模拟，推算）
+HZ.jackRead = function (t) {
+  const K = HZ.K, ps = HZ.pose(t), D = HZ.D, P = HZ.P;
+  let act = null; for (const k of ['lift1', 'lift2', 'lift3', 'wlift']) { const a = K[k]; if (t >= a.start && t < a.end) act = a; }
+  const m = act ? HZ.motion(act, t) : null, rows = [];
+  const p0 = { 1: { dy: -D, r: 0 }, 2: { dy: -D, r: 1 }, 3: { dy: -D, r: 0 } };
+  for (let i = 0; i < HZ.lifters.length; i++) { const L = HZ.lifters[i], g = L.zone, hz = L.z + (g === 1 ? 3.6 : g === 3 ? -3.6 : (L.z > 0 ? -3.6 : 3.6)), hp = [L.x, Ht(L.x, hz) - depthAt(L.x, hz), hz];
+    const y0 = HZ.xf(act ? HZ.pose(act.start) : p0, g, hp)[1], y = HZ.xf(ps, g, hp)[1]; let dev = 0;
+    if (m && m.state === 'ext' && (act.key === 'wlift' || act.liftZone === g)) { const r = SEQ.rng((act.start * 131 + m.k * 977 + i * 7919) | 0); r(); dev = HZ.SYNC.amp * Math.sin(Math.PI * m.ext) * (2 * r() - 1); }
+    rows.push({ i, x: L.x, z: L.z, zone: g, top: L.top, hp, y, disp: y - y0, dev, on: !!(act && (act.key === 'wlift' || act.liftZone === g)) }); }
+  const on = rows.filter(r => r.on); let mx = 0; for (const a of on) for (const b of on) mx = Math.max(mx, Math.abs(a.dev - b.dev));
+  return { rows, act, m, sync: on.length ? mx : 0, limit: HZ.SYNC.limit, pose: ps }; };
+// 当前姿态下网架下弦（含杆件半径）到候车层楼面的最小净空，及其位置
+HZ.gap = function (ps, t) { let best = null; for (const g of [1, 2, 3, 4]) { if (g === 4 && t < HZ.K.merge.start) continue; const T = HZ.gapTab[g]; let e;
+    if (T.length === 1) e = T[0]; else { const x = ps[g].r * 32, i = Math.min(31, Math.floor(x)), f = x - i; e = { lo: T[i].lo + (T[i + 1].lo - T[i].lo) * f, at: f < 0.5 ? T[i].at : T[i + 1].at }; }
+    const v = e.lo + ps[g].dy - HZ.P.floorTop; if (!best || v < best.v) best = { v, g, at: [e.at[0], e.at[1] + ps[g].dy, e.at[2]] }; } return best; };
 HZ.xf = function (pose, g, p) { if (!g) return p; const s = pose[g]; const q = HZ.rotY(g, p, s.r); return [q[0], q[1] + s.dy, q[2]]; };
 // 4×4（列主序，three.js Matrix4.elements）：先绕轴旋转，再竖向平移
 HZ.mat = function (pose, g) { const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; if (!g) return I; const s = pose[g];
@@ -401,6 +439,10 @@ HZ.make = function () {
   // 提升扫掠包络（R8 用）：每区 拼装姿态 ∪ 设计姿态 的包围盒，按格计算（保守）
   const pose0 = { 1: { dy: -HZ.D, r: 0 }, 2: { dy: -HZ.D, r: 1 }, 3: { dy: -HZ.D, r: 0 }, 4: { dy: -(HZ.D - 0.6), r: 1 } }, pose1 = { 1: { dy: 0, r: 1 }, 2: { dy: 0, r: 1 }, 3: { dy: 0, r: 1 }, 4: { dy: 0, r: 1 } };
   HZ.liftEnv = []; for (const c of HZ.cells) if (c.grp) for (const cb of c.boxes) { const b = { min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] }; for (const ps of [pose0, pose1]) for (const x of [cb.min[0], cb.max[0]]) for (const y of [cb.min[1], cb.max[1]]) for (const z of [cb.min[2], cb.max[2]]) { const q = HZ.xf(ps, c.grp, [x, y, z]); for (let k = 0; k < 3; k++) { b.min[k] = Math.min(b.min[k], q[k]); b.max[k] = Math.max(b.max[k], q[k]); } } HZ.liftEnv.push(b); }
+  // set1：楼面净空表 —— 每个移动分区、按旋转进度 r 采样 33 档，求“压在候车层楼面上方”的杆件最低点（与审计 A3 同一判据）；dy 是平移，直接相加
+  { const tab = {}; for (const g of [1, 2, 3, 4]) { tab[g] = []; for (let q = 0; q <= 32; q++) { const r = g === 2 || g === 4 ? 1 : q / 32, ps = { [g]: { dy: 0, r } }; let lo = 1e9, at = null, p0 = null, rr0 = 0;
+      for (const c of HZ.cells) { if (c.grp !== g || !(Math.abs(c.xc) <= P.floorX && Math.abs(c.zc) <= P.floorZ && Math.abs(c.zc) >= P.gap)) continue; for (const [a0, b0, rr] of c.rods) { const a = HZ.xf(ps, g, a0), b = HZ.xf(ps, g, b0), y = Math.min(a[1], b[1]) - rr; if (y < lo) { lo = y; at = a[1] < b[1] ? a : b; p0 = a[1] < b[1] ? a0 : b0; rr0 = rr; } } }
+      tab[g].push({ lo, at, p0, rr: rr0 }); if (g === 2 || g === 4) break; } } HZ.gapTab = tab; }
   const rules = [
     { type: 'temp', id: 'R4' },
     { type: 'custom', id: 'R1', fn: supRule },
@@ -500,7 +542,11 @@ HZ.audit = function () {
   out.liftClash = lc; out.liftEx = lex; out.liftSamples = samples; out.minFloorGap = +minFloor.toFixed(2);
   // A4 临时构件：全部拆除、拆除不早于服务对象完成
   out.temp = out.net.r4;
-  out.r8bad = HZ.r8bad.slice(); out.zero = out.net.zero && !HZ.r8bad.length && !unsup && !clip && !lc && !r9 && !HZ.crawlHits && out.temp.violations === 0 && out.temp.leftover === 0;
+  // A6（set1）提升同步：四段提升按 5 min 采样，各吊点同步差 ≤ 上限；每段行程在工期内走得完；净空表与审计 A3 一致
+  { let mx = 0, n = 0, over = 0; const ex6 = []; for (const k of ['lift1', 'lift2', 'lift3', 'wlift']) { const a = K[k]; if (!HZ.motionCap(a)) { over++; ex6.push(a.name + ' 工期内走不完行程'); } for (let m = 0; m < a.dur * 24 * 12; m++) { const j = HZ.jackRead(a.start + m / 288); n++; mx = Math.max(mx, j.sync); if (j.sync > HZ.SYNC.limit) { over++; if (ex6.length < 4) ex6.push(a.name + ' 同步差 ' + j.sync.toFixed(1)); } } }
+    let gapMin = 1e9; for (const r of LS) { const g = HZ.gap(HZ.pose(r.t), r.t); gapMin = Math.min(gapMin, g.v); }
+    out.sync = { max: +mx.toFixed(2), limit: HZ.SYNC.limit, samples: n, over, ex: ex6, gapTabMin: +gapMin.toFixed(2), gapAuditMin: out.minFloorGap }; }
+  out.r8bad = HZ.r8bad.slice(); out.zero = out.net.zero && !HZ.r8bad.length && !unsup && !clip && !lc && !r9 && !HZ.crawlHits && out.temp.violations === 0 && out.temp.leftover === 0 && out.sync.over === 0;
   out.ms = Date.now() - T0;
   return out;
 };
