@@ -140,6 +140,11 @@
 | 35 | 日志里的 ▶ ✓ ■ | glyph-font 审计报豆腐块风险 | 日志用“开工 / 完成 / 节点”文字 |
 | 36 | 只读文字的决策模型 | Bivia / Jev 看不到图 | 把可量的东西算出来再问（机位：旋转时内边像素位移、整体提升像素位移、占画面比例、压叠层点数）；模型会自相矛盾（选了新机位又投“保持”），只当平票裁判；Bivia 限速 ≤ 10 次 / 分钟，用后台队列（`work/hzwest2/bq/`）贯穿全轮 |
 | 37 | 后处理分支第一次启用时现场编译 | 墨线 → 实景、以及竣工后拖动转向太阳时卡 2.2–2.6 s（光束 god rays 只在太阳投影 |x|,|y| < 2.2 时才走，那一刻才编译着色器）；q1 无卡顿 | 加载时预热：两条管线在“施工中 / 竣工”各画一帧，再把相机**用 lookAt 对准太阳**画一帧（只 placeCam 不转朝向 = 白预热）；Mac 上 `hitch2.js` 复现 / 验证 |
+| 38 | 沙盒中途重置 | 一轮做到一半 `~` 被清空：tailscale、Mac 远程、钥匙管家、浏览器全断，Mac 上后台任务却还在跑 | 先 `bash /workspace/work/restore.sh`（幂等）；Mac 上的任务用 nohup 后台 + 日志文件（`~/Hark/castle-hz3/*.out`），重置后 `mpoll.sh` 取回，不要重跑；先比对 Mac 与本地文件 md5 再信结果 |
+| 39 | `camera.project()` 投影结果错位 | 刚改完相机位置 / 朝向就投影引线锚点，用的是上一帧的矩阵，标注漂在空中 | 投影前 `camera.updateMatrixWorld()`（及目标物体的 `updateMatrixWorld()`），再 `project()` |
+| 40 | VM exec 120 s 上游超时 | 远端单条命令 > 120 s 被网关掐断，结果丢失 | 长任务一律 nohup 后台 + 轮询日志；单次调用只做 < 100 s 的事 |
+| 41 | Mac GPU vs VM 出图 | VM（SwiftShader）出一张 1920 图要几十秒，Mac M4 真 GPU 约快 10 倍 | 截图 / 帧率 / 结尾实景这类着色器重的任务直接给 Mac；VM 只跑 DOM 审计和 CPU 扫描 |
+| 42 | Gemini 反代 502 | 反代的 `/v1/models` 只列 Claude 模型，客户端按列表校验 gemini-* 名字后请求 502 | 不靠 `/v1/models` 发现模型，直接写死模型名调用；失败就换 Bivia / Jev 打分，别在这上面循环 |
 
 ## 7. 计算资源：什么时候值得用 Mac / VM（实测，见 `work/port/COMPUTE_EVAL.md`）
 
