@@ -72,4 +72,97 @@
   };
 
   G.HZA = HZA;
+
+  if (typeof document === 'undefined' || !document.getElementById) return;
+
+  const subOf = () => {
+    const n = Number(new URLSearchParams((location.hash || '').slice(1)).get('sub'));
+    return n === 1 || n === 2 || n === 3 || n === 4 ? n : 1;
+  };
+
+  let mounted = false;
+  let canvases = [];
+  let tabs = [];
+
+  HZA.setSub = function (k) {
+    const S = G.__pv;
+    if (!S || !S.layout) return;
+    const idx = k === 2 || k === 3 || k === 4 ? k : 1;
+    canvases.forEach((el, i) => {
+      if (el) el.classList.toggle('hz-off', i + 1 !== idx);
+    });
+    tabs.forEach((sp, i) => {
+      sp.classList.toggle('on', i + 1 === idx);
+    });
+    const q = new URLSearchParams((location.hash || '').slice(1));
+    q.set('sub', String(idx));
+    const h = q.toString().replace(/%2C/g, ',');
+    history.replaceState(null, '', '#' + h);
+    S.layout();
+  };
+
+  HZA.mount = function () {
+    if (mounted) return;
+    const S = G.__pv;
+    if (!S || !S.SHEETS || !S.SH || !S.layout) {
+      console.warn('hzatlas: __pv 接口缺失');
+      return;
+    }
+    const col = document.getElementById('col');
+    if (!col) return;
+    mounted = true;
+
+    const st = document.createElement('style');
+    st.id = 'hzatlas-css';
+    st.textContent = '#col{grid-template-rows:auto minmax(0,1fr)!important;position:relative}#hz-subtabs{display:flex;gap:4px;font-family:var(--mono);font-size:12px}#hz-subtabs .st{padding:3px 8px;border:1px solid var(--line);border-radius:3px;cursor:pointer;background:#fbf9f5}#hz-subtabs .st.on{background:var(--ink);color:#fff}#col canvas.sheet.hz-off{visibility:hidden;position:absolute;inset:0;pointer-events:none}';
+    document.head.appendChild(st);
+
+    const list = HZA.sheetsOf('S-301');
+    const bar = document.createElement('div');
+    bar.id = 'hz-subtabs';
+    tabs = list.map((item, i) => {
+      const sp = document.createElement('span');
+      sp.className = 'st';
+      sp.setAttribute('data-id', item.id);
+      sp.textContent = item.no;
+      sp.onclick = () => HZA.setSub(i + 1);
+      bar.appendChild(sp);
+      return sp;
+    });
+    col.insertBefore(bar, col.firstChild);
+
+    canvases = list.map((item) => {
+      if (item.canvas === 'sh-jack') return document.getElementById('sh-jack');
+      const el = document.createElement('canvas');
+      el.id = item.canvas;
+      el.className = 'sheet hz-off';
+      el.setAttribute('aria-label', item.no + ' ' + item.title);
+      col.appendChild(el);
+      S.SHEETS.push({ id: item.canvas, fn: HZA.wrapFn(S.SH[item.fn], item.no), no: item.no, el, key: '', drawn: 0, n: 0, scale: '' });
+      return el;
+    });
+
+    bar.style.display = S.sheet === 'S-301' ? '' : 'none';
+    HZA.setSub(subOf());
+
+    G.addEventListener('hashchange', () => {
+      if (S.sheet === 'S-301') {
+        bar.style.display = '';
+        HZA.setSub(subOf());
+      } else {
+        bar.style.display = 'none';
+      }
+    });
+  };
+
+  let tries = 0;
+  const timer = setInterval(() => {
+    if (G.__pv && G.__pv.ready) {
+      clearInterval(timer);
+      HZA.mount();
+    } else if (++tries >= 600) {
+      clearInterval(timer);
+      console.warn('hzatlas: __pv 未就绪');
+    }
+  }, 50);
 })(typeof window !== 'undefined' ? window : globalThis);

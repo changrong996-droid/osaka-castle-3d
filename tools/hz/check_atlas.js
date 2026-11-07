@@ -78,4 +78,17 @@ const html = fs.readFileSync(path.join(root, 'web/hzwest.html'), 'utf8');
 if (!html.includes('id="sh-jack"')) fail('hzwest.html 缺少 id="sh-jack"');
 if (HZA.SHEETS['S-301-1'].canvas !== 'sh-jack') fail('S-301-1 canvas 不是 sh-jack');
 
+// 10 HZ-04 静态断言
+const atlasJs = fs.readFileSync(path.join(root, 'web/hzatlas.js'), 'utf8');
+for (const s of ['HZA.mount', 'HZA.setSub', 'hz-subtabs', 'S.SHEETS.push']) {
+  if (!atlasJs.includes(s)) fail('hzatlas.js 缺少 ' + s);
+}
+for (const s of ['S.SHEETS[0] =', 'S.SHEETS.splice', 'S.SHEETS.length = ']) {
+  if (atlasJs.includes(s)) fail('hzatlas.js 含禁用写法 ' + s);
+}
+const atlasHtml = fs.readFileSync(path.join(root, 'web/hzatlas.html'), 'utf8');
+for (const s of ["fetch('hzwest.html'", 'hzatlas.js?v=']) {
+  if (!atlasHtml.includes(s)) fail('hzatlas.html 缺少 ' + s);
+}
+
 console.log('OK check_atlas pages=' + Object.keys(HZA.PAGES).length + ' sheets=' + keys.length + ' aliases=' + nal);
