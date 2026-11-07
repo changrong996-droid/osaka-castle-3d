@@ -187,6 +187,7 @@
     const devCol = (d, lim) => { const k = Math.min(1, Math.abs(d) / lim); return k < 0.35 ? '#2f7a3a' : k < 0.7 ? '#c48a12' : C.red; };
     const Hb = (x, z) => HZ.Ht(x, z) - (HZ.inSky(x, z) ? P.depthSky : P.depth);
     const zoneOfZ = z => Math.abs(z) <= P.midZ ? 2 : Math.abs(z) < P.midZ + 7 ? 4 : z > 0 ? 1 : 3;
+    let zoneBB = null;
     function jack(g, w, h, t, ctx) {
       labels.length = 0; const J = HZ.jackRead(t), ps = J.pose, box = frame(g, w, h, ctx.tb(w, h, 'HZW-S-301-1', ['千斤顶平面布置 · 剖面净空 · ' + HZ.lifters.length + ' 吊点', '千斤顶平面 · 剖面净空'], t));
       const bw = box.x1 - box.x0, bh = box.y1 - box.y0, wide = bw / bh > 1.25, FS = Math.max(12, Math.min(14, Math.round(Math.min(bw, bh) / 26)));
@@ -203,6 +204,10 @@
         // 正在动的分区淡红
         const mv = J.act ? (J.act.key === 'wlift' ? [1, 2, 3, 4] : [J.act.liftZone]) : [];
         for (const c of HZ.cells) if (mv.includes(c.grp)) { g.fillStyle = 'rgba(179,32,42,.16)'; g.fillRect(X(c.za), Y(c.xb), 7 * s + 0.4, 7 * s + 0.4); }
+        // set2b：选中分区（3D 点屋盖 / #focus=ZN|ZM|ZS）= 加深染色 + 红框；pm = k=1 时的映射，供图纸动画把目标放到中央
+        if (!zoneBB) { zoneBB = {}; for (const z of [1, 2, 3]) { let a = 1e9, b = -1e9, c0 = 1e9, d = -1e9; for (const c of HZ.cells) if (c.grp === z) { a = Math.min(a, c.za); b = Math.max(b, c.za + 7); c0 = Math.min(c0, c.xb - 7); d = Math.max(d, c.xb); } zoneBB[z] = { z0: a, z1: b, x0: c0, x1: d }; } }
+        if (ctx.zone >= 1 && ctx.zone <= 3) { const B = zoneBB[ctx.zone]; g.fillStyle = 'rgba(179,32,42,.30)'; for (const c of HZ.cells) if (c.grp === ctx.zone) g.fillRect(X(c.za), Y(c.xb), 7 * s + 0.4, 7 * s + 0.4); g.strokeStyle = C.red; g.lineWidth = 2.4; g.strokeRect(X(B.z0) - 2, Y(B.x1) - 2, (B.z1 - B.z0) * s + 4, (B.x1 - B.x0) * s + 4); }
+        ctx.pm = { pcx, pcy, ox0, oy0, s0, z0, x1 }; ctx.zoneBB = zoneBB;
         g.strokeStyle = C.red; g.lineWidth = 0.8; g.setLineDash([6, 3]); for (const zz of [-P.midZ - 7, -P.midZ, P.midZ, P.midZ + 7]) { g.beginPath(); g.moveTo(X(zz), Y(118)); g.lineTo(X(zz), Y(-118)); g.stroke(); } g.setLineDash([]);
         // 旋转轴（南 / 北外缘）
         for (const zz of [P.roofB, -P.roofB]) { g.strokeStyle = C.ink2; g.lineWidth = 1; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(X(zz), Y(60)); g.lineTo(X(zz), Y(-60)); g.stroke(); g.setLineDash([]); }
