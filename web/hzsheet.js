@@ -188,6 +188,38 @@
     const Hb = (x, z) => HZ.Ht(x, z) - (HZ.inSky(x, z) ? P.depthSky : P.depth);
     const zoneOfZ = z => Math.abs(z) <= P.midZ ? 2 : Math.abs(z) < P.midZ + 7 ? 4 : z > 0 ? 1 : 3;
     let zoneBB = null;
+    // set2c：选中吊点的行程–时间小图（整个 S-301 时间窗，横轴 = 时间轴同一映射；竖线 = 当前时刻）
+    let chartMemo = null;
+    function strokeChart(g, ctx, pa, sa, box, hits, sp, FS) { const D = ctx.stroke, fs = Math.max(11, FS - 2), pw = pa.x1 - pa.x0, V = ctx.view || { k: 1, px: 0, py: 0 };
+      const W = Math.round(Math.max(170, Math.min(250, pw * 0.44))), H0 = Math.round(Math.max(96, Math.min(128, W * 0.52))), Hmin = Math.max(74, fs * 3 + 34);
+      const key = [ctx.sel, g.canvas.width, g.canvas.height, V.k.toFixed(3), V.px.toFixed(1), V.py.toFixed(1), fs].join('|');
+      let B = chartMemo && chartMemo.key === key ? chartMemo.B : null;
+      if (!B) { const obsL = labels.slice(), DPR = g.getTransform().a, cand = [];
+        const dotBad = (x, y, w, h) => { let n = 0; for (const q of hits) { const nx = Math.max(x, Math.min(x + w, q.x)), ny = Math.max(y, Math.min(y + h, q.y)); if (Math.hypot(nx - q.x, ny - q.y) < q.r + 4) n += q.i === ctx.sel ? 100 : 1; } return n; };
+        const labBad = (x, y, w, h) => obsL.some(r => !(x + w < r[0] || x > r[2] || y + h < r[1] || y > r[3]));
+        const blank = (x, y, w, h) => { try { const X0 = Math.round(x * DPR), Y0 = Math.round(y * DPR), ww = Math.round(w * DPR), hh = Math.round(h * DPR), d = g.getImageData(X0, Y0, ww, hh).data; let n = 0; for (let i = 0; i < d.length; i += 4 * 3) if (Math.abs(d[i] - 246) + Math.abs(d[i + 1] - 242) + Math.abs(d[i + 2] - 234) > 30) n++; return n / (d.length / 12) < 0.004; } catch (e) { return false; } };
+        // ① 平面四角（不压吊点 / 文字）② 剖面四角（画布像素为空白，下方多留 36 px 给提升中的屋盖曲线）
+        for (const [A, isPlan] of [[pa, 1], [sa, 0]]) { const topY = A.y0 + FS + 10, botY = (isPlan ? A.y1 - FS - 8 : Math.min(A.y1, box.y1) - FS - 8);
+          for (const sc of [1, 0.86, 0.74]) { const w = Math.round(W * sc), h = Math.max(Hmin, Math.round(H0 * sc)); if (w > A.x1 - A.x0 - 12 || h > botY - topY) continue;
+            for (const [cx, cy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const x = cx ? A.x1 - 6 - w : A.x0 + 6, y = cy ? botY - h : topY;
+              if (labBad(x, y, w, h)) continue; const tier = isPlan ? (dotBad(x, y, w, h) === 0 ? 1 : 0) : blank(x, y, w, Math.min(h + (cy ? 0 : 36), box.y1 - y)) ? 2 : 3;   // 剖面角：空白优先，否则只要不压文字（小图有底色，盖住剖面线条）
+              if (tier) cand.push({ x, y, w, h, d: Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]), sc, where: isPlan ? 'plan' : tier === 2 ? 'sec' : 'sec*', bad: 0, tier }); } } }
+        // ③ 角都不行：平面内扫描找不压吊点的最远位置
+        if (!cand.length) for (const h of [Hmin]) { const w = Math.round(W * 0.8); for (let y = pa.y0 + FS + 10; y + h <= pa.y1 - FS - 8; y += 4) for (let x = pa.x0 + 6; x + w <= pa.x1 - 6; x += 6) if (!dotBad(x, y, w, h) && !labBad(x, y, w, h)) cand.push({ x, y, w, h, d: Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]), sc: 0.8, where: 'scan', bad: 0 }); }
+        if (!cand.length) { const w = Math.round(W * 0.74), h = Hmin; for (const [cx, cy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const x = cx ? pa.x1 - 6 - w : pa.x0 + 6, y = cy ? pa.y1 - FS - 8 - h : pa.y0 + FS + 10; cand.push({ x, y, w, h, d: Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]), sc: 0.74, where: 'forced', bad: dotBad(x, y, w, h) }); } cand.sort((a, b) => a.bad - b.bad || b.d - a.d); }
+        else { const t0 = Math.min(...cand.map(c => c.tier || 4)), cs = cand.filter(c => (c.tier || 4) === t0), far = Math.max(...cs.map(c => c.d)); cs.sort((a, b) => (b.d > far * 0.85) - (a.d > far * 0.85) || b.sc - a.sc || b.d - a.d); cand.length = 0; cand.push(...cs); }
+        B = cand[0]; chartMemo = { key, B }; }
+      const { x, y, w, h } = B; ctx.chartBox = { x, y, w, h, bad: B.bad, fs, where: B.where };
+      g.save(); g.fillStyle = 'rgba(246,242,234,.96)'; g.fillRect(x, y, w, h); g.strokeStyle = C.ink; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      g.textBaseline = 'middle'; g.font = `600 ${fs}px ${MONO}`; const vt = fmt(D.vNow) + ' mm', vw = g.measureText(vt).width; g.font = `600 ${fs}px ${SANS}`; let tt = D.name + ' 行程–时间'; if (g.measureText(tt).width + vw + 18 > w) tt = D.name + ' 行程'; g.fillStyle = C.ink; g.textAlign = 'left'; g.fillText(tt, x + 6, y + fs * 0.7 + 3);
+      g.font = `600 ${fs}px ${MONO}`; g.fillStyle = C.red; g.textAlign = 'right'; g.fillText(vt, x + w - 6, y + fs * 0.7 + 3);
+      const yl = f1(Math.max(1, D.max) / 1000) + 'm'; g.font = `${fs}px ${MONO}`; const L = x + 6 + g.measureText(yl).width + 4, R = x + w - 8, T = y + fs * 1.4 + 11, Bt = y + h - fs - 6, vmax = Math.max(1, D.max), vmin = Math.min(0, D.min);
+      const PX = u => L + u * (R - L), PY = v => Bt - (v - vmin) / (vmax - vmin) * (Bt - T);
+      g.strokeStyle = C.line; g.lineWidth = 0.8; g.beginPath(); g.moveTo(L, T); g.lineTo(L, Bt); g.lineTo(R, Bt); g.moveTo(L, PY(vmax)); g.lineTo(R, PY(vmax)); g.stroke();
+      g.font = `${fs}px ${MONO}`; g.fillStyle = C.ink2; g.textAlign = 'right'; g.fillText(yl, L - 3, PY(vmax)); g.fillText('0', L - 3, PY(0)); g.textAlign = 'left'; g.fillText(D.d0.slice(5), L, Bt + fs * 0.6 + 3); g.textAlign = 'right'; g.fillText(D.d1.slice(5), R, Bt + fs * 0.6 + 3);
+      g.strokeStyle = C.ink; g.lineWidth = 1.4; g.beginPath(); D.us.forEach((u, k) => { const px = PX(u), py = PY(D.vs[k]); k ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke();
+      const ux = PX(Math.max(0, Math.min(1, D.uNow))); g.strokeStyle = C.red; g.lineWidth = 1.4; g.beginPath(); g.moveTo(ux, T - 2); g.lineTo(ux, Bt); g.stroke(); g.fillStyle = C.red; g.beginPath(); g.arc(ux, PY(D.vNow), 3, 0, Math.PI * 2); g.fill();
+      ctx.chartBox.ux = ux; g.restore(); g.textAlign = 'left'; labels.push([x, y, x + w, y + h]); }
     function jack(g, w, h, t, ctx) {
       labels.length = 0; const J = HZ.jackRead(t), ps = J.pose, box = frame(g, w, h, ctx.tb(w, h, 'HZW-S-301-1', ['千斤顶平面布置 · 剖面净空 · ' + HZ.lifters.length + ' 吊点', '千斤顶平面 · 剖面净空'], t));
       const bw = box.x1 - box.x0, bh = box.y1 - box.y0, wide = bw / bh > 1.25, FS = Math.max(12, Math.min(14, Math.round(Math.min(bw, bh) / 26)));
@@ -211,6 +243,12 @@
         g.strokeStyle = C.red; g.lineWidth = 0.8; g.setLineDash([6, 3]); for (const zz of [-P.midZ - 7, -P.midZ, P.midZ, P.midZ + 7]) { g.beginPath(); g.moveTo(X(zz), Y(118)); g.lineTo(X(zz), Y(-118)); g.stroke(); } g.setLineDash([]);
         // 旋转轴（南 / 北外缘）
         for (const zz of [P.roofB, -P.roofB]) { g.strokeStyle = C.ink2; g.lineWidth = 1; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(X(zz), Y(60)); g.lineTo(X(zz), Y(-60)); g.stroke(); g.setLineDash([]); }
+        // set2c：剖切位置线 B–B（x = 39 m，箭头指向看的方向 = 东 = 上）；悬停 = 淡红光晕，剖切中 = 红粗线
+        { const cy = Y(HZ.SEC_X), xa = X(-166), xb = X(166), on = ctx.cut >= 1, hv = ctx.hoverK === 'cut', ln = () => { g.beginPath(); g.moveTo(xa, cy); g.lineTo(xb, cy); g.stroke(); };
+          if (hv || on) { g.strokeStyle = on ? 'rgba(179,32,42,.22)' : 'rgba(179,32,42,.30)'; g.lineWidth = 9; ln(); }
+          g.strokeStyle = on ? C.red : C.ink; g.lineWidth = on || hv ? 2.2 : 1.2; g.setLineDash([12, 4, 2, 4]); ln(); g.setLineDash([]);
+          g.fillStyle = g.strokeStyle; for (const xe of [xa, xb]) { g.lineWidth = 3; g.beginPath(); g.moveTo(xe + (xe < pcx ? 0 : -14), cy); g.lineTo(xe + (xe < pcx ? 14 : 0), cy); g.stroke(); g.lineWidth = 1.6; g.beginPath(); g.moveTo(xe, cy); g.lineTo(xe, cy - 15); g.stroke(); g.beginPath(); g.moveTo(xe, cy - 22); g.lineTo(xe - 5, cy - 13); g.lineTo(xe + 5, cy - 13); g.closePath(); g.fill(); }
+          ctx.cutHit = { xa: Math.max(pa.x0, xa), xb: Math.min(pa.x1, xb), y: cy, ends: [xa, xb], vis: cy > pa.y0 && cy < pa.y1 }; }
         // 吊点：圈 = 提升器；填色 = 同步偏差（绿 ≤ 35 % 上限 / 黄 / 红）；不在本段 = 空心
         const r0 = Math.max(4, Math.min(7, 4.2 * s0 * 1.6)) * Math.min(1.8, Math.sqrt(kz)), hits = [];
         for (const r of J.rows) { const x = X(r.z), y = Y(r.x); g.beginPath(); g.arc(x, y, r0, 0, Math.PI * 2); if (r.on) { g.fillStyle = J.m && J.m.state === 'ext' ? devCol(r.dev, J.limit) : C.ink; g.fill(); } else { g.fillStyle = C.paper; g.fill(); g.strokeStyle = C.ink3; g.lineWidth = 1; g.stroke(); }
@@ -220,6 +258,7 @@
         const jn = i => 'J' + String(i + 1).padStart(2, '0');
         for (const [i, col, lw, rr] of [[ctx.hover, C.ink, 1.6, r0 + 3.5], [ctx.sel, C.red, 2.4, r0 + 4]]) { if (!(i >= 0)) continue; const r = J.rows[i], x = X(r.z), y = Y(r.x); g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.arc(x, y, rr, 0, Math.PI * 2); g.stroke(); if (col === C.red) { g.lineWidth = 1; g.beginPath(); g.arc(x, y, rr + 4, 0, Math.PI * 2); g.stroke(); } }
         g.restore();
+        { const c = ctx.cutHit, col = ctx.cut >= 1 ? C.red : C.ink; if (c.vis) { label(g, 'B', c.ends[0] + 8, c.y - 17, col, pa, { fs: FS, b: true }); label(g, 'B 向东', c.ends[1] - 8, c.y - 17, col, pa, { fs: FS, b: true, al: 'r', sans: true }); } }
         for (const i of [ctx.sel, ctx.hover]) { if (!(i >= 0)) continue; const r = J.rows[i]; label(g, jn(i), X(r.z) + r0 + 9, Y(r.x) - r0 - 6, i === ctx.sel ? C.red : C.ink, pa, { fs: FS, b: true }); }
         // 读数：行程最大 / 最小的吊点
         const on = J.rows.filter(r => r.on); if (on.length) { const hi = on.reduce((a, b) => b.disp > a.disp ? b : a), lo = on.reduce((a, b) => b.disp < a.disp ? b : a);
@@ -227,7 +266,8 @@
         if (kz >= 2.2) for (const r of J.rows) if (r.i !== ctx.sel && r.i !== ctx.hover) label(g, jn(r.i), X(r.z) + r0 + 4, Y(r.x) - r0 - 4, C.ink2, pa, { fs: FS - 2 });
         label(g, '千斤顶平面' + (kz > 1.01 ? ' ×' + kz.toFixed(1) : ''), pa.x0 + 4, pa.y0 + FS * 0.6 + 2, C.ink, pa, { fs: FS, b: true, sans: true });
         label(g, '同步差 ' + J.sync.toFixed(1) + ' / ' + J.limit + ' mm', pa.x1 - 4, pa.y0 + FS * 0.6 + 2, J.sync <= J.limit ? '#2f7a3a' : C.red, pa, { fs: FS, b: true, al: 'r', sans: true });
-        for (const [n, zz] of [['北区', -105], ['中区', 0], ['南区', 105]]) label(g, n, X(zz), pa.y1 - FS * 0.6 - 2, C.ink2, pa, { al: 'c', fs: FS - 1, sans: true }); }
+        for (const [n, zz] of [['北区', -105], ['中区', 0], ['南区', 105]]) label(g, n, X(zz), pa.y1 - FS * 0.6 - 2, C.ink2, pa, { al: 'c', fs: FS - 1, sans: true });
+        ctx.chartBox = null; if (ctx.sel >= 0 && ctx.stroke) { const r = J.rows[ctx.sel]; ctx._chart = [hits, [X(r.z), Y(r.x)]]; } }
       // ---- 剖面：沿 z（南北）切 x = 39 m，向东看；竖向 ×4 ----
       { const XS = 39, VE = 4, top = sa.y0 + FS + 10, bot = sa.y1 - FS - 6, z0 = -168, z1 = 168, sx = (sa.x1 - sa.x0 - 12) / (z1 - z0), y0w = P.floorTop - 3, y1w = 62, sy = Math.min(sx * VE, (bot - top) / (y1w - y0w));
         const yOff = Math.max(0, (bot - top - (y1w - y0w) * sy) / 2), X = z => sa.x0 + 6 + (z - z0) * sx, Y = y => bot - yOff - (y - y0w) * sy;
@@ -237,22 +277,27 @@
         // 设计位下弦（幽灵）与当前下弦
         const curve = (fn, col, lw, dash) => { g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash || []); g.beginPath(); let st = false; for (let z = -160; z <= 160; z += 2) { const y = fn(z); if (y == null) { st = false; continue; } st ? g.lineTo(X(z), Y(y)) : g.moveTo(X(z), Y(y)); st = true; } g.stroke(); g.setLineDash([]); };
         curve(z => Hb(XS, z), C.ghost, 1, [4, 3]);
-        const cur = z => { const gz = zoneOfZ(z); if (gz === 4 && t < K.merge.start) return null; return HZ.xf(ps, gz, [XS, Hb(XS, z), z])[1]; };
+        const cur = z => HZ.secY(ps, t, z, XS);   // set2c：与 3D 剖切净空同源（hzseq.js）
         curve(cur, C.ink, 1.8);
         // 提升塔 / 柱（竖线）
         g.strokeStyle = C.red; g.lineWidth = 1.4; for (const zz of P.towerZ) { g.beginPath(); g.moveTo(X(zz), Y(P.floorTop)); g.lineTo(X(zz), Y(HZ.Ht(XS, zz) + 4)); g.stroke(); }
         g.strokeStyle = C.ink2; for (const zz of P.mastZ) { g.beginPath(); g.moveTo(X(zz), Y(P.floorTop)); g.lineTo(X(zz), Y(Hb(XS, zz) - 1.5)); g.stroke(); }
         // 净空尺寸线：本剖面上楼面上方最低处
-        let best = null; for (let z = -P.floorZ + 2; z <= P.floorZ - 2; z += 1) { if (Math.abs(z) < P.gap + 1) continue; const y = cur(z); if (y == null) continue; if (!best || y < best.y) best = { z, y }; }
-        if (best) { const xx = X(best.z), ya = Y(P.floorTop), yb = Y(best.y), sd = best.z > 0 ? -1 : 1; g.strokeStyle = C.red; g.fillStyle = C.red; g.lineWidth = 1.2; g.beginPath(); g.moveTo(xx, ya); g.lineTo(xx, yb); for (const yy of [ya, yb]) { g.moveTo(xx - 5, yy); g.lineTo(xx + 5, yy); } g.stroke();
-          label(g, '净空 ' + f2(best.y - P.floorTop) + ' m', xx + sd * 8, (ya + yb) / 2, C.red, sa, { fs: FS, b: true, al: sd < 0 ? 'r' : 'l' }); }
+        const best = HZ.secGap(ps, t, XS); ctx.gapVal = best ? f2(best.v) : null;
+        ctx.gapHit = null; if (best) { const xx = X(best.z), ya = Y(P.floorTop), yb = Y(best.y), sd = best.z > 0 ? -1 : 1, on = ctx.cut === 2, hv = ctx.hoverK === 'gap';
+          if (on || hv) { g.fillStyle = on ? 'rgba(179,32,42,.16)' : 'rgba(179,32,42,.10)'; g.fillRect(xx - 8, Math.min(ya, yb) - 6, 16, Math.abs(ya - yb) + 12); }
+          g.strokeStyle = C.red; g.fillStyle = C.red; g.lineWidth = on || hv ? 2.4 : 1.2; g.beginPath(); g.moveTo(xx, ya); g.lineTo(xx, yb); for (const yy of [ya, yb]) { g.moveTo(xx - 5, yy); g.lineTo(xx + 5, yy); } g.stroke();
+          const n0 = labels.length, ok = label(g, '净空 ' + ctx.gapVal + ' m', xx + sd * 8, (ya + yb) / 2, C.red, sa, { fs: FS, b: true, al: sd < 0 ? 'r' : 'l' }), lb = ok && labels.length > n0 ? labels[labels.length - 1] : null;
+          if (lb && (on || hv)) { g.strokeStyle = C.red; g.lineWidth = 1; g.strokeRect(lb[0] - 2, lb[1] - 1, lb[2] - lb[0] + 4, lb[3] - lb[1] + 2); }
+          ctx.gapHit = { x: xx, y0: Math.min(ya, yb), y1: Math.max(ya, yb), lb, z: best.z, y: best.y }; }
         label(g, '剖面 x = 39 m · 竖向 ×' + VE, sa.x0 + 4, sa.y0 + FS * 0.6 + 2, C.ink, sa, { fs: FS, b: true, sans: true });
         const gp = HZ.gap(ps, t); label(g, '全屋盖最小净空 ' + f2(gp.v) + ' m', sa.x1 - 4, sa.y1 - FS * 0.6 - 2, gp.v >= P.jigMin ? '#2f7a3a' : C.red, sa, { fs: FS - 1, b: true, al: 'r', sans: true });
         label(g, '北', X(-160), Y(P.floorTop) + FS, C.ink2, sa, { fs: FS - 1, sans: true }); label(g, '南', X(160), Y(P.floorTop) + FS, C.ink2, sa, { fs: FS - 1, sans: true, al: 'r' }); }
       g.strokeStyle = C.line; g.lineWidth = 0.8; g.beginPath(); if (wide) { g.moveTo(pa.x1 + 4, box.y0 + 6); g.lineTo(pa.x1 + 4, box.y1 - 4); } else { g.moveTo(box.x0 + 6, pa.y1 + 3); g.lineTo(box.x1 - 6, pa.y1 + 3); } g.stroke();
+      if (ctx._chart) strokeChart(g, ctx, pa, sa, box, ctx._chart[0], ctx._chart[1], FS);   // set2c：平面 + 剖面都画完后再找位置（剖面角按画布像素判空）
       return { sync: J.sync };
     }
-    return { section, plan, lift, jack, stOf, rodsTot, X0 };
+    return { section, plan, lift, jack, stOf, rodsTot, X0, f2 };
   };
   G.HZS = HZS;
 })(window);
