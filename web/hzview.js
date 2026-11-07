@@ -34,6 +34,10 @@
 
   function run(THREE, OrbitControls) {
     const T0 = performance.now();
+    // r3 结尾变体参数（#fv=键:值,…；rw 屋盖材质 0–4、re 挑檐加厚 m、pv 光伏 0 角瓣/1 顺轨条带/2 垂轨条带/3 等高环带、cam 结尾机位、tz 列车股道 z、te 车头停位 x、tw 从西进站、dk 黄昏 0–1、lt 亮灯强度、se 结尾太阳高度°、ik 墨线淡出比例、tl 车窗亮度）；默认值 = r3 闭环终选（work/hzwest3/PROGRESS.md）
+    const FV = Object.assign({ rw: 4, re: 3.5, pv: 1, cam: 14, tz: -98.5, te: -240, tw: 1, dk: 0.6, lt: 4.5, se: 9, ik: 0.95, tl: 30 }, Object.fromEntries((hp.get('fv') || '').split(',').filter(Boolean).map(kv => { const [k, v] = kv.split(':'); return [k, +v]; }))); S.FV = FV;
+    HZ.P.edgeDrop = FV.re;
+    if (FV.rw >= 1) { Object.assign(HZ.MAT.clad, { c: [0.975, 0.975, 0.97], r: 0.52, m: 0.06 }); Object.assign(HZ.MAT.soffit, { c: [0.96, 0.95, 0.92] }); }   // r3：白色哑光铝板（原 m 0.5 反射暗环境 → 发灰）
     HZ.make(); TL = timeline(); S.Tmax = TL.Tmax; S.OPEN = TL.OPEN; S.HZ = HZ; const K = HZ.K, P = HZ.P;
     const SH = window.HZS.make(HZ); S.SH = SH;
     const canvas = $('gl'), v3 = $('v3');
@@ -66,7 +70,7 @@
       renderer.shadowMap.needsUpdate = true; dirty = true; }
 
     // ---------------- 构件：1 个网格（实景 / 墨线两套材质）+ 1 组墨线 ----------------
-    const U = { uT: { value: 0 }, uG: { value: [0, 1, 2, 3, 4, 5].map(() => new THREE.Matrix4()) }, uGlowDays: { value: 6 }, uGlowCol: { value: new THREE.Vector3(1.0, 0.58, 0.26).multiplyScalar(0.6) }, uLights: { value: 0 }, uPV: { value: 0 }, uLightCol: { value: new THREE.Vector3(1.0, 0.78, 0.5) },
+    const U = { uT: { value: 0 }, uG: { value: [0, 1, 2, 3, 4, 5].map(() => new THREE.Matrix4()) }, uGlowDays: { value: 6 }, uGlowCol: { value: new THREE.Vector3(1.0, 0.58, 0.26).multiplyScalar(0.6) }, uLights: { value: 0 }, uPV: { value: 0 }, uPVs: { value: 0 }, uRoofLift: { value: 0 }, uWave: { value: 0 }, uLightCol: { value: new THREE.Vector3(1.0, 0.78, 0.5) },
       uPaper: { value: new THREE.Color('#efe9dd') }, uRed: { value: new THREE.Color('#b3202a') }, uInk: { value: new THREE.Color('#1d1a17') }, uTemp: { value: new THREE.Color('#c46a12') }, uSun2: { value: new THREE.Vector3(-0.45, 0.8, 0.4).normalize() }, uLA: { value: 1 }, uGhost: { value: 1 }, uCam: { value: new THREE.Vector3() } };
     const VDEF = `attribute vec4 aK; attribute vec2 aR; attribute vec2 aY; attribute float aG; attribute vec4 aM;
       uniform float uT, uGlowDays; uniform mat4 uG[6]; varying vec4 vM; varying float vGlow; varying vec3 vWq; mat4 hzM; vec3 hzP;
@@ -77,7 +81,7 @@
         vGlow = uT >= s ? (1.0 - smoothstep(s + d, s + d + uGlowDays, uT)) * (aR.x >= 0.0 && uT > aR.x ? 0.0 : 1.0) : 0.0; vM = aM; vWq = q; }
 `;
     const PK = HZ.PVK, PP = HZ.P;
-    const PVGLSL = `varying vec4 vM; varying float vGlow; varying vec3 vWq; uniform vec3 uGlowCol, uLightCol; uniform float uLights, uPV;
+    const PVGLSL = `varying vec4 vM; varying float vGlow; varying vec3 vWq; uniform vec3 uGlowCol, uLightCol; uniform float uLights, uPV, uPVs, uRoofLift, uWave;
       float hzSm(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
       float hzPVMask(vec2 p) { float th = atan(p.y, p.x), c = abs(cos(th)) / ${PP.roofA.toFixed(2)}, s = abs(sin(th)) / ${PP.roofB.toFixed(2)};
         float R = pow(pow(c, 4.0) + pow(s, 4.0), -0.25) * (1.0 + 0.022 * sin(8.0 * th + 0.6) + 0.012 * sin(13.0 * th)), r = length(p) / R, u = abs(p.x) / ${PP.roofA.toFixed(2)}, v = abs(p.y) / ${PP.roofB.toFixed(2)};
@@ -87,9 +91,9 @@
       mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, U);
         sh.vertexShader = VDEF + sh.vertexShader.replace('#include <beginnormal_vertex>', 'hzCalc();\nvec3 objectNormal = mat3(hzM) * normal;').replace('#include <begin_vertex>', 'vec3 transformed = hzP;');
         sh.fragmentShader = PVGLSL + sh.fragmentShader
-          .replace('#include <color_fragment>', '#include <color_fragment>\nfloat hzPV = 0.0; if (vM.w > 0.5 && vM.w < 1.5) { hzPV = hzPVMask(vWq.xz) * step(vWq.z, mix(-170.0, 175.0, uPV)); vec2 sd = abs(fract(vWq.xz / vec2(3.5, 1.75)) - 0.5); float ln = 1.0 - smoothstep(0.0, fwidth(vWq.x / 3.5) * 1.5, 0.5 - sd.x); diffuseColor.rgb *= 1.0 - 0.06 * ln; vec2 pc = abs(fract(vWq.xz / vec2(2.0, 1.0)) - 0.5); float pl = max(1.0 - smoothstep(0.0, fwidth(vWq.x / 2.0) * 1.2, 0.5 - pc.x), 1.0 - smoothstep(0.0, fwidth(vWq.z) * 1.2, 0.5 - pc.y)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.26, 0.48) * (1.0 - 0.35 * pl) + vec3(0.12) * pl, hzPV); }\nif (vM.w > 1.5) { vec2 gc = abs(fract(vWq.xz / vec2(2.4, 2.4)) - 0.5); float gl = max(1.0 - smoothstep(0.0, fwidth(vWq.x / 2.4) * 1.3, 0.5 - gc.x), 1.0 - smoothstep(0.0, fwidth(vWq.z / 2.4) * 1.3, 0.5 - gc.y)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75), gl * 0.6); }')
+          .replace('#include <color_fragment>', '#include <color_fragment>\nfloat hzPV = 0.0; if (vM.w > 0.5 && vM.w < 1.5) { hzPV = hzPVMask(vWq.xz) * step(vWq.z, mix(-170.0, 175.0, uPV)); if (uPVs > 0.5) { float sc = uPVs < 1.5 ? vWq.z / 6.0 : uPVs < 2.5 ? vWq.x / 6.0 : length(vWq.xz / vec2(' + PP.roofA.toFixed(1) + ', ' + PP.roofB.toFixed(1) + ')) * 24.0; float fs = abs(fract(sc) - 0.5), aw = fwidth(sc) * 1.2; hzPV *= 1.0 - smoothstep(0.31 - aw, 0.31 + aw, fs); } vec2 sd = abs(fract(vWq.xz / vec2(3.5, 1.75)) - 0.5); float ln = 1.0 - smoothstep(0.0, fwidth(vWq.x / 3.5) * 1.5, 0.5 - sd.x); diffuseColor.rgb *= 1.0 - 0.06 * ln; vec2 pc = abs(fract(vWq.xz / vec2(2.0, 1.0)) - 0.5); float pl = max(1.0 - smoothstep(0.0, fwidth(vWq.x / 2.0) * 1.2, 0.5 - pc.x), 1.0 - smoothstep(0.0, fwidth(vWq.z) * 1.2, 0.5 - pc.y)); diffuseColor.rgb = mix(diffuseColor.rgb, uPVs > 0.5 ? vec3(0.07, 0.12, 0.26) * (1.0 - 0.3 * pl) + vec3(0.30) * pl : vec3(0.16, 0.26, 0.48) * (1.0 - 0.35 * pl) + vec3(0.12) * pl, hzPV); }\nif (vM.w > 1.5) { vec2 gc = abs(fract(vWq.xz / vec2(2.4, 2.4)) - 0.5); float gl = max(1.0 - smoothstep(0.0, fwidth(vWq.x / 2.4) * 1.3, 0.5 - gc.x), 1.0 - smoothstep(0.0, fwidth(vWq.z / 2.4) * 1.3, 0.5 - gc.y)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.75), gl * 0.6); }')
           .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(vM.x, 0.18, hzPV);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(vM.y, 0.6, hzPV);')
-          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uGlowCol * vGlow * (0.35 + 0.65 * vGlow) + diffuseColor.rgb * uLightCol * vM.z * uLights * 1.6;'); };
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat hzWv = uWave > 0.0 ? hzSm(0.0, 30.0, uWave - length(vWq.xz)) : 1.0; totalEmissiveRadiance += uGlowCol * vGlow * (0.35 + 0.65 * vGlow) + diffuseColor.rgb * uLightCol * vM.z * uLights * hzWv; if (vM.w > 0.5 && vM.w < 1.5) totalEmissiveRadiance += diffuseColor.rgb * uRoofLift * (1.0 - hzPV);'); };
       mat.customProgramCacheKey = () => 'hz-std'; return mat; }
     function patchDepth(mat) { mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, U); sh.vertexShader = VDEF + sh.vertexShader.replace('#include <begin_vertex>', 'hzCalc();\nvec3 transformed = hzP;'); }; mat.customProgramCacheKey = () => 'hz-depth'; return mat; }
     // 墨线·淡彩填充：纸色 + 三档明暗；当前构件红
@@ -116,9 +120,13 @@
     const trainGeo = (() => { const g = new HZ.GB('train'), cars = 8, L = 25.5; for (let k = 0; k < cars; k++) { const x0 = k * (L + 0.8); g.box(x0, 0.6, -1.6, x0 + L, 4.1, 1.6, HZ.MAT.train.c, false); g.box(x0, 1.9, -1.62, x0 + L, 2.25, 1.62, [0.85, 0.15, 0.12], false); g.box(x0 + 0.5, 2.6, -1.63, x0 + L - 0.5, 3.3, 1.63, [0.12, 0.14, 0.18], false); }
       g.hexa([[-12, 0.6, -1.6], [0, 0.6, -1.6], [0, 0.6, 1.6], [-12, 0.6, 1.6], [-12, 1.2, -0.6], [0, 4.1, -1.6], [0, 4.1, 1.6], [-12, 1.2, 0.6]], HZ.MAT.train.c, false);
       for (let k = 0; k < cars; k++) { const x0 = k * (L + 0.8); for (const [a, b] of [[[x0, 4.1, -1.6], [x0 + L, 4.1, -1.6]], [[x0, 4.1, 1.6], [x0 + L, 4.1, 1.6]], [[x0, 0.6, 1.6], [x0 + L, 0.6, 1.6]], [[x0, 0.6, -1.6], [x0 + L, 0.6, -1.6]]]) g.line(a, b); } return g; })();
+    // r3：车窗带 + 头灯单独一个材质（开通点亮时发光，列车在黄昏里可读）
+    HZ.MAT.trainW = { c: [0.16, 0.17, 0.2], r: 0.2, m: 0.3, e: FV.tl };
+    const trainWGeo = (() => { const g = new HZ.GB('trainW'), cars = 8, L = 25.5; for (let k = 0; k < cars; k++) { const x0 = k * (L + 0.8); g.box(x0 + 0.6, 2.45, -1.645, x0 + L - 0.6, 3.45, 1.645, null, false); } g.box(-11.6, 1.25, -1.0, -11.2, 1.65, 1.0, [0.9, 0.9, 0.85], false); return g; })();
     function compile() {
       const items = []; for (const a of HZ.acts) { if (a.kind === 'untemp' || !a.parts.length) continue; for (const p of a.parts) items.push({ p, st: p.st, du: p.du, rm: p.rm, temp: a.kind === 'temp' ? 1 : 0 }); }
       items.push({ p: { geo: trainGeo, mat: 'train', grp: 5 }, st: -20, du: 0.01, rm: [-1, 0], temp: 0 });
+      items.push({ p: { geo: trainWGeo, mat: 'trainW', grp: 5 }, st: -20, du: 0.01, rm: [-1, 0], temp: 0 });
       let nv = 0, nl = 0; for (const it of items) { nv += it.p.geo.P.length / 3; nl += it.p.geo.L.length / 3; }
       const MF = new Float32Array(nv), Pp = new Float32Array(nv * 3), N = new Float32Array(nv * 3), C = new Float32Array(nv * 3), Kk = new Float32Array(nv * 4), R = new Float32Array(nv * 2), Y = new Float32Array(nv * 2), Gp = new Float32Array(nv), M = new Float32Array(nv * 4);
       const LP = new Float32Array(nl * 3), LK = new Float32Array(nl * 4), LR = new Float32Array(nl * 2), LY = new Float32Array(nl * 2), LG = new Float32Array(nl), LF = new Float32Array(nl);
@@ -267,7 +275,21 @@
       hero: { az: +(hp.get('caz') || -32), el: +(hp.get('cel') || 24), d: +(hp.get('cd') || 820), tx: 0, ty: 22, tz: 10 },
       early: { az: 62, el: 26, d: 860, tx: -20, ty: 6, tz: 0 },
       lift: { az: 64, el: 18, d: 580, tx: 0, ty: 34, tz: 20 },   // r2：几何扫描 105 个机位（work/hzwest2/camsweep.js）+ VM 渲染 8 个，选旋转位移大且不压叠层的
-      fin: { az: -22, el: 11, d: 760, tx: -10, ty: 26, tz: 18 } };
+      fin: [{ az: -22, el: 11, d: 760, tx: -10, ty: 26, tz: 18 },          // 0 = r2 原机位（西北）：列车被屋盖挡住
+        { az: 120, el: 6, d: 440, tx: 60, ty: 26, tz: 40 },                // 1 = 东南低机位：南场外侧股道列车进站、屋盖在后（几何初筛 work/hzwest3/finsweep.js 第 1）
+        { az: 136, el: 12, d: 600, tx: 60, ty: 26, tz: 40 },               // 2 = 东南中机位：屋盖顶面 + 光伏 + 列车
+        { az: 110, el: 9, d: 520, tx: 0, ty: 26, tz: 20 },                 // 3 = 东偏南：云门不遮屋盖，列车走南场内侧
+        { az: 108, el: 10, d: 520, tx: 0, ty: 30, tz: 10 },                // 4 = 东偏南：屋盖夹在两座上盖楼之间（屋顶可见 0.91），列车走中间股道
+        { az: 120, el: 18, d: 620, tx: 0, ty: 30, tz: 10 },                // 5 = 东南高机位：屋顶几乎全可见（0.98），看光伏
+        { az: 120, el: 7, d: 520, tx: 0, ty: 30, tz: 10 },                 // 6 = 东南低机位：南场外侧列车全长可见
+        { az: 108, el: 7, d: 440, tx: 60, ty: 28, tz: 20 },                // 7 = 东偏南近机位
+        { az: -40, el: 11, d: 660, tx: -60, ty: 26, tz: 0 },               // 8 = 西北：北场列车从西进站（几何初筛 finsweep_w.js：列车可见 1.0、屋顶可见 0.92）
+        { az: -22, el: 14, d: 760, tx: -60, ty: 26, tz: 0 },               // 9 = 西北偏北（接近 r2 原机位，屋顶可见 0.98）
+        { az: -12, el: 14, d: 660, tx: -100, ty: 24, tz: -20 },            // 10 = 北偏西
+        { az: -30, el: 11, d: 660, tx: -100, ty: 24, tz: -20 },            // 11 = 西北低
+        { az: -40, el: 11, d: 560, tx: -90, ty: 24, tz: -20 },             // 12 = 西北近：列车更大
+        { az: -48, el: 9, d: 520, tx: -120, ty: 22, tz: -40 },             // 13 = 西北更近更低
+        { az: -40, el: 11, d: 760, tx: -60, ty: 24, tz: -10 }][FV.cam | 0] };   // 14 = r3 终选：P1 的方位 / 仰角，距离退到 760（9 视口审计屋盖不出画；camfit.py）  // 3 = 东偏南：云门不遮屋盖，列车走南场内侧  // 3 = 正东贴轨：列车迎面、屋盖压顶
     let aspK = 1;
     function camKey(t) { const a = sm(380, 560, t), b = sm(TL.l0 - 25, TL.l0 + 2, t) * (1 - sm(TL.l1, TL.l1 + 40, t)), c = sm(TL.OPEN - 40, TL.OPEN + 10, t);
       const mix = (p, q, k) => { const o = {}; for (const key in p) o[key] = p[key] + (q[key] - p[key]) * k; return o; };
@@ -328,13 +350,22 @@
 
     // ---------------- 状态 ----------------
     let dirty = true, lastShadowT = -1, shadowWant = true, shadowAge = 0; const SP = +(hp.get('sp') || 4), SPL = +(hp.get('spl') || 3);
-    const trainZ = 46.5 + 8; S.blend = 0;
+    const trainZ = FV.tz === 0 ? 46.5 + 8 : FV.tz === 1 ? 112.5 + 8 : FV.tz; S.blend = 0;
+    // 黄昏：在黄金时刻（FX.TOD.g）与蓝调时刻之间插值；量化 12 档，换档时才重建环境图
+    const TG = JSON.parse(JSON.stringify(FX.TOD.g)), BH = { el: 0.8, sun: [1.0, 0.46, 0.26], I: 1.3, zen: [0.025, 0.045, 0.13], hor: [0.50, 0.30, 0.22], gnd: [0.035, 0.035, 0.045], glow: [0.75, 0.32, 0.14], fog: [0.40, 0.33, 0.38],
+      skyZ: [0.012, 0.04, 0.16], skyH: [1.05, 0.46, 0.22], cTint: [1.0, 0.55, 0.42], mtn: [[0.08, 0.08, 0.12], [0.50, 0.34, 0.30]], post: { exp: 0.92, bloom: 0.28, god: 0.35, sat: 1.15 } };
+    const lerpT = (a, b, k) => { if (Array.isArray(a)) return b == null ? a : a.map((v, i) => lerpT(v, b[i], k)); if (typeof a === 'number') return b == null ? a : a + (b - a) * k; if (a && typeof a === 'object') { const o = {}; for (const key in a) o[key] = lerpT(a[key], b ? b[key] : null, k); return o; } return a; };
+    let duskK = 0, duskQ = -1; const sunEl0 = look.sunEl;
+    function setDusk(k, fk) { const q = Math.round(k * 12) * 100 + Math.round((FV.se !== sunEl0 ? fk : 0) * 12); if (q === duskQ) return; duskQ = q; duskK = Math.round(k * 12) / 12; const e0 = sunEl0 + (FV.se - sunEl0) * (q % 100) / 12; Object.assign(T, lerpT(TG, BH, duskK)); look.sunEl = e0 + (BH.el - e0) * duskK; hemi.intensity = 1.05 * (1 - 0.55 * duskK); applyLook(); }
     function setT(t, fromU) { t = Math.max(0, Math.min(TL.Tmax, t)); S.st.t = t; S.st.u = fromU != null ? fromU : TL.t2u(t); U.uT.value = Math.min(t, TL.OPEN + 0.001);
       const ps = HZ.pose(t); for (const g of [1, 2, 3, 4]) U.uG.value[g].fromArray(HZ.mat(ps, g)); S.pose = ps;
       const rig = K.rig, sv = t >= rig.start + rig.dur * 0.6 && t < rig.rm.start + rig.rm.dur * 0.3; STR.visible = sv; STR.material.uniforms.uA.value = sv ? 1 : 0;
-      U.uLights.value = sm(TL.OPEN - 6, TL.OPEN + 4, t); U.uPV.value = Math.max(0, Math.min(1, (t - K.pv.start) / K.pv.dur));
-      const f = sm(TL.OPEN + 1, TL.OPEN + 24, t), tv = t > TL.OPEN + 0.5, tx = tv ? 1500 - (1500 + 60) * (1 - Math.pow(1 - f, 2.2)) : 9000; U.uG.value[5].makeTranslation(tx, tv ? HZ.P.deckTop + 0.48 : -500, trainZ); S.train = [tx, 0, trainZ];
-      S.blend = S.st.pref === 'lit' ? 1 : sm(TL.OPEN - 12, TL.OPEN + 3, t) * 0.85;   // 墨线默认：结尾留 15% 墨线（“图纸变成现实”的余韵）
+      // r3「点亮」：开通当天由中心向外一波亮灯（uWave = 波前半径 m），之后保持；黄昏程度 dk
+      const lw = sm(TL.OPEN - 1, TL.OPEN + 5, t); U.uLights.value = FV.lt * (FV.lt > 1.7 ? lw : sm(TL.OPEN - 6, TL.OPEN + 4, t)); U.uWave.value = FV.lt > 1.7 ? (lw >= 1 ? 0 : 20 + 420 * lw) : 0;
+      U.uPV.value = Math.max(0, Math.min(1, (t - K.pv.start) / K.pv.dur)); U.uPVs.value = FV.pv; U.uRoofLift.value = FV.rw >= 2 ? (FV.rw >= 4 ? 0.38 : FV.rw >= 3 ? 0.22 : 0.10) * (1 - 0.6 * duskK) * sm(TL.OPEN - 30, TL.OPEN, t) : 0;
+      setDusk(FV.dk * sm(TL.OPEN - 3, TL.OPEN + 14, t), sm(TL.OPEN - 30, TL.OPEN, t));
+      const f = sm(TL.OPEN + 1, TL.OPEN + 24, t), tv = t > TL.OPEN + 0.5, tx = !tv ? 9000 : FV.tw ? -1500 + (1500 + FV.te) * (1 - Math.pow(1 - f, 2.2)) : 1500 - (1500 - FV.te) * (1 - Math.pow(1 - f, 2.2)); if (FV.tw) U.uG.value[5].makeRotationY(Math.PI).setPosition(tx, tv ? HZ.P.deckTop + 0.48 : -500, trainZ); else U.uG.value[5].makeTranslation(tx, tv ? HZ.P.deckTop + 0.48 : -500, trainZ); S.train = [tx, 0, trainZ];
+      S.blend = S.st.pref === 'lit' ? 1 : sm(TL.OPEN - 12, TL.OPEN + 3, t) * FV.ik;   // 墨线默认：结尾留 15% 墨线（“图纸变成现实”的余韵）
       if (S.st.auto) placeCam(camKey(t));
       shadowWant = shadowWant || Math.abs(t - lastShadowT) > 0.5 || (ps.lifting && Math.abs(t - lastShadowT) > 0.02);
       hud(); dirty = true; sheetsDirty = true; }
@@ -434,19 +465,20 @@
       renderer.info.reset(); const b = S.blend; document.body.classList.toggle('lit', b > 0.5);
       if (b <= 0.001) renderInk(1);
       else { renderLit(); if (b < 0.999) { renderer.autoClear = false; paperQuad.m.uniforms.uA.value = Math.max(0, (0.85 - b) / 0.85) * 0.9; renderer.render(paperQuad.sc, cam);
-          const vis = scene.children.map(o => o.visible); for (const o of scene.children) o.visible = (o === LINES || o === CTX.lines || o === DYN.lines || o === MESH); MESH.material = inkMat; inkMat.colorWrite = false; renderer.clearDepth(); U.uLA.value = Math.max(0.15, 1 - b); renderer.toneMapping = THREE.NoToneMapping; renderer.render(scene, cam); scene.children.forEach((o, i) => o.visible = vis[i]); inkMat.colorWrite = true; MESH.material = MESH.userData.lit; renderer.autoClear = true; } }
+          const vis = scene.children.map(o => o.visible); for (const o of scene.children) o.visible = (o === LINES || o === CTX.lines || o === DYN.lines || o === MESH); MESH.material = inkMat; inkMat.colorWrite = false; renderer.clearDepth(); U.uLA.value = Math.max(1 - FV.ik, 1 - b); renderer.toneMapping = THREE.NoToneMapping; renderer.render(scene, cam); scene.children.forEach((o, i) => o.visible = vis[i]); inkMat.colorWrite = true; MESH.material = MESH.userData.lit; renderer.autoClear = true; } }
       S.frames++; S.calls = renderer.info.render.calls; lead(); }
     // ---------------- 3D 引线标注：旋转提升时标转轴，其余时刻标当前工作面 ----------------
     const LEAD = $('lead'), MC = document.createElement('canvas').getContext('2d'), v3v = new THREE.Vector3(); let leadKey = '';
     function lead() { const t = S.st.t, r = v3.getBoundingClientRect(), W = r.width, H = r.height; let anchor = null, t1 = '', t2 = '';
       for (const [zone, zA, key, nm] of [[1, P.roofB, 'lift1', '南区'], [3, -P.roofB, 'lift3', '北区']]) { const A = K[key]; if (t >= A.start - 1 && t < A.end + 1) { anchor = [0, P.roofLo + S.pose[zone].dy, zA]; t1 = '转轴 · ' + nm + '外缘（东西向）'; t2 = '已转 ' + (4 * S.pose[zone].r).toFixed(1) + '° / 4° · 内边抬升 ' + (HZ.innerDrop * S.pose[zone].r).toFixed(1) + ' / ' + HZ.innerDrop.toFixed(1) + ' m'; } }
       if (!anchor && t < TL.OPEN) { const c = HZ.caption(t).act; if (c && c.parts.length) { const ps = c.parts.filter(p => p.st <= t).sort((a, b) => b.st - a.st)[0]; if (ps) { anchor = HZ.xf(S.pose, ps.grp || 0, [ps.c[0], ps.top, ps.c[2]]); t1 = c.name; t2 = (QTY(c) || '') + (QTY(c) ? ' · ' : '') + HZ.dayDate(c.start) + ' → ' + HZ.dayDate(c.end); } } }
+      if (!anchor && t >= TL.OPEN + 2 && S.train && S.train[0] < 5000) { const ws = FV.tw ? -1 : 1; anchor = [S.train[0] + ws * 70, P.deckTop + 4.6, S.train[2]]; t1 = '首趟列车进站'; t2 = HZ.dayDate(TL.OPEN) + ' · 开通运营'; }
       if (!anchor) { if (LEAD.innerHTML) LEAD.innerHTML = ''; S.leadPlaced = false; return; }
       v3v.set(anchor[0], anchor[1], anchor[2]).project(cam); const x = (v3v.x + 1) / 2 * W, y = (1 - v3v.y) / 2 * H; const key = [x | 0, y | 0, t1, t2, W | 0, H | 0].join('|'); if (key === leadKey) return; leadKey = key;
       LEAD.setAttribute('width', W); LEAD.setAttribute('height', H);
       if (v3v.z > 1 || x < 6 || y < 6 || x > W - 6 || y > H - 6) { LEAD.innerHTML = ''; S.leadPlaced = false; return; }
       MC.font = '700 13px ' + getComputedStyle(document.body).getPropertyValue('--serif'); const w1 = MC.measureText(t1).width; MC.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--mono'); const w = Math.ceil(Math.max(w1, MC.measureText(t2).width)) + 6, h = 34, m = 6;
-      const obs = [...document.querySelectorAll('#ttl,#nums .num,#calc,#cap')].map(e => { const q = e.getBoundingClientRect(); return { l: q.left - r.left - m, r: q.right - r.left + m, t: q.top - r.top - m, b: q.bottom - r.top + m }; });
+      const obs = [...document.querySelectorAll('#ttl,#nums .num,#calc,#cap,#fin')].map(e => { const q = e.getBoundingClientRect(); return { l: q.left - r.left - m, r: q.right - r.left + m, t: q.top - r.top - m, b: q.bottom - r.top + m }; });
       const free = (lx, ly) => lx >= 8 && ly >= 8 && lx + w <= W - 8 && ly + h <= H - 8 && obs.every(o => lx + w < o.l || lx > o.r || ly + h < o.t || ly > o.b) && !(x >= lx - 6 && x <= lx + w + 6 && y >= ly - 6 && y <= ly + h + 6);
       const Cc = [[x + 50, y - 80], [x - 50 - w, y - 80], [x + 60, y - 130], [x - 60 - w, y - 130], [x + 70, y + 30], [x - 70 - w, y + 30], [x + 90, y - 30], [x - 90 - w, y - 30]]; let pos = null; for (const [lx, ly] of Cc) if (free(lx, ly)) { pos = [lx, ly]; break; }
       let o = `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="#b3202a" stroke-width="1.3"/><circle cx="${x}" cy="${y}" r="1.6" fill="#b3202a"/>`;
