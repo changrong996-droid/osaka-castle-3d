@@ -58,7 +58,8 @@
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(28, 1, 4, 40000);
     const view = $('view');
-    const ctl = new OrbitControls(cam, view); ctl.enableDamping = true; ctl.dampingFactor = 0.08; ctl.maxPolarAngle = Math.PI * 0.75; ctl.minDistance = 9; ctl.maxDistance = 4200; ctl.screenSpacePanning = true;   // set2d：平移含上下（右键 / Shift+左键），可仰视；防穿模改为碰撞约束（camCollide） ctl.zoomSpeed = 0.8;
+    const ctl = new OrbitControls(cam, view); ctl.enableDamping = true; ctl.dampingFactor = 0.08; ctl.maxPolarAngle = Math.PI; ctl.minDistance = 0.5; ctl.maxDistance = 4200; ctl.screenSpacePanning = true; ctl.zoomSpeed = 0.8;   // set2e：最近距离 / 俯仰上限由 camConstrain 按参数组管（OrbitControls 不夹，免得和碰撞互相顶）
+      // set2d：平移含上下（右键 / Shift+左键），可仰视；防穿模改为碰撞约束（camCollide） ctl.zoomSpeed = 0.8;
 
     // ---------------- 实景层（preview1 的观感：黄金时刻 + HDR 后处理）----------------
     const T = Object.assign({}, FX.TOD.g), LOOK = window.CASTLE_LOOK.make(THREE);
@@ -194,7 +195,7 @@
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000, 1, 1).rotateX(-Math.PI / 2), (() => { const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 });
       m.onBeforeCompile = sh => { Object.assign(sh.uniforms, GU); sh.vertexShader = 'varying vec3 vWp;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         sh.fragmentShader = 'varying vec3 vWp; uniform float uT;\nfloat gh(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\nfloat gn(vec2 p){ vec2 i = floor(p), f = fract(p), u = f*f*(3.0-2.0*f); return mix(mix(gh(i), gh(i+vec2(1,0)), u.x), mix(gh(i+vec2(0,1)), gh(i+vec2(1,1)), u.x), u.y); }\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-          vec2 w = vWp.xz; if (abs(w.x) < 200.0 && abs(w.y) < 13.2 && uT > 30.0) discard;
+          vec2 w = vWp.xz; if (abs(w.x) < 200.0 && abs(w.y) < 13.2 && uT > 236.6) discard;   /* set2e：地铁层建成（metro 192.7+43.8 天）才开洞，之前洞下是虚空 */
           float n = gn(w * 0.012) * 0.6 + gn(w * 0.05) * 0.4, nf = gn(w * 0.004);
           vec3 field = mix(vec3(0.20, 0.27, 0.13), vec3(0.34, 0.33, 0.20), nf) * (0.8 + 0.3 * n);
           vec3 city = mix(vec3(0.33, 0.33, 0.32), vec3(0.42, 0.41, 0.38), n);
@@ -467,35 +468,119 @@
       if (FLY) return; const p = FOL.pend; if (Math.abs(p[0]) + Math.abs(p[1]) + Math.abs(p[2]) < 1e-4) return; const a = 1 - Math.exp(-dt / 0.25), d = new THREE.Vector3(p[0] * a, p[1] * a, p[2] * a);
       ctl.target.add(d); cam.position.add(d); for (let k = 0; k < 3; k++) p[k] -= d.getComponent(k); dirty = true; }
 
-    // ---------------- set2d：镜头碰撞约束（代替俯仰角限制）----------------
-    // 实体 = 所有非网架构件的原始盒子（HZ.segBox 用的同一批，按生长 / 拆除比例缩放高度）；地面以下 = 实土，只有站房地下空间（地铁层槽：|x| < 200、|z| < 13.2、y > −9.2）可进。
-    // 镜头进了实体 → 沿视线（朝目标）把镜头挪到实体外侧（二分到 2 cm）；目标高度限制在地下最低层底 −10 m 到屋盖顶之间，修正时镜头与目标一起平移（不改视角）。
-    const CBOX = [], CG = new Map(), CCS = 16, CM = 0.6, UG = { x: 200 - CM, z: P.gap - 0.8 - CM, y0: -9.2 + CM }, TY0 = -10, TY1 = HZ.Ht(0, 0) + HZ.D + 4;
-    for (const a of HZ.acts) { if (a.kind === 'untemp') continue; for (const p of a.parts) { if (p.cells || p.grp || !p.geo || !p.geo.boxes) continue; for (const b of p.geo.boxes) { if (b.max[1] - b.min[1] < 0.05) continue; const e = { p, b, y0: p.geo.min[1] }, k = CBOX.push(e) - 1;
+    // ---------------- set2e：镜头限制（参数组 S.camCfg，多组扫描选定，见 work/hzwest-set2/cam_sweep.md）----------------
+    // 实体 = 所有非网架构件的原始盒子（按生长 / 拆除比例缩放高度）；地面以下 = 实土，只有「真实存在、开敞可见」的地下空间可进：站房地铁层槽（|x| < 199.2、|z| < 13.2、y > −9.2），且该时刻地铁层已建成（地面才开洞）、cfg.ug = 1。
+    // 每帧：① 目标限高 / 目标贴墙 → 挪到最近开敞点；② 俯仰上限 = 头顶有遮盖（屋盖 / 楼板 / 承轨层）才放到 polarUp，否则 polar，平滑过渡；③ 期望距离 dWant（滚轮改它；碰撞推近后转开 → 0.3 s 平滑回到 dWant）；
+    // ④ 碰撞：外拉被身后实体挡住 → 穿到实体另一侧（滚轮外拉永远有效）；地面挡住 → 贴地滑（保持距离、视线抬起）；其余 → 沿视线推到实体外。
+    const CBOX = [], CG = new Map(), CCS = 16, CM = 0.6, UG = { x: 199.2 - CM, z: P.gap - 0.8 - CM, y0: -9.2 + CM }, TY0 = -10, TY1 = HZ.Ht(0, 0) + HZ.D + 4;
+    const CC = S.camCfg = Object.assign({ polar: 0.6, polarUp: 0.75, tyMin: -5, minD: 9, ug: 0 }, JSON.parse(hp.get('camcfg') || '{}'));   // set2e 扫描选定（work/hzwest-set2/cam_sweep.md）：ug 0 = 不进地下（tyMin 只在 ug 1 时起作用）
+    for (const a of HZ.acts) { if (a.kind === 'untemp') continue; for (const p of a.parts) { if (p.cells || p.grp || !p.geo || !p.geo.boxes) continue; for (const b of p.geo.boxes) { if (b.max[1] - b.min[1] < 0.05) continue; const e = { p, b, y0: p.geo.min[1], tall: /crane|mast|tower|red/.test(a.stage + ' ' + a.key + ' ' + (p.geo.mat || '')) }, k = CBOX.push(e) - 1;   // tall：塔吊 / 提升塔架 —— 不算「已有构件高度」
       for (let i = Math.floor((b.min[0] - CM) / CCS); i <= Math.floor((b.max[0] + CM) / CCS); i++) for (let j = Math.floor((b.min[2] - CM) / CCS); j <= Math.floor((b.max[2] + CM) / CCS); j++) { const kk = i * 4096 + j; if (!CG.has(kk)) CG.set(kk, []); CG.get(kk).push(k); } } } }
     const kOf = (p, t) => { const sp = Math.max(0, Math.min(1, (t - p.st) / Math.max(1e-3, p.du))); let r = 1; if (p.rm && p.rm[0] >= 0) r = 1 - Math.max(0, Math.min(1, (t - p.rm[0]) / Math.max(1e-3, p.rm[1]))); if (t < p.st) return 0; const k = sp * r; return k * k * (3 - 2 * k); };
-    const inUnder = (x, y, z) => Math.abs(x) < UG.x && Math.abs(z) < UG.z && y > UG.y0;
-    function solidAt(x, y, z, t, m) { m = m == null ? CM : m; if (y < m && !inUnder(x, y, z)) return 'ground';
+    const METRO = (HZ.acts.find(a => a.key === 'found') || { parts: [] }).parts.find(p => p.geo && p.geo.mat === 'metro'), UGT = METRO ? METRO.st + METRO.du : 236.6;
+    const ugOpen = t => !!CC.ug && t >= UGT - 1e-3;
+    const inUnderXZ = (x, z) => Math.abs(x) < UG.x && Math.abs(z) < UG.z;
+    const inUnder = (x, y, z, t) => ugOpen(t == null ? S.st.t : t) && inUnderXZ(x, z) && y > UG.y0;
+    // 地铁层两端封墙（只画实景；墨线不画地面，本来就是纸）：槽在 x = ±200 处原来是开口，从槽里顺着 x 看出去是地面背面（虚空）
+    const ENDW = (() => { const g = new THREE.BoxGeometry(0.8, 9.2, 2 * P.gap), m = new THREE.MeshStandardMaterial({ color: 0x9a9a9e, emissive: 0x2a2a2e, roughness: 0.8, clippingPlanes: [CUTP] }), o = new THREE.Group();
+      for (const sx of [-1, 1]) { const w = new THREE.Mesh(g, m); w.position.set(sx * 199.6, -4.6, 0); w.receiveShadow = true; o.add(w); } o.visible = false; scene.add(o); return o; })();
+    function solidAt(x, y, z, t, m) { m = m == null ? CM : m; if (y < m && !inUnder(x, y, z, t)) return 'ground';
       if (SV.cut && x < HZ.SEC_X - m) return null;   // 剖切中 x < 39 已切掉：只剩地面约束
       const L = CG.get(Math.floor(x / CCS) * 4096 + Math.floor(z / CCS)); if (!L) return null;
       for (const k of L) { const e = CBOX[k], b = e.b; if (x < b.min[0] - m || x > b.max[0] + m || z < b.min[2] - m || z > b.max[2] + m) continue; const kk = kOf(e.p, t); if (kk < 1e-4) continue;
         const y0 = e.y0 + (b.min[1] - e.y0) * kk, y1 = e.y0 + (b.max[1] - e.y0) * kk; if (y >= y0 - m && y <= y1 + m) return e; }
       return null; }
-    S.solidAt = (x, y, z, m) => solidAt(x, y, z, S.st.t, m); S.camLim = { TY0, TY1, UG, CM };
-    const ccv = new THREE.Vector3(), ccd = new THREE.Vector3();
-    function camCollide() { const t = S.st.t, tg = ctl.target, c = cam.position; let moved = false;
-      // 目标高度 / 地下目标只在站房地下空间
-      let dy = 0; if (tg.y < TY0) dy = TY0 - tg.y; else if (tg.y > TY1) dy = TY1 - tg.y; else if (tg.y < 0 && !inUnder(tg.x, tg.y, tg.z)) dy = -tg.y;
-      if (dy) { tg.y += dy; c.y += dy; moved = true; }
-      if (!solidAt(c.x, c.y, c.z, t)) return moved;
-      ccd.copy(tg).sub(c); const L = ccd.length(); if (L < 1e-6) ccd.set(0, 1, 0); else ccd.divideScalar(L);
-      const free = s => !solidAt(c.x + ccd.x * s, c.y + ccd.y * s, c.z + ccd.z * s, t);
-      let hit = null; for (let s = 0.25; s <= L + 0.01; s += 0.25) if (free(s)) { hit = s; break; }   // 先朝目标找最近的外侧
-      if (hit == null) for (let s = -0.25; s >= -400; s -= 0.25) if (free(s)) { hit = s; break; }   // 目标本身在实体里：往后退
-      if (hit == null) { c.y = Math.max(c.y, TY1 + 10); return true; }
-      let lo = hit > 0 ? hit - 0.25 : hit + 0.25, hi = hit; for (let k = 0; k < 4; k++) { const mid = (lo + hi) / 2; if (free(mid)) hi = mid; else lo = mid; }
-      hi += Math.sign(hi) * 0.02; c.addScaledVector(ccd, hi); S.camPush = (S.camPush || 0) + 1; return true; }
-    S.camCollide = camCollide;
+    // 屋盖（网架，不在 CBOX 里）：只用于「头顶遮盖」与视野判定，不做碰撞（网架有洞，原来就允许穿）
+    const roofAt = (x, y, z, t) => { if (t < HZ.K.asm1.start + 4 || HZ.rho(x, z) > 1 || (SV.cut && x < HZ.SEC_X)) return false; const ps = S.pose || HZ.pose(t), zn = zoneOfZ3(z), top = HZ.xf(ps, zn, [x, HZ.Ht(x, z), z])[1]; return y <= top && y >= top - P.depth - 0.5; };
+    // 目标上限 = 该时刻已有构件的最高点 + 6 m（屋盖在场取屋盖顶）：没屋盖时目标不能悬在空中，否则视线中心对着天
+    let topT = -1, topV = TY1; function topAt(t) { if (t === topT) return topV; topT = t; let h = 12; for (const e of CBOX) { if (e.tall) continue; const k = kOf(e.p, t); if (k > 0.05) h = Math.max(h, e.y0 + (e.b.max[1] - e.y0) * k); }
+      if (t >= HZ.K.asm1.start + 4) { const ps = S.pose || HZ.pose(t); h = Math.max(h, HZ.xf(ps, 2, [0, HZ.Ht(0, 0), 0])[1]); } topV = Math.min(TY1, h + 6); return topV; }
+    S.topAt = () => topAt(S.st.t); S.topWho = t => { let h = 0, w = null; for (const e of CBOX) { if (e.tall) continue; const k = kOf(e.p, t); if (k > 0.05) { const y = e.y0 + (e.b.max[1] - e.y0) * k; if (y > h) { h = y; w = [e.p.geo.mat, e.b.min, e.b.max, e.p.st]; } } } return [h, w]; };
+    const solidOrRoof = (x, y, z, t) => !!solidAt(x, y, z, t, 0) || roofAt(x, y, z, t);
+    // 头顶有屋盖（在屋盖投影内 rho ≤ 0.9、低于屋盖底）才算「在屋盖下」：承轨层 / 楼板下不算 —— 那里仰视看出去大半是天（扫描实测空白 > 60 %）
+    function covered(x, y, z, t) { if (HZ.rho(x, z) > 0.9) return false; for (let h = 1; h < 120; h += 1.5) if (roofAt(x, y + h, z, t)) return true; return false; }
+    // 视野空白比例：视锥内 nx×ny 条光线，什么都没碰到（实体 / 屋盖 / 地面 / 地铁层封墙）= 空白；gb = 地面也算空白（墨线模式不画地面 → 纸色）；从地下透过地面看出去 = 虚空（硬违反）
+    const vr = new THREE.Vector3(), vu = new THREE.Vector3(), vf = new THREE.Vector3();
+    function viewStats(c, tg, t, nx, ny, gb) { nx = nx || 8; ny = ny || 5; vf.copy(tg).sub(c).normalize(); vr.crossVectors(vf, cam.up).normalize(); if (vr.lengthSq() < 1e-6) vr.set(1, 0, 0); vu.crossVectors(vr, vf);
+      const th = Math.tan(cam.fov * Math.PI / 360), ta = th * cam.aspect; let blank = 0, voids = 0;
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const a = ((i + 0.5) / nx * 2 - 1) * ta, b = ((j + 0.5) / ny * 2 - 1) * th, dx = vf.x + vr.x * a + vu.x * b, dy = vf.y + vr.y * a + vu.y * b, dz = vf.z + vr.z * a + vu.z * b, L = Math.hypot(dx, dy, dz);
+        const ux = dx / L, uy = dy / L, uz = dz / L; let res = 0;   // 0 空白 1 内容 2 虚空
+        for (let s = 0.3; s < 5000; s += Math.max(0.4, s * 0.025)) { const x = c.x + ux * s, y = c.y + uy * s, z = c.z + uz * s;
+          if (y < 0 && !(ugOpen(t) && Math.abs(x) < 199.2 && Math.abs(z) < P.gap - 0.8 && y > -9.2)) { res = (c.y >= 0 || Math.abs(x) < 200 && Math.abs(z) < P.gap && y > -10) ? (gb && c.y >= 0 && !(Math.abs(x) < 200 && Math.abs(z) < P.gap) ? 0 : 1) : 2; if (c.y < 0 && inUnder(c.x, c.y, c.z, t) && Math.abs(x) >= 199.2 && Math.abs(z) < P.gap) res = 1; break; }   // 地面（从上看）/ 地铁层墙、底板、封墙 = 内容
+          if (solidOrRoof(x, y, z, t)) { res = 1; break; } if (y > TY1 + 20 && uy >= 0) break; }
+        if (res === 0) blank++; else if (res === 2) voids++; }
+      return { blank: blank / (nx * ny), voids }; }
+    S.solidAt = (x, y, z, m) => solidAt(x, y, z, S.st.t, m); S.camLim = { TY0, TY1, UG, CM, UGT }; S.ugOpen = () => ugOpen(S.st.t); S.covered = () => covered(cam.position.x, cam.position.y, cam.position.z, S.st.t);
+    S.viewStats = (nx, ny, gb) => viewStats(cam.position, ctl.target, S.st.t, nx, ny, !!gb);
+    const ccd = new THREE.Vector3(), sgP = new THREE.Vector3(); let skyKey = '', skyP = 0; let dWant = 0, dPrev = 0, ZW = 0, polNow = CC.polar;
+    view.addEventListener('wheel', () => { ZW++; }, { capture: true, passive: true }); view.addEventListener('touchmove', e => { if (e.touches && e.touches.length > 1) ZW++; }, { capture: true, passive: true });
+    // 目标挪到最近开敞点（贴墙 / 夹在构件间 / 在实体里）：由近到远 26 个方向找第一个离实体 ≥ 1 m 的点
+    const DIRS = []; for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) if (i || j || k) { const l = Math.hypot(i, j, k); DIRS.push([i / l, j / l, k / l]); }
+    function openPoint(p, t) { for (let r = 0.5; r <= 40; r *= 1.35) for (const d of DIRS) { const x = p.x + d[0] * r, y = p.y + d[1] * r, z = p.z + d[2] * r; if (!solidAt(x, y, z, t, 1.0)) return [x, y, z]; } return null; }
+    function camConstrain(dt) { const t = S.st.t, tg = ctl.target, c = cam.position; dt = Math.min(0.1, dt || 1 / 60); const c0x = c.x, c0y = c.y, c0z = c.z, t0x = tg.x, t0y = tg.y, t0z = tg.z;
+      // ① 目标：高度在 [下限, 屋盖顶]；下限 = 地铁层开敞时槽内 max(tyMin, 槽底)，其余 0（地面）
+      const lo = inUnderXZ(tg.x, tg.z) && ugOpen(t) ? Math.max(CC.tyMin, UG.y0) : 0;
+      const hi = topAt(t); let dy = 0; if (tg.y < lo) dy = lo - tg.y; else if (tg.y > hi) dy = hi - tg.y; if (dy) { tg.y += dy; c.y += dy; }
+      if (!FLY && !ovBusy && solidAt(tg.x, tg.y, tg.z, t, 0.3)) {   // 拖动中不挪（否则和平移抢，反向平移会被吃），松手后再挪
+        const q = openPoint(tg, t); if (q) { const a = Math.min(1, 1 - Math.exp(-dt / 0.12)); tg.x += (q[0] - tg.x) * a; tg.y += (q[1] - tg.y) * a; tg.z += (q[2] - tg.z) * a; } }
+      // ② 俯仰上限：头顶有遮盖才允许仰视（polarUp），平滑跟随
+      const pw = Math.max(CC.polar, covered(c.x, c.y, c.z, t) ? CC.polarUp : CC.polar); polNow = pw >= polNow ? pw : polNow + (pw - polNow) * Math.min(1, dt / 0.35);   // 进遮盖立刻放开，出遮盖平滑收回 ctl.maxPolarAngle = Math.PI;
+      ccd.copy(c).sub(tg); let d = ccd.length(); if (d < 1e-6) { ccd.set(0, 1, 0); d = 1e-6; } else ccd.divideScalar(d);
+      const setPh = p1 => { const h = Math.sin(p1) / Math.max(1e-6, Math.hypot(ccd.x, ccd.z)); ccd.set(ccd.x * h, Math.cos(p1), ccd.z * h); };
+      let ph = Math.acos(Math.max(-1, Math.min(1, ccd.y))); if (ph > Math.PI * polNow + 1e-4 && !FLY) { const ox = ccd.x, oy = ccd.y, oz = ccd.z; setPh(Math.PI * polNow);
+        if (pw < polNow + 1e-4 && polNow > CC.polar + 1e-4 && solidAt(tg.x + ccd.x * d, tg.y + ccd.y * d, tg.z + ccd.z * d, t) && !solidAt(c.x, c.y, c.z, t)) { ccd.set(ox, oy, oz); polNow = Math.min(ph / Math.PI, Math.max(CC.polar, CC.polarUp)); if (ph > Math.PI * polNow) { ph = Math.PI * polNow; setPh(ph); } }   // 出遮盖收仰角时会转进实体 → 这一帧先不收
+        else ph = Math.PI * polNow; }
+      // 天空护栏：不在屋盖下又在仰视（ph > 90°）→ 视野空白 > 50 %（10×6 光线，比 60 % 规则留余量）时把仰角压到空白 ≤ 50 % 的最大值（二分；镜头 / 目标不动就用缓存）
+      if (!FLY && ph > Math.PI * 0.5 && !covered(c.x, c.y, c.z, t)) { const key = [tg.x, tg.y, tg.z, ph, d, ccd.x, ccd.z].map(v => v.toFixed(3)).join();
+        if (key !== skyKey) { const bl = p => { setPh(p); sgP.set(tg.x + ccd.x * d, tg.y + ccd.y * d, tg.z + ccd.z * d); return viewStats(sgP, tg, t, 10, 6).blank; };
+          let p = ph; if (bl(ph) > 0.5) { let a = Math.PI * 0.42, b = ph; for (let k = 0; k < 7; k++) { const m = (a + b) / 2; if (bl(m) <= 0.5) a = m; else b = m; } p = a; S.skyGuard = (S.skyGuard || 0) + 1; }
+          setPh(p); skyP = p; skyKey = [tg.x, tg.y, tg.z, p, d, ccd.x, ccd.z].map(v => v.toFixed(3)).join(); } else setPh(skyP); }
+      // ③ 期望距离：滚轮 / 双指改 dWant（夹到 minD）；程序摆位（复位 / 飞行 / 测试）直接认；碰撞推近后平滑回到 dWant
+      const zoom = ZW > 0 && dPrev > 0 && Math.abs(d - dPrev) > dPrev * 1e-4, zoomOut = zoom && d > dPrev; ZW = 0;
+      if (FLY || dPrev <= 0) dWant = d; else if (zoom) { if (zoomOut) dWant = Math.max(d, Math.min(ctl.maxDistance, dWant * d / dPrev)); else { dWant = Math.max(CC.minD, dWant * d / dPrev); d = Math.max(d, Math.min(CC.minD, dPrev)); } }
+      else if (Math.abs(d - dPrev) > 1e-3 * Math.max(1, dPrev)) dWant = d;   // 程序摆位
+      else if (dWant > d + 0.01) { let dn = d + Math.min(2, (dWant - d) * Math.min(1, 1 - Math.exp(-dt / 0.3))); for (let s = d + 0.3; s < dn; s += 0.3) if (solidAt(tg.x + ccd.x * s, tg.y + ccd.y * s, tg.z + ccd.z * s, t)) { dn = d; break; } if (solidAt(tg.x + ccd.x * dn, tg.y + ccd.y * dn, tg.z + ccd.z * dn, t)) dn = d; d = dn; }
+      c.set(tg.x + ccd.x * d, tg.y + ccd.y * d, tg.z + ccd.z * d);
+      // ④ 碰撞
+      // 沿当前视线方向离目标 s 处的机位；落到地下 → 贴地滑（保持距离、视线抬起）
+      const yfAt = (x, z) => (inUnder(x, UG.y0 + 0.1, z, t) ? UG.y0 : 0) + CM + 0.05, hx = Math.hypot(ccd.x, ccd.z) || 1;
+      const placeAt = s => { let x = tg.x + ccd.x * s, y = tg.y + ccd.y * s, z = tg.z + ccd.z * s; let q = solidAt(x, y, z, t), sl = false;
+        if (q === 'ground' && ugOpen(t) && (inUnderXZ(tg.x, tg.z) && tg.y < 0 || inUnder(c.x, c.y, c.z, t))) { x = Math.max(-UG.x + 0.01, Math.min(UG.x - 0.01, x)); z = Math.max(-UG.z + 0.01, Math.min(UG.z - 0.01, z)); y = Math.max(UG.y0 + 0.01, y); const rem = s * s - (x - tg.x) ** 2 - (z - tg.z) ** 2; if (Math.hypot(x - tg.x, y - tg.y, z - tg.z) < s * 0.98 && rem > 0) y = Math.max(y, tg.y + Math.sqrt(rem)); q = solidAt(x, y, z, t); sl = true; }   // 地铁层里：贴墙 / 贴底板滑，角落里距离不够就顺墙往上（外拉能从开口出去）
+        else if (q === 'ground') { const yf = yfAt(x, z), ddy = yf - tg.y, g = Math.max(Math.sqrt(Math.max(0, s * s - ddy * ddy)), 0.5) / hx; x = tg.x + ccd.x * g; y = yf; z = tg.z + ccd.z * g; q = solidAt(x, y, z, t); sl = true; } return { x, y, z, q, sl }; };
+      let pa = placeAt(d), sa = pa.q; c.set(pa.x, pa.y, pa.z); if (pa.sl && !sa) S.camSlide = (S.camSlide || 0) + 1;
+      if (sa && zoomOut) for (let s = d + 0.25; s <= d + 150; s += 0.25) { const q = placeAt(s); if (!q.q) { c.set(q.x, q.y, q.z); dWant = s; sa = null; S.camThru = (S.camThru || 0) + 1; break; } }   // 外拉被身后实体挡住 → 穿到另一侧
+      // 实体盒：先沿最浅穿入方向推出（贴着面滑，不沿视线把距离吃掉 —— 否则平移时镜头擦过楼板会被一下拉近到 2 m、后面的平移全被吃）
+      for (let it = 0; it < 4 && sa && sa !== 'ground'; it++) { const e = sa, b = e.b, kk = kOf(e.p, t), y0 = e.y0 + (b.min[1] - e.y0) * kk, y1 = e.y0 + (b.max[1] - e.y0) * kk, m = CM + 0.02;
+        const pen = [[c.x - (b.min[0] - m), 0, -1], [(b.max[0] + m) - c.x, 0, 1], [c.y - (y0 - m), 1, -1], [(y1 + m) - c.y, 1, 1], [c.z - (b.min[2] - m), 2, -1], [(b.max[2] + m) - c.z, 2, 1]].sort((a, b2) => a[0] - b2[0])[0];
+        if (pen[0] > 3) break; c.setComponent(pen[1], c.getComponent(pen[1]) + pen[2] * pen[0]); sa = solidAt(c.x, c.y, c.z, t); if (!sa) S.camNormal = (S.camNormal || 0) + 1; }
+      if (sa === 'ground') { const q = placeAt(c.distanceTo(tg)); if (!q.q) { c.set(q.x, q.y, q.z); sa = null; } }
+      if (sa) { ccd.copy(tg).sub(c); const L = ccd.length(); if (L < 1e-6) ccd.set(0, 1, 0); else ccd.divideScalar(L);
+        const free = s => !solidAt(c.x + ccd.x * s, c.y + ccd.y * s, c.z + ccd.z * s, t);
+        let hit = null; for (let s = 0.25; s <= L + 0.01; s += 0.25) if (free(s)) { hit = s; break; }
+        if (hit == null) for (let s = -0.25; s >= -400; s -= 0.25) if (free(s)) { hit = s; break; }
+        if (hit == null) c.y = Math.max(c.y, TY1 + 10); else { let lo2 = hit > 0 ? hit - 0.25 : hit + 0.25, hi = hit; for (let k = 0; k < 4; k++) { const mid = (lo2 + hi) / 2; if (free(mid)) hi = mid; else lo2 = mid; } hi += Math.sign(hi) * 0.02; c.addScaledVector(ccd, hi); }
+        S.camPush = (S.camPush || 0) + 1; }
+      dPrev = c.distanceTo(tg);
+      // 平移 / 滚轮速度随距离自适应：近处慢、远处不拖
+      ctl.panSpeed = Math.max(0.55, Math.min(1.15, 0.45 + dPrev / 90)); ctl.zoomSpeed = dPrev < 20 ? 0.55 : dPrev < 80 ? 0.7 : 0.85;
+      const ch = Math.abs(c.x - c0x) + Math.abs(c.y - c0y) + Math.abs(c.z - c0z) + Math.abs(tg.x - t0x) + Math.abs(tg.y - t0y) + Math.abs(tg.z - t0z) > 1e-5; if (ch) cam.lookAt(tg); return ch; }
+    S.camConstrain = camConstrain; S.camCollide = () => camConstrain(1 / 60); S.camState = () => ({ dWant, dPrev, pol: polNow }); S.camStateSet = o => { dWant = o.dWant; dPrev = o.dPrev; polNow = o.pol; ZW = 0; };
+    // 近裁剪面上限：离地 / 离实体越近越小（不把地面或墙裁穿露出背面）
+    function nearCap() { const c = cam.position, t = S.st.t; let n = 4; const gy = inUnder(c.x, c.y, c.z, t) ? Math.min(c.y + 9.2, P.gap - 0.8 - Math.abs(c.z), 199.2 - Math.abs(c.x)) * 0.7 : c.y; n = Math.min(n, Math.max(0.1, gy * 0.6)); /* 地铁层里：离底板 / 侧墙 / 端墙最近的距离 */ if (solidAt(c.x, c.y, c.z, t, 1.2)) n = Math.min(n, 0.3); else if (solidAt(c.x, c.y, c.z, t, 3)) n = Math.min(n, 0.8); return n; }
+    S.nearCap = nearCap;
+    // 开阔视角记录 + Esc / 双击空白快速脱困：每 0.4 s（不在操作 / 飞行时）若 镜头 3 m 内无实体、视野空白 ≤ 60 %、无虚空，记一笔（与上一笔差 > 4 m 或 > 8° 才记，留 10 笔）
+    const OPENV = S.openViews = []; let ovT = 0, ovBusy = false; ctl.addEventListener('start', () => { ovBusy = true; }); ctl.addEventListener('end', () => { ovBusy = false; ovT = 0; });
+    function isOpen(c, tg, t) { if (solidAt(c.x, c.y, c.z, t, 3)) return false; const v = viewStats(c, tg, t, 6, 4); return v.voids === 0 && v.blank <= 0.6; }
+    S.isOpen = () => isOpen(cam.position, ctl.target, S.st.t);
+    function openViewTick(now) { if (now - ovT < 400 || ovBusy || FLY) return; ovT = now; const c = cam.position, tg = ctl.target, L = OPENV[OPENV.length - 1];
+      if (L && L.p.distanceTo(c) < 4 && L.p.clone().sub(L.t).normalize().dot(c.clone().sub(tg).normalize()) > Math.cos(8 * Math.PI / 180) && L.t.distanceTo(tg) < 4) return;
+      if (!isOpen(c, tg, S.st.t)) return; OPENV.push({ p: c.clone(), t: tg.clone(), cut: SV.cut }); if (OPENV.length > 10) OPENV.shift(); }
+    S.openViewTick = openViewTick;
+    function escapeView() { const c = cam.position, tg = ctl.target; let k = OPENV.length - 1;
+      while (k >= 0 && (OPENV[k].cut !== SV.cut || OPENV[k].p.distanceTo(c) < 2 && OPENV[k].t.distanceTo(tg) < 2 || !isOpen(OPENV[k].p, OPENV[k].t, S.st.t))) k--;
+      S.escapes = (S.escapes || 0) + 1; if (k < 0) { $('b-home').onclick(); return 'home'; } const v = OPENV[k]; OPENV.length = k + 1; flyTo(v.t, v.p, 600); return 'open'; }
+    S.escapeView = escapeView;
+    view.addEventListener('dblclick', e => { const h = pick3D(e.clientX, e.clientY); if (h && (h.lifter >= 0 || h.zone)) return; e.preventDefault(); escapeView(); });
     function applyFocusHash() { if (SHEET !== 'S-301') return; const f = (new URLSearchParams(location.hash.slice(1)).get('focus') || '').toUpperCase(); if (!f) return; const m = /^J(\d{1,2})$/.exec(f);
       if (m) { const i = +m[1] - 1; if (i >= 0 && i < HZ.lifters.length && SV.sel !== i) { focusLifter(i); sheetToLifter(i); } } else if (ZOF[f] && S.selZone !== ZOF[f]) selectZone(ZOF[f]); else if ((f === 'CUT' || f === 'GAP') && SV.cut !== (f === 'CUT' ? 1 : 2)) focusCut(f === 'CUT' ? 1 : 2); }
     S.applyFocusHash = applyFocusHash;
@@ -615,7 +700,7 @@
       tr.addEventListener('pointerdown', e => { const sg = e.target.closest && e.target.closest('.seg.go'); if (sg) { location.hash = 'sheet=' + sg.dataset.go; return; } drag = true; tr.setPointerCapture(e.pointerId); S.st.play = false; at(e); }); tr.addEventListener('pointermove', e => { if (drag) at(e); }); tr.addEventListener('pointerup', e => { drag = false; try { tr.releasePointerCapture(e.pointerId); } catch (x) { } }); }
     addEventListener('keydown', e => { if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
       if (e.code === 'Space') { e.preventDefault(); setPlay(!S.st.play); } else if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { e.preventDefault(); S.st.play = false; const du = (e.shiftKey ? 0.05 : 0.01) * (e.code === 'ArrowRight' ? 1 : -1), u = Math.max(0, Math.min(1, S.st.u + du)); setT(TL.u2t(u), u); }
-      else if (e.code === 'Escape') openInfo(false); else if (e.key === 'i') openInfo(!S.st.info); else if (e.key === 'c') $('b-mode').onclick(); });
+      else if (e.code === 'Escape') { if (S.st.info) openInfo(false); else escapeView(); } else if (e.key === 'i') openInfo(!S.st.info); else if (e.key === 'c') $('b-mode').onclick(); });
 
     // ---------------- 次要信息 ----------------
     function fillInfo(au) { const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -691,7 +776,7 @@
       document.body.classList.toggle('s000', SHEET === 'S-000'); document.body.classList.toggle('s301', SHEET === 'S-301');
       const colW = Math.round(Math.max(300, Math.min(600, W * (narrow ? 0.36 : 0.32)))); root.setProperty('--colW', colW + 'px'); S.colLayout = { colW };
       calcN = H < 600 ? 3 : H < 720 ? 4 : 5; logN = H < 600 ? 1 : 2;
-      ctl.minDistance = 9;   // set2d：全图 9 m（碰撞约束防穿模）
+      ctl.minDistance = 0.5;   // set2e：最近距离由 camConstrain（S.camCfg.minD）管
       const r = v3.getBoundingClientRect(); const w = Math.max(10, r.width), h = Math.max(10, r.height);
       renderer.setPixelRatio(Math.max(1, Math.min(devicePixelRatio || 1, QS[FX.q].pr, Math.sqrt(PIX / (w * h))))); renderer.setSize(w, h, false); cam.aspect = w / h; CAP.CU.uDpr.value = renderer.getPixelRatio();
       aspK = Math.max(1, Math.pow((SHEET === 'S-301' ? 1.5 : 1.6) / cam.aspect, 0.75));
@@ -711,15 +796,15 @@
     const postOpts = () => { const Pp = Object.assign({}, T.post); return Object.assign(Pp, { sd: sunDir, sunC: T.sun, interior: false, exp: Pp.exp * look.exp, sat: Pp.sat * look.sat, warm: Pp.warm.map(v => 1 + (v - 1) * look.warm), ao: true, vol: 0, dust: 0, fogA: 0.00012, fogH: 140, mistA: 0, god: Pp.god * 0.7, bloom: Pp.bloom * 1.1 }); };
     let lastNow = performance.now();
     const GL2 = (() => { const g = renderer.getContext(); return typeof WebGL2RenderingContext !== 'undefined' && g instanceof WebGL2RenderingContext && !hp.has('nofence') ? g : null; })(), FEN = [];
-    function renderInk(la) { CAP.CU.uLitCap.value = 0; for (const o of LITONLY) o.visible = false; for (const o of INKONLY) o.visible = true; MESH.material = inkMat; DYN.mesh.material = DYN.mesh.userData.ink; LINES.visible = true; DYN.lines.visible = true; WK.WU.uInk.value = 1; STR.material.uniforms.uC.value.set(0xb3202a);
+    function renderInk(la) { CAP.CU.uLitCap.value = 0; ENDW.visible = false; for (const o of LITONLY) o.visible = false; for (const o of INKONLY) o.visible = true; MESH.material = inkMat; DYN.mesh.material = DYN.mesh.userData.ink; LINES.visible = true; DYN.lines.visible = true; WK.WU.uInk.value = 1; STR.material.uniforms.uC.value.set(0xb3202a);
       U.uLA.value = la; renderer.setRenderTarget(null); renderer.setClearColor(0xefe9dd, 1); renderer.toneMapping = THREE.NoToneMapping; renderer.render(scene, cam); }
-    function renderLit() { CAP.CU.uLitCap.value = 1; for (const o of LITONLY) o.visible = true; for (const o of INKONLY) o.visible = false; MESH.material = MESH.userData.lit; DYN.mesh.material = DYN.mesh.userData.lit; LINES.visible = false; DYN.lines.visible = false; WK.WU.uInk.value = 0; STR.material.uniforms.uC.value.set(0x0f0d0d);
+    function renderLit() { CAP.CU.uLitCap.value = 1; ENDW.visible = S.st.t >= UGT; for (const o of LITONLY) o.visible = true; for (const o of INKONLY) o.visible = false; MESH.material = MESH.userData.lit; DYN.mesh.material = DYN.mesh.userData.lit; LINES.visible = false; DYN.lines.visible = false; WK.WU.uInk.value = 0; STR.material.uniforms.uC.value.set(0x0f0d0d);
       renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.setClearColor(0x000000, 1);
       shadowAge++; if (shadowWant && (!S.st.play || shadowAge >= (S.pose && S.pose.lifting ? SPL : SP))) { renderer.shadowMap.needsUpdate = true; shadowWant = false; shadowAge = 0; lastShadowT = S.st.t; }
       if (POST.level > 0) POST.render(scene, cam, postOpts()); else { renderer.setRenderTarget(null); renderer.render(scene, cam); } }
     function frame(now) { requestAnimationFrame(frame); const dt = Math.min(0.1, (now - lastNow) / 1000); lastNow = now;
       if (S.st.play) { const u = Math.min(1, S.st.u + dt / TL.playSec); setT(TL.u2t(u), u); if (u >= 1) { S.st.play = false; hud(); } }
-      flyStep(now); follow(dt); svaStep(now); if (S._zonePend && SHEETS[0].pm) sheetToZone(S._zonePend); if (ctl.update()) dirty = true; if (camCollide()) dirty = true;
+      flyStep(now); follow(dt); svaStep(now); if (S._zonePend && SHEETS[0].pm) sheetToZone(S._zonePend); if (ctl.update()) dirty = true; if (camConstrain(dt)) dirty = true; openViewTick(now);
       // 图纸：时间变了才重画；每帧最多一张（错开），播放中每张 ≤ 20 Hz
       if (sheetsDirty && SHEET === 'S-301' && !S.noSheet) { const k = S.st.t.toFixed(3) + (AU ? 'a' : ''); let any = false; const ord = SHEETS.slice().sort((a, b) => a.drawn - b.drawn); let drew = false;
         for (const s of ord) { if (s.key === k) continue; any = true; if ((!drew || !S.st.play) && (!S.st.play || now - s.drawn > 50)) { s.key = k; drawSheet(s, now); drew = true; } } if (!any) sheetsDirty = false; }
@@ -727,7 +812,7 @@
       // set1：GPU 帧节拍 —— 最多 2 帧在 GPU 队列里（WebGL2 fence）；否则本次 rAF 跳过渲染、保留 dirty。无 vsync 时 CPU 帧极便宜会把队列塞满，Chrome 回压一次卡 0.3–1.2 s（Mac 实测，PLAYBOOK #43）
       if (GL2 && FEN.length >= 2) { const st = GL2.clientWaitSync(FEN[0], 0, 0); if (st === GL2.TIMEOUT_EXPIRED) return; GL2.deleteSync(FEN.shift()); }
       dirty = false;
-      { const dd = cam.position.distanceTo(ctl.target), nr = Math.max(0.5, Math.min(4, dd * 0.12)); if (Math.abs(nr - cam.near) > cam.near * 0.05) { cam.near = nr; cam.updateProjectionMatrix(); } }   // set2d：近景时近裁剪面跟着缩，免得贴近实体时被裁穿
+      { const dd = cam.position.distanceTo(ctl.target), nr = Math.max(0.1, Math.min(4, dd * 0.12, nearCap())); if (Math.abs(nr - cam.near) > cam.near * 0.05) { cam.near = nr; cam.updateProjectionMatrix(); } }   // set2d：近景时近裁剪面跟着缩，免得贴近实体时被裁穿
       const pf0 = performance.now(); rebuildDyn(S.st.t); U.uCam.value.copy(cam.position); const pf1 = performance.now();
       renderer.info.reset(); const b = S.blend; document.body.classList.toggle('lit', b > 0.5);
       if (b <= 0.001) renderInk(1);
