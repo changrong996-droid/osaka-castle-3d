@@ -189,27 +189,33 @@
     const zoneOfZ = z => Math.abs(z) <= P.midZ ? 2 : Math.abs(z) < P.midZ + 7 ? 4 : z > 0 ? 1 : 3;
     let zoneBB = null;
     // set2c：选中吊点的行程–时间小图（整个 S-301 时间窗，横轴 = 时间轴同一映射；竖线 = 当前时刻）
-    let chartMemo = null;
-    function strokeChart(g, ctx, pa, sa, box, hits, sp, FS) { const D = ctx.stroke, fs = Math.max(11, FS - 2), pw = pa.x1 - pa.x0, V = ctx.view || { k: 1, px: 0, py: 0 };
+    let chartMemo = null, sweepMemo = null;
+    function strokeChart(g, ctx, pa, sa, box, hits, sp, FS) { let fs = Math.max(11, FS - 2); const D = ctx.stroke, pw = pa.x1 - pa.x0, V = ctx.view || { k: 1, px: 0, py: 0 };
       const W = Math.round(Math.max(170, Math.min(250, pw * 0.44))), H0 = Math.round(Math.max(96, Math.min(128, W * 0.52))), Hmin = Math.max(74, fs * 3 + 34);
       const key = [ctx.sel, g.canvas.width, g.canvas.height, V.k.toFixed(3), V.px.toFixed(1), V.py.toFixed(1), fs].join('|');
       let B = chartMemo && chartMemo.key === key ? chartMemo.B : null;
-      if (!B) { const obsL = labels.slice(), DPR = g.getTransform().a, cand = [];
-        const dotBad = (x, y, w, h) => { let n = 0; for (const q of hits) { const nx = Math.max(x, Math.min(x + w, q.x)), ny = Math.max(y, Math.min(y + h, q.y)); if (Math.hypot(nx - q.x, ny - q.y) < q.r + 4) n += q.i === ctx.sel ? 100 : 1; } return n; };
-        const labBad = (x, y, w, h) => obsL.some(r => !(x + w < r[0] || x > r[2] || y + h < r[1] || y > r[3]));
-        const blank = (x, y, w, h) => { try { const X0 = Math.round(x * DPR), Y0 = Math.round(y * DPR), ww = Math.round(w * DPR), hh = Math.round(h * DPR), d = g.getImageData(X0, Y0, ww, hh).data; let n = 0; for (let i = 0; i < d.length; i += 4 * 3) if (Math.abs(d[i] - 246) + Math.abs(d[i + 1] - 242) + Math.abs(d[i + 2] - 234) > 30) n++; return n / (d.length / 12) < 0.004; } catch (e) { return false; } };
-        // ① 平面四角（不压吊点 / 文字）② 剖面四角（画布像素为空白，下方多留 36 px 给提升中的屋盖曲线）
-        for (const [A, isPlan] of [[pa, 1], [sa, 0]]) { const topY = A.y0 + FS + 10, botY = (isPlan ? A.y1 - FS - 8 : Math.min(A.y1, box.y1) - FS - 8);
-          for (const sc of [1, 0.86, 0.74]) { const w = Math.round(W * sc), h = Math.max(Hmin, Math.round(H0 * sc)); if (w > A.x1 - A.x0 - 12 || h > botY - topY) continue;
-            for (const [cx, cy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const x = cx ? A.x1 - 6 - w : A.x0 + 6, y = cy ? botY - h : topY;
-              if (labBad(x, y, w, h)) continue; const tier = isPlan ? (dotBad(x, y, w, h) === 0 ? 1 : 0) : blank(x, y, w, Math.min(h + (cy ? 0 : 36), box.y1 - y)) ? 2 : 3;   // 剖面角：空白优先，否则只要不压文字（小图有底色，盖住剖面线条）
-              if (tier) cand.push({ x, y, w, h, d: Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]), sc, where: isPlan ? 'plan' : tier === 2 ? 'sec' : 'sec*', bad: 0, tier }); } } }
-        // ③ 角都不行：平面内扫描找不压吊点的最远位置
-        if (!cand.length) for (const h of [Hmin]) { const w = Math.round(W * 0.8); for (let y = pa.y0 + FS + 10; y + h <= pa.y1 - FS - 8; y += 4) for (let x = pa.x0 + 6; x + w <= pa.x1 - 6; x += 6) if (!dotBad(x, y, w, h) && !labBad(x, y, w, h)) cand.push({ x, y, w, h, d: Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]), sc: 0.8, where: 'scan', bad: 0 }); }
-        if (!cand.length) { const w = Math.round(W * 0.74), h = Hmin; for (const [cx, cy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const x = cx ? pa.x1 - 6 - w : pa.x0 + 6, y = cy ? pa.y1 - FS - 8 - h : pa.y0 + FS + 10; cand.push({ x, y, w, h, d: Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]), sc: 0.74, where: 'forced', bad: dotBad(x, y, w, h) }); } cand.sort((a, b) => a.bad - b.bad || b.d - a.d); }
-        else { const t0 = Math.min(...cand.map(c => c.tier || 4)), cs = cand.filter(c => (c.tier || 4) === t0), far = Math.max(...cs.map(c => c.d)); cs.sort((a, b) => (b.d > far * 0.85) - (a.d > far * 0.85) || b.sc - a.sc || b.d - a.d); cand.length = 0; cand.push(...cs); }
-        B = cand[0]; chartMemo = { key, B }; }
-      const { x, y, w, h } = B; ctx.chartBox = { x, y, w, h, bad: B.bad, fs, where: B.where };
+      // set2d：按实际绘制的占用格子找位置 —— 平面 + 剖面画完后读一次画布像素（非纸色 = 占用），再叠加吊点圈、文字框、剖面屋盖曲线在整个 S-301 时间窗里扫过的带（播放时曲线上移也不压）；
+      // 标题栏以上、图框以内，求和面积表 O(1) 判空；大→小几档尺寸（字号恒 ≥ 11 px），最远离选中吊点；都放不下 → 折叠成小标签（点开才展开）
+      if (!B && ctx.anim && chartMemo && chartMemo.sel === ctx.sel) B = chartMemo.B;   // 图纸缩放动画中沿用上一位置，动画结束再重算
+      if (!B) { const DPR = g.getTransform().a, CS = 3, x0 = Math.ceil(box.x0 + 3), y0 = Math.ceil(box.y0 + 3), x1 = Math.floor(box.x1 - 3), y1 = Math.floor(box.y1 - 3), GW = Math.floor((x1 - x0) / CS), GH = Math.floor((y1 - y0) / CS);
+        const occ = new Uint8Array(GW * GH), mark = (ax, ay, bx, by) => { const i0 = Math.max(0, Math.floor((ax - x0) / CS)), i1 = Math.min(GW - 1, Math.floor((bx - x0) / CS)), j0 = Math.max(0, Math.floor((ay - y0) / CS)), j1 = Math.min(GH - 1, Math.floor((by - y0) / CS)); for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) occ[j * GW + i] = 1; };
+        try { const X0 = Math.round(x0 * DPR), Y0 = Math.round(y0 * DPR), ww = Math.round(GW * CS * DPR), hh = Math.round(GH * CS * DPR), d = g.getImageData(X0, Y0, ww, hh).data;
+          for (let py = 0; py < hh; py++) { const j = Math.min(GH - 1, Math.floor(py / DPR / CS)), row = py * ww; for (let px = 0; px < ww; px++) { const q = (row + px) * 4; if (Math.abs(d[q] - 246) + Math.abs(d[q + 1] - 242) + Math.abs(d[q + 2] - 234) > 24) occ[j * GW + Math.min(GW - 1, Math.floor(px / DPR / CS))] = 1; } } } catch (e) { }
+        for (const q of hits) mark(q.x - q.r - 4, q.y - q.r - 4, q.x + q.r + 4, q.y + q.r + 4);
+        for (const r of labels) mark(r[0] - 2, r[1] - 2, r[2] + 2, r[3] + 2);
+        for (const sw of ctx._sweep || []) mark(sw[0] - 3, sw[1] - 4, sw[0] + 3, sw[2] + 4);
+        const SA = new Int32Array((GW + 1) * (GH + 1)); for (let j = 0; j < GH; j++) { let rs = 0; for (let i = 0; i < GW; i++) { rs += occ[j * GW + i]; SA[(j + 1) * (GW + 1) + i + 1] = SA[j * (GW + 1) + i + 1] + rs; } }
+        const sum = (i, j, a, b) => SA[(j + b) * (GW + 1) + i + a] - SA[j * (GW + 1) + i + a] - SA[(j + b) * (GW + 1) + i] + SA[j * (GW + 1) + i];
+        const find = (w, h) => { const a = Math.ceil(w / CS) + 2, b = Math.ceil(h / CS) + 2; let best = null; for (let j = 0; j + b <= GH; j++) for (let i = 0; i + a <= GW; i++) { if (sum(i, j, a, b)) continue; const x = x0 + (i + 1) * CS, y = y0 + (j + 1) * CS, dd = Math.hypot(x + w / 2 - sp[0], y + h / 2 - sp[1]); if (!best || dd > best.d) best = { x, y, w, h, d: dd }; } return best; };
+        for (const sc of [1, 0.9, 0.8, 0.7, 0.62, 0.55]) { const w = Math.round(W * sc), h = Math.max(Hmin, Math.round(H0 * sc)); if (w < 120) break; const f = find(w, h); if (f) { B = Object.assign(f, { sc, where: f.x + w / 2 < sa.x0 && sa.x0 > pa.x1 - 1 || f.y + h / 2 < sa.y0 && sa.y0 > pa.y1 - 1 ? 'plan' : 'sec', occ: 0 }); break; } }
+        if (!B) for (const [w, h] of [[150, 64], [132, 64], [150, 58], [120, 58]]) { const f = find(w, h); if (f) { B = Object.assign(f, { sc: +(w / W).toFixed(2), where: 'mini', occ: 0, fs1: 11 }); break; } }   // 紧凑版：字号 11 px、竖向压到 58–64 px
+        if (!B) { g.font = `600 ${fs}px ${SANS}`; const tw = Math.ceil(g.measureText(D.name + ' 行程 ▸').width) + 14, th = fs + 10, f = find(tw, th); B = f ? Object.assign(f, { tag: 1, where: 'tag', occ: 0 }) : { x: box.x1 - 6 - tw, y: box.y0 + FS + 10, w: tw, h: th, tag: 1, where: 'tag*', occ: -1 }; }
+        B.bad = 0; chartMemo = { key, B, sel: ctx.sel }; }
+      if (B.tag && !ctx.chartOpen) { const { x, y, w, h } = B; ctx.chartBox = { x, y, w, h, bad: 0, fs, where: B.where, tag: 1, occ: B.occ, ux: 0 }; if (ctx.noChartDraw) return;
+        g.save(); g.fillStyle = 'rgba(246,242,234,.96)'; g.fillRect(x, y, w, h); g.strokeStyle = C.red; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); g.font = `600 ${fs}px ${SANS}`; g.fillStyle = C.red; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillText(D.name + ' 行程 ▸', x + 7, y + h / 2 + 0.5); g.restore(); labels.push([x, y, x + w, y + h]); return; }
+      if (B.tag) { const w = Math.round(W * 0.74), h = Hmin; B = { x: Math.max(box.x0 + 4, Math.min(B.x, box.x1 - 4 - w)), y: Math.max(box.y0 + 4, Math.min(B.y, box.y1 - 4 - h)), w, h, where: 'open', occ: -1 }; }
+      if (B.fs1) fs = B.fs1;
+      const { x, y, w, h } = B; ctx.chartBox = { x, y, w, h, bad: B.bad || 0, fs, where: B.where, occ: B.occ, sc: B.sc }; if (ctx.noChartDraw) { ctx.chartBox.ux = 0; return; }
       g.save(); g.fillStyle = 'rgba(246,242,234,.96)'; g.fillRect(x, y, w, h); g.strokeStyle = C.ink; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       g.textBaseline = 'middle'; g.font = `600 ${fs}px ${MONO}`; const vt = fmt(D.vNow) + ' mm', vw = g.measureText(vt).width; g.font = `600 ${fs}px ${SANS}`; let tt = D.name + ' 行程–时间'; if (g.measureText(tt).width + vw + 18 > w) tt = D.name + ' 行程'; g.fillStyle = C.ink; g.textAlign = 'left'; g.fillText(tt, x + 6, y + fs * 0.7 + 3);
       g.font = `600 ${fs}px ${MONO}`; g.fillStyle = C.red; g.textAlign = 'right'; g.fillText(vt, x + w - 6, y + fs * 0.7 + 3);
@@ -279,6 +285,8 @@
         curve(z => Hb(XS, z), C.ghost, 1, [4, 3]);
         const cur = z => HZ.secY(ps, t, z, XS);   // set2c：与 3D 剖切净空同源（hzseq.js）
         curve(cur, C.ink, 1.8);
+        if (ctx._chart) { const k = [sa.x0, sa.y0, sa.x1, sa.y1, sx, sy].map(v => v.toFixed(2)).join('|'); if (!sweepMemo || sweepMemo.k !== k) { const K = HZ.K, T0 = K.lift1.start, T1 = K.head.end, TS = []; for (let q = 0; q <= 40; q++) TS.push(T0 + (T1 - T0) * q / 40); for (const st of ['lift1', 'lift2', 'lift3', 'merge', 'wlift']) TS.push(K[st].end - 1e-3);
+            const PS = TS.map(tt => [tt, HZ.pose(tt)]), sw = []; for (let z = -160; z <= 160; z += 2) { let lo = 1e9, hi = -1e9; for (const [tt, pp] of PS) { const y = HZ.secY(pp, tt, z, XS); if (y == null) continue; lo = Math.min(lo, y); hi = Math.max(hi, y); } if (hi > -1e9) sw.push([X(z), Y(hi), Y(lo)]); } sweepMemo = { k, sw }; } ctx._sweep = sweepMemo.sw; }   // set2d：小图避让剖面曲线在整个时间窗里扫过的带
         // 提升塔 / 柱（竖线）
         g.strokeStyle = C.red; g.lineWidth = 1.4; for (const zz of P.towerZ) { g.beginPath(); g.moveTo(X(zz), Y(P.floorTop)); g.lineTo(X(zz), Y(HZ.Ht(XS, zz) + 4)); g.stroke(); }
         g.strokeStyle = C.ink2; for (const zz of P.mastZ) { g.beginPath(); g.moveTo(X(zz), Y(P.floorTop)); g.lineTo(X(zz), Y(Hb(XS, zz) - 1.5)); g.stroke(); }
