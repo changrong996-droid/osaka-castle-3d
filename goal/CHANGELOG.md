@@ -227,3 +227,8 @@
 - 结尾：开通前 12 天墨线淡出到实景（留 15%）、图纸竣工章、“推演完成 · 23 652 899 次几何检查 · 冲突 0”卡片；默认停在南区旋转提升并自动播放。
 - 审计全 0（无支承 / 成环 / 依赖 / R4 / R5 / 穿模 2 708 盒 / 提升净空 125 姿态 / R8 / R9 / R10）。Mac M4 a3：9 视口 × 12 状态 0 问题、交互 23/23、控制台 0 错误。帧率 DPR 2：1920×1080 提升段 282 fps、拖动提升段三图同帧重画 239 fps、结尾实景 89 fps，最长帧 28 ms，无 > 1 s 卡顿（修了实景 / 光束分支首次编译 2.2–2.6 s 卡顿：加载预热）。
 - 新文件 web/hzsheet.js；hzview.js 重写；hzseq.js 加墨线、塔吊回转、R9 / R10、审计记账。PLAYBOOK #28–37。index.html / app.js / port.html 未改。备份 tag hzwest-preview1-backup。
+
+## hzwest-r3 (11-07, 杭州西站：结尾实景)
+- 针对 r2 结尾弱点（屋盖白色体量弱、光伏颜色不对、首趟列车被屋盖挡）：结尾变体参数 `#fv=键:值,…`（hzview.js），默认 = 闭环终选：西北结尾机位 d760（cam 14）；白哑光铝屋盖 + 微自发光、挑檐加厚 3.5 m（hzseq.js P.edgeDrop 3.5）；光伏改顺轨条带；开通点亮波 + 黄昏（dk 0.6）；北场首趟列车从西进站、车头停 x=−240，画面可见并加引线标注“首趟列车进站 · 2022-09-22 开通运营”；墨线余韵 5%（ik 0.95）。A-101 竣工态改细墨线（hzsheet.js）。
+- 规则自检全 0（work/hzwest3/rules_selfcheck.json）。Mac M4 a2：9 视口 0 问题、交互 23/23、控制台 0 错误。帧率 DPR 2：1920×1080 提升 255 / 开头 278 / 首趟列车播放 83 / 结尾拖动 87 / 竣工环绕 132 fps；1258×540 列车 183 / 结尾拖动 190 fps；最长帧 73 ms，无 > 1 s 卡顿。
+- 终版截图 work/hzwest3/shots/after_finale_1920.jpg、after_finale_1258.jpg（对比 r2 before_06_opening_finished.jpg）。index.html / app.js / port.html 未改。备份 tag hzwest-r3-backup。
