@@ -77,7 +77,7 @@ HZ.Ht = Ht; HZ.rho = rho; HZ.inSky = inSky;
 // 覆面（金属屋面）面：结构顶 + 0.5，边缘 15% 向下收 1.8 m（云的软边）
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const Hc = (x, z) => Ht(x, z) + 0.5 - 0.8 * sm(0.85, 1.0, rho(x, z)) + (inSky(x, z) ? 1.6 * (1 - sm(P.skyW - 3, P.skyW, Math.min(Math.abs(x), Math.abs(z)))) : 0);
-const Hs = (x, z) => Ht(x, z) - depthAt(x, z) - 0.4 - 0.8 * sm(0.8, 1.0, rho(x, z));   // 边缘加厚：云的厚边   // 吊顶（下表面），边缘向上收
+const Hs = (x, z) => Ht(x, z) - depthAt(x, z) - 0.4 - (P.edgeDrop != null ? P.edgeDrop : 0.8) * sm(0.78, 1.0, rho(x, z));   // r3：挑檐厚度参数化（P.edgeDrop）   // 边缘加厚：云的厚边   // 吊顶（下表面），边缘向上收
 HZ.Hc = Hc; HZ.Hs = Hs;
 // 光伏：屋面四个角瓣（与着色器同一公式；面积按覆面网格积分 ≈ 1.5 万 m²）
 HZ.PVK = [0.50, 0.87, 0.325];
